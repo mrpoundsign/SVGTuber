@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/mrpoundsign/SVGTuber/internal/config"
+	"github.com/mrpoundsign/SVGTuber/internal/rig"
 	"github.com/mrpoundsign/SVGTuber/internal/tracking"
 )
 
@@ -42,6 +44,41 @@ func TestServer_AvatarSVG(t *testing.T) {
 
 	if rec.Body.String() != svgContent {
 		t.Errorf("Body mismatch. Got %s, expected %s", rec.Body.String(), svgContent)
+	}
+}
+
+func TestServer_RigJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	avatarPath := filepath.Join(tempDir, "avatar.svg")
+	svgContent := `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+		<g id="head" inkscape:label="Head [Follow {yaw: 15; pitch: 10}]"></g>
+	</svg>`
+
+	if err := os.WriteFile(avatarPath, []byte(svgContent), 0644); err != nil {
+		t.Fatalf("Failed to create test avatar file: %v", err)
+	}
+
+	hub := NewHub()
+	srv := New(0, avatarPath, hub, tracking.NewEngine())
+	if _, err := srv.ReloadRig(); err != nil {
+		t.Fatalf("ReloadRig failed: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/rig.json", nil)
+	srv.handleRigJSON(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	var rigDef rig.RigDefinition
+	if err := json.Unmarshal(rec.Body.Bytes(), &rigDef); err != nil {
+		t.Fatalf("Failed to unmarshal rig.json: %v", err)
+	}
+
+	if len(rigDef.Elements) != 1 || rigDef.Elements[0].ID != "head" {
+		t.Errorf("Unexpected rig elements: %+v", rigDef.Elements)
 	}
 }
 
@@ -168,5 +205,54 @@ func TestServer_TrackerStream(t *testing.T) {
 	}
 	if params.MouthOpen == 0 {
 		t.Errorf("Expected MouthOpen > 0 from blendshapes")
+	}
+}
+
+func TestServer_APISettings(t *testing.T) {
+	tempDir := t.TempDir()
+	avatarPath := filepath.Join(tempDir, "avatar.svg")
+	_ = os.WriteFile(avatarPath, []byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`), 0644)
+
+	cfgPath := filepath.Join(tempDir, "com.github", "mrpoundsign.svgtuber", "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to initialize config manager: %v", err)
+	}
+
+	hub := NewHub()
+	srv := New(0, avatarPath, hub, tracking.NewEngine(cfgMgr), cfgMgr)
+
+	// GET /api/settings
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
+	srv.handleAPISettings(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 on GET, got %d", rec.Code)
+	}
+
+	var resp struct {
+		Settings   config.Settings `json:"settings"`
+		ConfigPath string          `json:"configPath"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+	if resp.Settings.Tracking.MouthGain != 1.4 {
+		t.Errorf("Expected MouthGain 1.4, got %f", resp.Settings.Tracking.MouthGain)
+	}
+
+	// POST /api/settings
+	updatePayload := `{"version":1,"tracking":{"mouthGain":2.5,"mouthThreshold":0.12,"blinkThreshold":0.5,"eyeGazeGain":1.2,"yawMultiplier":1.0,"pitchMultiplier":1.0,"rollMultiplier":1.0,"poseSmoothing":1.0}}`
+	recPost := httptest.NewRecorder()
+	reqPost := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(updatePayload))
+	srv.handleAPISettings(recPost, reqPost)
+
+	if recPost.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 on POST, got %d: %s", recPost.Code, recPost.Body.String())
+	}
+
+	if cfgMgr.Get().Tracking.MouthGain != 2.5 {
+		t.Errorf("Expected updated MouthGain 2.5, got %f", cfgMgr.Get().Tracking.MouthGain)
 	}
 }

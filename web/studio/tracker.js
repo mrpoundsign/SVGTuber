@@ -1,5 +1,6 @@
 /**
  * SVGTuber Studio MediaPipe Face Tracker & WebSocket Client
+ * Includes background tab keep-alive (Web Worker ticker + Web Audio API)
  */
 
 import {
@@ -39,6 +40,76 @@ let lastVideoTime = -1;
 let frameCount = 0;
 let lastFpsTime = performance.now();
 let drawingUtils = null;
+
+let isProcessing = false;
+let animFrameId = null;
+let tickerWorker = null;
+let audioContext = null;
+
+// Inline Web Worker ticker to maintain 60 FPS in background tabs
+function initTickerWorker() {
+  if (tickerWorker) return;
+  try {
+    const workerBlob = new Blob([`
+      let timer = null;
+      self.onmessage = function(e) {
+        if (e.data === 'start') {
+          if (!timer) {
+            timer = setInterval(function() {
+              self.postMessage('tick');
+            }, 16);
+          }
+        } else if (e.data === 'stop') {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+        }
+      };
+    `], { type: 'application/javascript' });
+
+    tickerWorker = new Worker(URL.createObjectURL(workerBlob));
+    tickerWorker.onmessage = () => {
+      if (!webcamRunning) return;
+      // In background tabs, requestAnimationFrame is paused by the browser.
+      // The worker tick steps the detection loop without screen redraw.
+      if (document.hidden) {
+        processFrame(false);
+      }
+    };
+  } catch (err) {
+    console.warn("[Studio Tracker] Could not initialize background worker ticker:", err);
+  }
+}
+
+// Silent AudioContext keep-alive to prevent Chromium from throttling/discarding background tab
+function startAudioKeepAlive() {
+  try {
+    if (!audioContext) {
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      gain.gain.value = 0.0; // Completely silent
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start();
+    }
+    if (audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+  } catch (e) {
+    console.warn("[Studio Tracker] Web Audio keep-alive error:", e);
+  }
+}
+
+function stopAudioKeepAlive() {
+  if (audioContext) {
+    try {
+      audioContext.close();
+    } catch (e) {}
+    audioContext = null;
+  }
+}
 
 // Connect to SVGTuber Tracker WebSocket
 function connectWebSocket() {
@@ -119,6 +190,7 @@ async function initMediaPipe() {
     console.log("[Studio Tracker] MediaPipe FaceLandmarker initialized.");
     updateStatus("Model Ready. Start Camera.", "status-ok");
     btnToggleCamera.disabled = false;
+    initTickerWorker();
     await populateCameraDevices();
   } catch (err) {
     console.error("[Studio Tracker] Failed to initialize MediaPipe:", err);
@@ -146,6 +218,15 @@ async function populateCameraDevices() {
 async function toggleCamera() {
   if (webcamRunning) {
     webcamRunning = false;
+    if (animFrameId) {
+      cancelAnimationFrame(animFrameId);
+      animFrameId = null;
+    }
+    if (tickerWorker) {
+      tickerWorker.postMessage('stop');
+    }
+    stopAudioKeepAlive();
+
     if (video.srcObject) {
       video.srcObject.getTracks().forEach(t => t.stop());
       video.srcObject = null;
@@ -178,7 +259,14 @@ async function toggleCamera() {
       updateStatus("Tracking Active", "status-ok");
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      requestAnimationFrame(predictLoop);
+
+      // Start background keep-alive mechanisms
+      startAudioKeepAlive();
+      if (tickerWorker) {
+        tickerWorker.postMessage('start');
+      }
+
+      animFrameId = requestAnimationFrame(predictLoop);
     }, { once: true });
   } catch (err) {
     console.error("[Studio Tracker] Camera access error:", err);
@@ -191,11 +279,6 @@ function extractEulerAngles(matrix) {
   if (!matrix || matrix.length < 16) {
     return { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
   }
-  // Column-major indices:
-  // m00: 0, m10: 1, m20: 2, m30: 3
-  // m01: 4, m11: 5, m21: 6, m31: 7
-  // m02: 8, m12: 9, m22: 10, m32: 11
-  // m03: 12, m13: 13, m23: 14, m33: 15
   const m00 = matrix[0], m10 = matrix[1], m20 = matrix[2];
   const m01 = matrix[4], m11 = matrix[5], m21 = matrix[6];
   const m02 = matrix[8], m12 = matrix[9], m22 = matrix[10];
@@ -218,28 +301,22 @@ function extractEulerAngles(matrix) {
   };
 }
 
-// Main Detection Loop
-function predictLoop() {
-  if (!webcamRunning) return;
+// Core Detection Function (can be called by rAF or by Worker tick in background)
+function processFrame(renderUI = true) {
+  if (!webcamRunning || !faceLandmarker || isProcessing) return;
 
   const now = performance.now();
-  if (video.currentTime !== lastVideoTime && faceLandmarker) {
-    lastVideoTime = video.currentTime;
-    const results = faceLandmarker.detectForVideo(video, now);
+  if (video.currentTime === lastVideoTime) {
+    return;
+  }
+  lastVideoTime = video.currentTime;
+  isProcessing = true;
 
-    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+  try {
+    const results = faceLandmarker.detectForVideo(video, now);
 
     if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
       const landmarks = results.faceLandmarks[0];
-
-      // Draw mesh wireframe
-      drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION, {
-        color: "#6366f140",
-        lineWidth: 1
-      });
-      drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, { color: "#38bdf8" });
-      drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, { color: "#38bdf8" });
-      drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, { color: "#f43f5e" });
 
       // Blendshapes
       const blendshapes = {};
@@ -255,7 +332,7 @@ function predictLoop() {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
       }
 
-      // Send to Go server
+      // Stream to Go server
       if (socket && socket.readyState === WebSocket.OPEN) {
         const frame = {
           timestamp: now,
@@ -271,12 +348,26 @@ function predictLoop() {
         socket.send(JSON.stringify(frame));
       }
 
-      // Update UI Meters
-      updateGauges(pose, blendshapes);
-      updateStatus("Tracking Face", "status-ok");
+      // UI Rendering only when visible
+      if (renderUI) {
+        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_TESSELATION, {
+          color: "#6366f140",
+          lineWidth: 1
+        });
+        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE, { color: "#38bdf8" });
+        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYE, { color: "#38bdf8" });
+        drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, { color: "#f43f5e" });
+
+        updateGauges(pose, blendshapes);
+        updateStatus("Tracking Face", "status-ok");
+      }
     } else {
       sendTrackingLoss();
-      updateStatus("No Face Detected", "status-warn");
+      if (renderUI) {
+        canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        updateStatus("No Face Detected", "status-warn");
+      }
     }
 
     // FPS calculation
@@ -287,10 +378,30 @@ function predictLoop() {
       frameCount = 0;
       lastFpsTime = now;
     }
+  } catch (err) {
+    console.error("[Studio Tracker] Detection error:", err);
+  } finally {
+    isProcessing = false;
   }
-
-  requestAnimationFrame(predictLoop);
 }
+
+// Foreground 60 FPS loop
+function predictLoop() {
+  if (!webcamRunning) return;
+
+  if (!document.hidden) {
+    processFrame(true);
+    animFrameId = requestAnimationFrame(predictLoop);
+  }
+}
+
+// Resume rAF loop when tab returns to foreground
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && webcamRunning) {
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+    animFrameId = requestAnimationFrame(predictLoop);
+  }
+});
 
 function sendTrackingLoss() {
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -306,7 +417,6 @@ function updateGauges(pose, blendshapes) {
   valPitch.textContent = `${pose.pitch.toFixed(1)}°`;
   valRoll.textContent = `${pose.roll.toFixed(1)}°`;
 
-  // Normalize [-30, 30] to [0%, 100%]
   gaugeYaw.style.width = `${Math.max(0, Math.min(100, ((pose.yaw + 30) / 60) * 100))}%`;
   gaugePitch.style.width = `${Math.max(0, Math.min(100, ((pose.pitch + 30) / 60) * 100))}%`;
   gaugeRoll.style.width = `${Math.max(0, Math.min(100, ((pose.roll + 30) / 60) * 100))}%`;
@@ -334,3 +444,151 @@ btnToggleCamera.addEventListener("click", toggleCamera);
 // Setup on load
 connectWebSocket();
 initMediaPipe();
+
+// Settings & Tunable Sliders Management
+const sliderMouthGain = document.getElementById("slider-mouth-gain");
+const sliderMouthThreshold = document.getElementById("slider-mouth-threshold");
+const sliderBlinkThreshold = document.getElementById("slider-blink-threshold");
+const sliderEyeGain = document.getElementById("slider-eye-gain");
+const sliderYawMultiplier = document.getElementById("slider-yaw-multiplier");
+const sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier");
+
+const valMouthGain = document.getElementById("val-mouth-gain");
+const valMouthThreshold = document.getElementById("val-mouth-threshold");
+const valBlinkThreshold = document.getElementById("val-blink-threshold");
+const valEyeGain = document.getElementById("val-eye-gain");
+const valYawMultiplier = document.getElementById("val-yaw-multiplier");
+const valPitchMultiplier = document.getElementById("val-pitch-multiplier");
+
+const btnSaveSettings = document.getElementById("btn-save-settings");
+const btnResetSettings = document.getElementById("btn-reset-settings");
+const saveStatus = document.getElementById("save-status");
+const configPathDisplay = document.getElementById("config-path-display");
+
+let activeSettings = null;
+let saveDebounceTimer = null;
+
+async function loadSettings() {
+  try {
+    const res = await fetch("/api/settings");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    activeSettings = data.settings;
+    if (configPathDisplay && data.configPath) {
+      configPathDisplay.textContent = data.configPath;
+    }
+    syncSettingsToUI(activeSettings);
+  } catch (err) {
+    console.warn("[Studio Tracker] Could not load /api/settings:", err);
+  }
+}
+
+function syncSettingsToUI(s) {
+  if (!s || !s.tracking) return;
+  const t = s.tracking;
+
+  if (sliderMouthGain) sliderMouthGain.value = t.mouthGain || 1.4;
+  if (sliderMouthThreshold) sliderMouthThreshold.value = t.mouthThreshold || 0.08;
+  if (sliderBlinkThreshold) sliderBlinkThreshold.value = t.blinkThreshold || 0.45;
+  if (sliderEyeGain) sliderEyeGain.value = t.eyeGazeGain || 1.0;
+  if (sliderYawMultiplier) sliderYawMultiplier.value = t.yawMultiplier || 1.0;
+  if (sliderPitchMultiplier) sliderPitchMultiplier.value = t.pitchMultiplier || 1.0;
+
+  updateSliderLabels();
+}
+
+function updateSliderLabels() {
+  if (valMouthGain && sliderMouthGain) valMouthGain.textContent = `${parseFloat(sliderMouthGain.value).toFixed(2)}x`;
+  if (valMouthThreshold && sliderMouthThreshold) valMouthThreshold.textContent = parseFloat(sliderMouthThreshold.value).toFixed(2);
+  if (valBlinkThreshold && sliderBlinkThreshold) valBlinkThreshold.textContent = parseFloat(sliderBlinkThreshold.value).toFixed(2);
+  if (valEyeGain && sliderEyeGain) valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
+  if (valYawMultiplier && sliderYawMultiplier) valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
+  if (valPitchMultiplier && sliderPitchMultiplier) valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
+}
+
+function collectSettingsFromUI() {
+  return {
+    version: 1,
+    tracking: {
+      mouthGain: parseFloat(sliderMouthGain?.value || 1.4),
+      mouthThreshold: parseFloat(sliderMouthThreshold?.value || 0.08),
+      blinkThreshold: parseFloat(sliderBlinkThreshold?.value || 0.45),
+      eyeGazeGain: parseFloat(sliderEyeGain?.value || 1.0),
+      yawMultiplier: parseFloat(sliderYawMultiplier?.value || 1.0),
+      pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || 1.0),
+      rollMultiplier: 1.0,
+      poseSmoothing: 1.0
+    }
+  };
+}
+
+async function sendSettingsUpdate(showSavedToast = false) {
+  const newSettings = collectSettingsFromUI();
+  activeSettings = newSettings;
+  try {
+    const res = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newSettings)
+    });
+    if (res.ok && showSavedToast && saveStatus) {
+      saveStatus.textContent = "✓ Saved!";
+      saveStatus.style.opacity = "1";
+      setTimeout(() => {
+        saveStatus.style.opacity = "0";
+      }, 1500);
+    }
+  } catch (err) {
+    console.error("[Studio Tracker] Error saving settings:", err);
+  }
+}
+
+// Live update on slider movement (debounced by 80ms)
+function onSliderInput() {
+  updateSliderLabels();
+  if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  saveDebounceTimer = setTimeout(() => {
+    sendSettingsUpdate(false);
+  }, 80);
+}
+
+[
+  sliderMouthGain,
+  sliderMouthThreshold,
+  sliderBlinkThreshold,
+  sliderEyeGain,
+  sliderYawMultiplier,
+  sliderPitchMultiplier
+].forEach(slider => {
+  if (slider) {
+    slider.addEventListener("input", onSliderInput);
+  }
+});
+
+if (btnSaveSettings) {
+  btnSaveSettings.addEventListener("click", () => sendSettingsUpdate(true));
+}
+
+if (btnResetSettings) {
+  btnResetSettings.addEventListener("click", async () => {
+    try {
+      const res = await fetch("/api/settings/reset", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        activeSettings = data.settings;
+        syncSettingsToUI(activeSettings);
+        if (saveStatus) {
+          saveStatus.textContent = "✓ Defaults Reset!";
+          saveStatus.style.opacity = "1";
+          setTimeout(() => {
+            saveStatus.style.opacity = "0";
+          }, 1500);
+        }
+      }
+    } catch (err) {
+      console.error("[Studio Tracker] Error resetting settings:", err);
+    }
+  });
+}
+
+loadSettings();

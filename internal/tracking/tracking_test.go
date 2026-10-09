@@ -109,3 +109,27 @@ func TestEngine_TrackingLoss(t *testing.T) {
 		t.Errorf("Expected HeadYaw to decay towards 0, got %f", outLost.HeadYaw)
 	}
 }
+
+func TestEngine_EyeGaze(t *testing.T) {
+	eng := NewEngine()
+
+	// Frame looking to the right and down
+	f := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeLookInLeft":     0.8,
+			"eyeLookOutRight":   0.8,
+			"eyeLookDownLeft":   0.6,
+			"eyeLookDownRight":  0.6,
+		},
+	}
+	out := eng.Process(f)
+
+	if out.EyeX <= 0.5 {
+		t.Errorf("Expected EyeX > 0.5 when looking right, got %f", out.EyeX)
+	}
+	if out.EyeY <= 0.4 {
+		t.Errorf("Expected EyeY > 0.4 when looking down, got %f", out.EyeY)
+	}
+}

@@ -105,6 +105,8 @@ type PoseFilter struct {
 	x         *OneEuroFilter
 	y         *OneEuroFilter
 	z         *OneEuroFilter
+	eyeX      *OneEuroFilter
+	eyeY      *OneEuroFilter
 	blinkL    *OneEuroFilter
 	blinkR    *OneEuroFilter
 	mouthOpen *OneEuroFilter
@@ -121,6 +123,8 @@ func NewPoseFilter() *PoseFilter {
 		x:         NewOneEuroFilter(1.0, 0.005, 1.0),
 		y:         NewOneEuroFilter(1.0, 0.005, 1.0),
 		z:         NewOneEuroFilter(1.0, 0.005, 1.0),
+		eyeX:      NewOneEuroFilter(1.2, 0.01, 1.0),
+		eyeY:      NewOneEuroFilter(1.2, 0.01, 1.0),
 		blinkL:    NewOneEuroFilter(1.5, 0.02, 1.0), // Snappier for blinks
 		blinkR:    NewOneEuroFilter(1.5, 0.02, 1.0),
 		mouthOpen: NewOneEuroFilter(1.2, 0.01, 1.0),
@@ -137,6 +141,8 @@ func (pf *PoseFilter) Reset() {
 	pf.x.Reset()
 	pf.y.Reset()
 	pf.z.Reset()
+	pf.eyeX.Reset()
+	pf.eyeY.Reset()
 	pf.blinkL.Reset()
 	pf.blinkR.Reset()
 	pf.mouthOpen.Reset()

@@ -16,33 +16,69 @@ type Message struct {
 	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+type client struct {
+	conn *websocket.Conn
+	send chan []byte
+	once sync.Once
+}
+
+func (c *client) closeSend() {
+	c.once.Do(func() {
+		close(c.send)
+	})
+}
+
 // Hub maintains the set of active overlay WebSocket connections and broadcasts messages.
 type Hub struct {
 	mu      sync.RWMutex
-	clients map[*websocket.Conn]struct{}
+	clients map[*websocket.Conn]*client
 }
 
 // NewHub initializes a new WebSocket Hub.
 func NewHub() *Hub {
 	return &Hub{
-		clients: make(map[*websocket.Conn]struct{}),
+		clients: make(map[*websocket.Conn]*client),
 	}
 }
 
-// Register adds a client connection to the hub.
+// Register adds a client connection to the hub and starts its dedicated write pump.
 func (h *Hub) Register(conn *websocket.Conn) {
+	c := &client{
+		conn: conn,
+		send: make(chan []byte, 16),
+	}
+
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.clients[conn] = struct{}{}
-	log.Printf("[Hub] Client connected. Total active overlays: %d", len(h.clients))
+	h.clients[conn] = c
+	count := len(h.clients)
+	h.mu.Unlock()
+
+	log.Printf("[Hub] Client connected. Total active overlays: %d", count)
+
+	go func() {
+		defer func() {
+			h.Unregister(conn)
+			_ = conn.Close(websocket.StatusGoingAway, "")
+		}()
+
+		for msg := range c.send {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err := conn.Write(ctx, websocket.MessageText, msg)
+			cancel()
+			if err != nil {
+				return
+			}
+		}
+	}()
 }
 
 // Unregister removes a client connection from the hub.
 func (h *Hub) Unregister(conn *websocket.Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if _, ok := h.clients[conn]; ok {
+	if c, ok := h.clients[conn]; ok {
 		delete(h.clients, conn)
+		c.closeSend()
 		log.Printf("[Hub] Client disconnected. Total active overlays: %d", len(h.clients))
 	}
 }
@@ -61,22 +97,14 @@ func (h *Hub) BroadcastJSON(v any) {
 	}
 
 	h.mu.RLock()
-	conns := make([]*websocket.Conn, 0, len(h.clients))
-	for conn := range h.clients {
-		conns = append(conns, conn)
-	}
-	h.mu.RUnlock()
+	defer h.mu.RUnlock()
 
-	for _, conn := range conns {
-		go func(c *websocket.Conn) {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			err := c.Write(ctx, websocket.MessageText, data)
-			if err != nil {
-				h.Unregister(c)
-				_ = c.Close(websocket.StatusGoingAway, "write error")
-			}
-		}(conn)
+	for _, c := range h.clients {
+		select {
+		case c.send <- data:
+		default:
+			// Buffer full: drop frame to preserve low-latency real-time stream
+		}
 	}
 }
 

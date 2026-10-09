@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/server"
 	"github.com/mrpoundsign/SVGTuber/internal/tracking"
 	"github.com/mrpoundsign/SVGTuber/internal/watcher"
@@ -40,9 +41,14 @@ func main() {
 		log.Fatalf("Avatar SVG file does not exist: %s", *avatarPath)
 	}
 
+	cfgMgr, err := config.NewManager()
+	if err != nil {
+		log.Printf("[Warning] Failed to initialize config manager: %v (using defaults)", err)
+	}
+
 	hub := server.NewHub()
-	engine := tracking.NewEngine()
-	srv := server.New(*port, *avatarPath, hub, engine)
+	engine := tracking.NewEngine(cfgMgr)
+	srv := server.New(*port, *avatarPath, hub, engine, cfgMgr)
 
 	if err := srv.Start(); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
@@ -51,6 +57,9 @@ func main() {
 	// Initialize file watcher for live reload
 	fw, err := watcher.New(*avatarPath, 100*time.Millisecond, func() {
 		log.Printf("[Watcher] Avatar %s updated on disk. Broadcasting reload to overlays.", *avatarPath)
+		if _, err := srv.ReloadRig(); err != nil {
+			log.Printf("[Watcher] Error reloading rig: %v", err)
+		}
 		hub.BroadcastReload()
 	})
 	if err != nil {
@@ -68,6 +77,11 @@ func main() {
 	fmt.Printf("  Avatar:      %s\n", *avatarPath)
 	fmt.Printf("  Studio:      %s\n", studioURL)
 	fmt.Printf("  OBS Overlay: %s\n", overlayURL)
+	if cfgMgr != nil {
+		if path, err := cfgMgr.ConfigPath(); err == nil {
+			fmt.Printf("  Settings:    %s\n", path)
+		}
+	}
 	fmt.Println("----------------------------------------------------")
 	fmt.Println("  Add OBS Overlay URL as a Browser Source in OBS.")
 	fmt.Println("  Press Ctrl+C to stop.")

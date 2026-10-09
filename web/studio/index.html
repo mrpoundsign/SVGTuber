@@ -237,20 +237,23 @@
     /* Right Column Avatar & OBS */
     .preview-box {
       flex: 1;
-      min-height: 260px;
-      background: #181820;
-      border: 1px dashed var(--border-color);
+      min-height: 320px;
+      height: 320px;
+      background: #14141c;
+      border: 1px solid var(--border-color);
       border-radius: 8px;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      padding: 16px;
+      padding: 0;
+      position: relative;
     }
-    .preview-box img {
-      max-width: 100%;
-      max-height: 240px;
-      object-fit: contain;
+    .preview-box iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: transparent;
     }
     .obs-link-box {
       background: #181820;
@@ -262,6 +265,54 @@
       justify-content: space-between;
       font-family: monospace;
       font-size: 13px;
+    }
+    /* Sliders & Settings Group */
+    .slider-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #181820;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .slider-item {
+      display: grid;
+      grid-template-columns: 140px 1fr 55px;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+    }
+    .slider-item label {
+      color: var(--text-muted);
+    }
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      background: #272738;
+      border-radius: 3px;
+      outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+    input[type=range]::-webkit-slider-thumb:hover {
+      background: var(--accent-hover);
+      transform: scale(1.15);
+    }
+    .slider-val {
+      font-family: monospace;
+      text-align: right;
+      color: var(--text-main);
     }
     footer {
       border-top: 1px solid var(--border-color);
@@ -365,14 +416,17 @@
     <!-- Right Column: Avatar Preview & OBS URL -->
     <div class="card">
       <div class="card-title">
-        <span>Avatar Preview</span>
-        <button class="btn btn-secondary" onclick="reloadAvatar()">Refresh</button>
+        <span>Avatar Live Preview</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" onclick="reloadAvatar()">Reload</button>
+          <a href="/overlay" target="_blank" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px; text-decoration: none;">OBS Overlay ↗</a>
+        </div>
       </div>
       <div class="preview-box">
-        <img id="avatar-img" src="/avatar.svg" alt="Avatar Preview" />
+        <iframe id="avatar-frame" src="/overlay" title="Avatar Live Preview"></iframe>
       </div>
       <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
-        Edits saved in Inkscape will instantly refresh this preview and the OBS overlay via <code>fsnotify</code>.
+        Live vector avatar rendered natively with GPU acceleration. Edits saved in Inkscape hot-reload automatically via <code>fsnotify</code>.
       </p>
 
       <div style="margin-top: 12px;">
@@ -383,6 +437,60 @@
         <div class="obs-link-box">
           <span id="overlay-url">http://localhost:7420/overlay</span>
           <button class="btn btn-secondary" onclick="copyOverlayUrl()">Copy URL</button>
+        </div>
+      </div>
+
+      <!-- Tracking Sensitivity & Tunable Sliders -->
+      <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+        <div class="card-title">
+          <span>Tracking Sensitivity & Sliders</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span id="save-status" style="font-size: 11px; color: var(--success); opacity: 0; transition: opacity 0.3s; font-weight: 600;">Saved!</span>
+            <button id="btn-save-settings" class="btn" style="font-size: 11px; padding: 4px 10px;">Save</button>
+            <button id="btn-reset-settings" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px;">Reset</button>
+          </div>
+        </div>
+
+        <div class="slider-group">
+          <div class="gauge-section-title">Mouth Responsiveness</div>
+          <div class="slider-item">
+            <label for="slider-mouth-gain">Sensitivity (Gain)</label>
+            <input type="range" id="slider-mouth-gain" min="0.5" max="3.0" step="0.05" value="1.4">
+            <span id="val-mouth-gain" class="slider-val">1.40x</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-mouth-threshold">Open Threshold</label>
+            <input type="range" id="slider-mouth-threshold" min="0.02" max="0.25" step="0.01" value="0.08">
+            <span id="val-mouth-threshold" class="slider-val">0.08</span>
+          </div>
+        </div>
+
+        <div class="slider-group">
+          <div class="gauge-section-title">Eyes & Head Pose</div>
+          <div class="slider-item">
+            <label for="slider-blink-threshold">Blink Threshold</label>
+            <input type="range" id="slider-blink-threshold" min="0.2" max="0.7" step="0.02" value="0.45">
+            <span id="val-blink-threshold" class="slider-val">0.45</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-eye-gain">Pupil Gaze Range</label>
+            <input type="range" id="slider-eye-gain" min="0.5" max="2.5" step="0.1" value="1.0">
+            <span id="val-eye-gain" class="slider-val">1.0x</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-yaw-multiplier">Head Yaw (L/R)</label>
+            <input type="range" id="slider-yaw-multiplier" min="0.5" max="2.5" step="0.1" value="1.0">
+            <span id="val-yaw-multiplier" class="slider-val">1.0x</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-pitch-multiplier">Head Pitch (U/D)</label>
+            <input type="range" id="slider-pitch-multiplier" min="0.5" max="2.5" step="0.1" value="1.0">
+            <span id="val-pitch-multiplier" class="slider-val">1.0x</span>
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4; word-break: break-all;">
+          <strong>Config File:</strong> <code id="config-path-display">Loading...</code>
         </div>
       </div>
     </div>
@@ -404,8 +512,10 @@
     }
 
     function reloadAvatar() {
-      const img = document.getElementById('avatar-img');
-      img.src = `/avatar.svg?t=${Date.now()}`;
+      const frame = document.getElementById('avatar-frame');
+      if (frame) {
+        frame.src = `/overlay?t=${Date.now()}`;
+      }
     }
   </script>
 

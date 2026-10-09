@@ -24,10 +24,14 @@ type ParamFrame struct {
 	HeadX     float64            `json:"headX"`     // calibrated translation
 	HeadY     float64            `json:"headY"`     // calibrated translation
 	HeadZ     float64            `json:"headZ"`     // calibrated depth
+	EyeX      float64            `json:"eyeX"`      // -1.0 (left) to 1.0 (right)
+	EyeY      float64            `json:"eyeY"`      // -1.0 (up) to 1.0 (down)
 	BlinkL    float64            `json:"blinkL"`    // 0.0 (open) to 1.0 (closed)
 	BlinkR    float64            `json:"blinkR"`    // 0.0 (open) to 1.0 (closed)
-	MouthOpen float64            `json:"mouthOpen"` // 0.0 to 1.0
-	Smile     float64            `json:"smile"`     // 0.0 to 1.0
-	BrowUp    float64            `json:"browUp"`    // 0.0 to 1.0
-	Raw       map[string]float64 `json:"raw,omitempty"`
+	MouthOpen      float64            `json:"mouthOpen"` // 0.0 to 1.0
+	Smile          float64            `json:"smile"`     // 0.0 to 1.0
+	BrowUp         float64            `json:"browUp"`    // 0.0 to 1.0
+	MouthThreshold float64            `json:"mouthThreshold"`
+	BlinkThreshold float64            `json:"blinkThreshold"`
+	Raw            map[string]float64 `json:"raw,omitempty"`
 }

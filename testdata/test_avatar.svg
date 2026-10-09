@@ -13,14 +13,14 @@
     </linearGradient>
   </defs>
 
-  <!-- Body / Torso Layer -->
-  <g inkscape:groupmode="layer" id="layer_body" inkscape:label="Body">
+  <!-- Body / Torso Layer with Idle Breathing -->
+  <g inkscape:groupmode="layer" id="layer_body" inkscape:label="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}]">
     <path d="M 176 380 Q 256 360 336 380 L 370 512 L 142 512 Z" fill="#1e1b4b" stroke="#312e81" stroke-width="4"/>
     <path d="M 230 380 L 256 420 L 282 380 Z" fill="#ffffff"/>
   </g>
 
-  <!-- Head & Face Layer -->
-  <g inkscape:groupmode="layer" id="layer_head" inkscape:label="Head [Follow {yaw: 15; pitch: 10}]">
+  <!-- Head & Face Layer with Follow Tracking -->
+  <g inkscape:groupmode="layer" id="layer_head" inkscape:label="Head [Follow {yaw: 15; pitch: 10; roll: 8; pivot: center}]">
     <!-- Back Hair -->
     <path d="M 120 220 Q 90 340 140 400 Q 180 320 180 260 Z" fill="url(#hairGrad)"/>
     <path d="M 392 220 Q 422 340 372 400 Q 332 320 332 260 Z" fill="url(#hairGrad)"/>
@@ -33,37 +33,41 @@
     <ellipse cx="332" cy="280" rx="20" ry="10" fill="#f43f5e" opacity="0.35"/>
 
     <!-- Eyes (Open State) -->
-    <g id="eyes_open" inkscape:label="Eyes Open [Hide {when: blinkL > 0.5}]">
+    <g id="eyes_open" inkscape:label="Eyes Open [Hide {when: blinkL > blinkThreshold || blinkR > blinkThreshold}]">
       <!-- Left Eye -->
       <circle cx="206" cy="235" r="22" fill="#ffffff" stroke="#1e1b4b" stroke-width="3"/>
-      <circle id="pupil_left" cx="206" cy="235" r="14" fill="#312e81"/>
-      <circle cx="212" cy="229" r="5" fill="#ffffff"/>
+      <g id="pupil_left" inkscape:label="Pupil Left [Move {x: eyeX; y: eyeY; range: 6}]">
+        <circle cx="206" cy="235" r="14" fill="#312e81"/>
+        <circle cx="212" cy="229" r="5" fill="#ffffff"/>
+      </g>
 
       <!-- Right Eye -->
       <circle cx="306" cy="235" r="22" fill="#ffffff" stroke="#1e1b4b" stroke-width="3"/>
-      <circle id="pupil_right" cx="306" cy="235" r="14" fill="#312e81"/>
-      <circle cx="312" cy="229" r="5" fill="#ffffff"/>
+      <g id="pupil_right" inkscape:label="Pupil Right [Move {x: eyeX; y: eyeY; range: 6}]">
+        <circle cx="306" cy="235" r="14" fill="#312e81"/>
+        <circle cx="312" cy="229" r="5" fill="#ffffff"/>
+      </g>
     </g>
 
     <!-- Eyes (Closed / Blink State) -->
-    <g id="eyes_closed" inkscape:label="Eyes Closed [Show {when: blinkL > 0.5}]" style="display: none;">
+    <g id="eyes_closed" inkscape:label="Eyes Closed [Show {when: blinkL > blinkThreshold || blinkR > blinkThreshold}]" style="display: none;">
       <path d="M 186 240 Q 206 250 226 240" fill="none" stroke="#1e1b4b" stroke-width="4" stroke-linecap="round"/>
       <path d="M 286 240 Q 306 250 326 240" fill="none" stroke="#1e1b4b" stroke-width="4" stroke-linecap="round"/>
     </g>
 
     <!-- Mouth (Neutral) -->
-    <g id="mouth_neutral" inkscape:label="Mouth Neutral [Hide {when: mouthOpen > 0.2}]">
+    <g id="mouth_neutral" inkscape:label="Mouth Neutral [Hide {when: mouthOpen > mouthThreshold}]">
       <path d="M 240 305 Q 256 315 272 305" fill="none" stroke="#be123c" stroke-width="4" stroke-linecap="round"/>
     </g>
 
-    <!-- Mouth (Open) -->
-    <g id="mouth_open" inkscape:label="Mouth Open [Show {when: mouthOpen > 0.2}]" style="display: none;">
+    <!-- Mouth (Open) with Scale -->
+    <g id="mouth_open" inkscape:label="Mouth Open [Show {when: mouthOpen > mouthThreshold}; Scale {y: mouthOpen; from: 0.5; to: 1.4; pivot: top}]" style="display: none;">
       <ellipse cx="256" cy="315" rx="18" ry="14" fill="#be123c" stroke="#9f1239" stroke-width="3"/>
       <path d="M 244 322 Q 256 312 268 322 Z" fill="#fb7185"/>
     </g>
 
-    <!-- Front Bangs / Hair -->
-    <g id="hair_front" inkscape:label="Front Hair [Dist {factor: 0.15}]">
+    <!-- Front Bangs / Hair with Parallax -->
+    <g id="hair_front" inkscape:label="Front Hair [Dist {factor: 0.18}]">
       <path d="M 136 210 Q 160 130 256 130 Q 352 130 376 210 Q 320 160 256 180 Q 192 160 136 210 Z" fill="url(#hairGrad)"/>
       <path d="M 220 170 Q 240 220 236 230 Q 250 190 260 175 Z" fill="#3730a3"/>
     </g>
