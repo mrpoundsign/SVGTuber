@@ -14,6 +14,8 @@
       --accent: #6366f1;
       --accent-hover: #4f46e5;
       --success: #22c55e;
+      --warn: #f59e0b;
+      --error: #ef4444;
     }
     * {
       box-sizing: border-box;
@@ -31,7 +33,7 @@
     header {
       background: var(--bg-card);
       border-bottom: 1px solid var(--border-color);
-      padding: 16px 24px;
+      padding: 14px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -53,20 +55,25 @@
       background: #272738;
       color: #a5a5cc;
     }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--success);
-      display: inline-block;
-      margin-right: 6px;
+    .status-badge {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
+    .status-ok { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .status-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .status-error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+
     main {
       padding: 24px;
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1.1fr 0.9fr;
       gap: 24px;
-      max-width: 1200px;
+      max-width: 1300px;
       margin: 0 auto;
       width: 100%;
       flex: 1;
@@ -78,43 +85,72 @@
       padding: 20px;
       display: flex;
       flex-direction: column;
+      gap: 16px;
     }
     .card-title {
       font-size: 15px;
       font-weight: 600;
-      margin-bottom: 16px;
       color: var(--text-main);
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .preview-box {
-      flex: 1;
-      min-height: 320px;
-      background: #181820;
-      border: 1px dashed var(--border-color);
+
+    /* Video & Camera Container */
+    .video-viewport {
+      position: relative;
+      width: 100%;
+      height: 320px;
+      background: #000;
       border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
       display: flex;
       align-items: center;
       justify-content: center;
-      overflow: hidden;
-      padding: 16px;
     }
-    .preview-box img, .preview-box svg {
-      max-width: 100%;
-      max-height: 280px;
-      object-fit: contain;
+    #webcam {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror camera for natural feel */
     }
-    .obs-link-box {
+    #landmark-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror to match camera */
+      pointer-events: none;
+    }
+    .video-overlay-stats {
+      position: absolute;
+      bottom: 8px;
+      right: 8px;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    /* Controls Bar */
+    .controls-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    select {
+      flex: 1;
       background: #181820;
       border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 12px;
       border-radius: 6px;
-      padding: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-top: 12px;
-      font-family: monospace;
       font-size: 13px;
     }
     .btn {
@@ -126,24 +162,106 @@
       font-size: 13px;
       font-weight: 500;
       cursor: pointer;
-      text-decoration: none;
       transition: background 0.2s;
+      white-space: nowrap;
     }
-    .btn:hover {
+    .btn:hover:not(:disabled) {
       background: var(--accent-hover);
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
     .btn-secondary {
       background: #2a2a3c;
       color: var(--text-main);
     }
-    .btn-secondary:hover {
+    .btn-secondary:hover:not(:disabled) {
       background: #37374d;
     }
-    .hint {
+    .btn-danger {
+      background: #dc2626;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: #b91c1c;
+    }
+
+    /* Gauge Meters */
+    .gauge-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #181820;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .gauge-section-title {
       font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
       color: var(--text-muted);
-      margin-top: 8px;
-      line-height: 1.5;
+      margin-bottom: 2px;
+    }
+    .gauge-item {
+      display: grid;
+      grid-template-columns: 80px 1fr 50px;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+    }
+    .gauge-item label {
+      color: var(--text-muted);
+    }
+    .gauge-bar-track {
+      height: 8px;
+      background: #272738;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .gauge-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.05s linear;
+      border-radius: 4px;
+    }
+    .gauge-value {
+      font-family: monospace;
+      text-align: right;
+      color: var(--text-main);
+    }
+
+    /* Right Column Avatar & OBS */
+    .preview-box {
+      flex: 1;
+      min-height: 260px;
+      background: #181820;
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 16px;
+    }
+    .preview-box img {
+      max-width: 100%;
+      max-height: 240px;
+      object-fit: contain;
+    }
+    .obs-link-box {
+      background: #181820;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: monospace;
+      font-size: 13px;
     }
     footer {
       border-top: 1px solid var(--border-color);
@@ -158,15 +276,93 @@
   <header>
     <div class="brand">
       <h1>SVGTuber Studio</h1>
-      <span class="badge">Milestone 1</span>
+      <span class="badge">Milestone 2</span>
     </div>
-    <div>
-      <span class="status-dot"></span>
-      <span style="font-size: 13px;">Server Online</span>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <span id="tracking-status" class="status-badge status-warn">Initializing...</span>
     </div>
   </header>
 
   <main>
+    <!-- Left Column: Camera & Live Tracking Gauges -->
+    <div class="card">
+      <div class="card-title">
+        <span>Face Tracker (MediaPipe)</span>
+      </div>
+
+      <div class="video-viewport">
+        <video id="webcam" autoplay playsinline muted></video>
+        <canvas id="landmark-canvas"></canvas>
+        <div class="video-overlay-stats">
+          <span id="fps-display">0 FPS</span>
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <select id="camera-select">
+          <option value="">Default Camera</option>
+        </select>
+        <button id="btn-toggle-camera" class="btn" disabled>Start Camera</button>
+        <button id="btn-calibrate" class="btn btn-secondary">Set Neutral Pose</button>
+      </div>
+
+      <!-- Head Pose Gauges -->
+      <div class="gauge-section">
+        <div class="gauge-section-title">Head Orientation (One-Euro Filtered)</div>
+        <div class="gauge-item">
+          <label>Yaw (L/R)</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-yaw" class="gauge-bar-fill" style="width: 50%;"></div>
+          </div>
+          <span id="val-yaw" class="gauge-value">0.0°</span>
+        </div>
+        <div class="gauge-item">
+          <label>Pitch (U/D)</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-pitch" class="gauge-bar-fill" style="width: 50%;"></div>
+          </div>
+          <span id="val-pitch" class="gauge-value">0.0°</span>
+        </div>
+        <div class="gauge-item">
+          <label>Roll (Tilt)</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-roll" class="gauge-bar-fill" style="width: 50%;"></div>
+          </div>
+          <span id="val-roll" class="gauge-value">0.0°</span>
+        </div>
+      </div>
+
+      <!-- Facial Expression Gauges -->
+      <div class="gauge-section">
+        <div class="gauge-section-title">Facial Blendshapes</div>
+        <div class="gauge-item">
+          <label>Blink Left</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-blink-l" class="gauge-bar-fill"></div>
+          </div>
+        </div>
+        <div class="gauge-item">
+          <label>Blink Right</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-blink-r" class="gauge-bar-fill"></div>
+          </div>
+        </div>
+        <div class="gauge-item">
+          <label>Mouth Open</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-mouth-open" class="gauge-bar-fill" style="background: #f43f5e;"></div>
+          </div>
+        </div>
+        <div class="gauge-item">
+          <label>Smile</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-smile" class="gauge-bar-fill" style="background: #38bdf8;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Avatar Preview & OBS URL -->
     <div class="card">
       <div class="card-title">
         <span>Avatar Preview</span>
@@ -175,24 +371,18 @@
       <div class="preview-box">
         <img id="avatar-img" src="/avatar.svg" alt="Avatar Preview" />
       </div>
-      <p class="hint">Hot-reloading is active. Edits saved in Inkscape will instantly refresh this preview and the OBS overlay.</p>
-    </div>
-
-    <div class="card">
-      <div class="card-title">OBS Browser Source Setup</div>
-      <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
-        Add a <strong>Browser Source</strong> in OBS Studio pointing to the URL below. Ensure <em>Shutdown source when not visible</em> is disabled for instantaneous transitions.
+      <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+        Edits saved in Inkscape will instantly refresh this preview and the OBS overlay via <code>fsnotify</code>.
       </p>
 
-      <div class="obs-link-box">
-        <span id="overlay-url">http://localhost:7420/overlay</span>
-        <button class="btn btn-secondary" onclick="copyOverlayUrl()">Copy URL</button>
-      </div>
-
-      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
-        <div class="card-title">Camera & Tracking Status</div>
-        <div style="background: #181820; border-radius: 8px; padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
-          <p>📷 MediaPipe Face Tracking will be connected in <strong>Milestone 2</strong>.</p>
+      <div style="margin-top: 12px;">
+        <div class="card-title" style="margin-bottom: 8px;">OBS Browser Source</div>
+        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 10px;">
+          Add a Browser Source in OBS pointing to the URL below:
+        </p>
+        <div class="obs-link-box">
+          <span id="overlay-url">http://localhost:7420/overlay</span>
+          <button class="btn btn-secondary" onclick="copyOverlayUrl()">Copy URL</button>
         </div>
       </div>
     </div>
@@ -218,5 +408,8 @@
       img.src = `/avatar.svg?t=${Date.now()}`;
     }
   </script>
+
+  <!-- Load MediaPipe Tracker Module -->
+  <script type="module" src="/studio/tracker.js"></script>
 </body>
 </html>

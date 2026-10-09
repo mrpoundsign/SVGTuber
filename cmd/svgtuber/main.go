@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mrpoundsign/SVGTuber/internal/server"
+	"github.com/mrpoundsign/SVGTuber/internal/tracking"
 	"github.com/mrpoundsign/SVGTuber/internal/watcher"
 )
 
@@ -40,7 +41,8 @@ func main() {
 	}
 
 	hub := server.NewHub()
-	srv := server.New(*port, *avatarPath, hub)
+	engine := tracking.NewEngine()
+	srv := server.New(*port, *avatarPath, hub, engine)
 
 	if err := srv.Start(); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

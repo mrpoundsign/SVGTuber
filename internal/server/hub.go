@@ -49,7 +49,12 @@ func (h *Hub) Unregister(conn *websocket.Conn) {
 
 // Broadcast sends a JSON message to all connected overlay clients.
 func (h *Hub) Broadcast(msg Message) {
-	data, err := json.Marshal(msg)
+	h.BroadcastJSON(msg)
+}
+
+// BroadcastJSON sends any serializable value as JSON to all connected overlays.
+func (h *Hub) BroadcastJSON(v any) {
+	data, err := json.Marshal(v)
 	if err != nil {
 		log.Printf("[Hub] Error marshaling broadcast message: %v", err)
 		return
@@ -78,4 +83,9 @@ func (h *Hub) Broadcast(msg Message) {
 // BroadcastReload notifies all overlays to re-fetch the avatar SVG.
 func (h *Hub) BroadcastReload() {
 	h.Broadcast(Message{Type: "reload"})
+}
+
+// BroadcastParams broadcasts a smoothed ParamFrame to all overlays.
+func (h *Hub) BroadcastParams(params any) {
+	h.BroadcastJSON(params)
 }

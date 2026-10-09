@@ -76,7 +76,8 @@
           console.log('[SVGTuber] Received reload signal, reloading avatar...');
           loadAvatar();
         } else if (msg.type === 'param_frame') {
-          // Future hooks for Milestone 3 runtime animation
+          window.latestParams = msg;
+          window.dispatchEvent(new CustomEvent('param_frame', { detail: msg }));
         }
       } catch (err) {
         console.error('[SVGTuber] Failed to parse message:', err, event.data);
