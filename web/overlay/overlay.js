@@ -399,14 +399,19 @@
       const isSmile = boundMouthSmile && boundMouthSmile.style.display !== 'none';
       const isOpen = boundMouthOpen && boundMouthOpen.style.display !== 'none';
 
-      if (isSmile) {
-        if (boundMouthNeutral) boundMouthNeutral.style.display = 'none';
-        if (boundMouthOpen) boundMouthOpen.style.display = 'none';
-      } else if (isOpen) {
+      if (isOpen) {
+        // When mouth is open (speaking / wide expression), show open mouth and hide closed lines
         if (boundMouthNeutral) boundMouthNeutral.style.display = 'none';
         if (boundMouthSmile) boundMouthSmile.style.display = 'none';
+      } else if (isSmile) {
+        // Closed smiling mouth
+        if (boundMouthNeutral) boundMouthNeutral.style.display = 'none';
+        if (boundMouthOpen) boundMouthOpen.style.display = 'none';
       } else if (boundMouthNeutral) {
+        // Resting neutral mouth
         boundMouthNeutral.style.display = 'inline';
+        if (boundMouthSmile) boundMouthSmile.style.display = 'none';
+        if (boundMouthOpen) boundMouthOpen.style.display = 'none';
       }
     }
 
