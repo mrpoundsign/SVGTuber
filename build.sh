@@ -6,8 +6,9 @@ TARGET="${1:-build}"
 case "$TARGET" in
   build)
     echo "==> Building svgtuber binary..."
-    CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.1.0-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o svgtuber ./cmd/svgtuber
-    echo "==> Successfully built svgtuber"
+    mkdir -p build
+    CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.1.0-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber ./cmd/svgtuber
+    echo "==> Successfully built build/svgtuber"
     ;;
   test)
     echo "==> Running unit tests..."
@@ -19,8 +20,9 @@ case "$TARGET" in
     ;;
   windows)
     echo "==> Building svgtuber.exe (Windows amd64)..."
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.1.0-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o svgtuber.exe ./cmd/svgtuber
-    echo "==> Successfully built svgtuber.exe"
+    mkdir -p build
+    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.1.0-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber.exe ./cmd/svgtuber
+    echo "==> Successfully built build/svgtuber.exe"
     ;;
   all)
     "$0" build
@@ -33,10 +35,15 @@ case "$TARGET" in
     ;;
   run)
     "$0" build
-    ./svgtuber -avatar testdata/test_avatar.svg
+    ./build/svgtuber -avatar testdata/test_avatar.svg
+    ;;
+  clean)
+    echo "==> Cleaning build artifacts..."
+    rm -rf build/
+    echo "==> Clean complete"
     ;;
   *)
-    echo "Usage: $0 [build|windows|all|test|vet|check|run]"
+    echo "Usage: $0 [build|windows|all|test|vet|check|run|clean]"
     exit 1
     ;;
 esac

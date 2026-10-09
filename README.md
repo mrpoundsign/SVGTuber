@@ -21,11 +21,12 @@ Unlike traditional PNGTuber tools that swap static bitmaps, SVGTuber preserves n
 
 ### 1. Build & Run
 ```bash
-# Build the binary
-go build -o svgtuber ./cmd/svgtuber
+# Build using the build script:
+./build.sh build       # builds build/svgtuber (Linux)
+./build.sh windows     # builds build/svgtuber.exe (Windows)
 
 # Run with the sample avatar
-./svgtuber -avatar testdata/test_avatar.svg
+./build/svgtuber -avatar testdata/test_avatar.svg
 ```
 
 ### 2. Add to OBS Studio
