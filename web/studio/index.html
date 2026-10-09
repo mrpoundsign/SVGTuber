@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVGTuber - Studio</title>
+  <style>
+    :root {
+      --bg-primary: #121216;
+      --bg-card: #1c1c24;
+      --border-color: #2e2e3d;
+      --text-main: #f0f0f5;
+      --text-muted: #8e8ea0;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --success: #22c55e;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand h1 {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #272738;
+      color: #a5a5cc;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      display: inline-block;
+      margin-right: 6px;
+    }
+    main {
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      flex: 1;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .preview-box {
+      flex: 1;
+      min-height: 320px;
+      background: #181820;
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 16px;
+    }
+    .preview-box img, .preview-box svg {
+      max-width: 100%;
+      max-height: 280px;
+      object-fit: contain;
+    }
+    .obs-link-box {
+      background: #181820;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 12px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: var(--accent-hover);
+    }
+    .btn-secondary {
+      background: #2a2a3c;
+      color: var(--text-main);
+    }
+    .btn-secondary:hover {
+      background: #37374d;
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 12px 24px;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>SVGTuber Studio</h1>
+      <span class="badge">Milestone 1</span>
+    </div>
+    <div>
+      <span class="status-dot"></span>
+      <span style="font-size: 13px;">Server Online</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="card-title">
+        <span>Avatar Preview</span>
+        <button class="btn btn-secondary" onclick="reloadAvatar()">Refresh</button>
+      </div>
+      <div class="preview-box">
+        <img id="avatar-img" src="/avatar.svg" alt="Avatar Preview" />
+      </div>
+      <p class="hint">Hot-reloading is active. Edits saved in Inkscape will instantly refresh this preview and the OBS overlay.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">OBS Browser Source Setup</div>
+      <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5;">
+        Add a <strong>Browser Source</strong> in OBS Studio pointing to the URL below. Ensure <em>Shutdown source when not visible</em> is disabled for instantaneous transitions.
+      </p>
+
+      <div class="obs-link-box">
+        <span id="overlay-url">http://localhost:7420/overlay</span>
+        <button class="btn btn-secondary" onclick="copyOverlayUrl()">Copy URL</button>
+      </div>
+
+      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+        <div class="card-title">Camera & Tracking Status</div>
+        <div style="background: #181820; border-radius: 8px; padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <p>📷 MediaPipe Face Tracking will be connected in <strong>Milestone 2</strong>.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    SVGTuber &bull; Vector VTuber Engine for Inkscape & OBS
+  </footer>
+
+  <script>
+    const overlayUrlSpan = document.getElementById('overlay-url');
+    overlayUrlSpan.textContent = `${window.location.origin}/overlay`;
+
+    function copyOverlayUrl() {
+      const url = `${window.location.origin}/overlay`;
+      navigator.clipboard.writeText(url).then(() => {
+        alert('Copied overlay URL to clipboard!');
+      });
+    }
+
+    function reloadAvatar() {
+      const img = document.getElementById('avatar-img');
+      img.src = `/avatar.svg?t=${Date.now()}`;
+    }
+  </script>
+</body>
+</html>

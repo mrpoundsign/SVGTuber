@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+     width="512" height="512" viewBox="0 0 512 512" version="1.1">
+  <defs>
+    <radialGradient id="faceGrad" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#ffeacc"/>
+      <stop offset="100%" stop-color="#ffd59e"/>
+    </radialGradient>
+    <linearGradient id="hairGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Body / Torso Layer -->
+  <g inkscape:groupmode="layer" id="layer_body" inkscape:label="Body">
+    <path d="M 176 380 Q 256 360 336 380 L 370 512 L 142 512 Z" fill="#1e1b4b" stroke="#312e81" stroke-width="4"/>
+    <path d="M 230 380 L 256 420 L 282 380 Z" fill="#ffffff"/>
+  </g>
+
+  <!-- Head & Face Layer -->
+  <g inkscape:groupmode="layer" id="layer_head" inkscape:label="Head [Follow {yaw: 15; pitch: 10}]">
+    <!-- Back Hair -->
+    <path d="M 120 220 Q 90 340 140 400 Q 180 320 180 260 Z" fill="url(#hairGrad)"/>
+    <path d="M 392 220 Q 422 340 372 400 Q 332 320 332 260 Z" fill="url(#hairGrad)"/>
+
+    <!-- Head Shape -->
+    <ellipse cx="256" cy="250" rx="120" ry="130" fill="url(#faceGrad)" stroke="#e2b885" stroke-width="3"/>
+
+    <!-- Blush -->
+    <ellipse cx="180" cy="280" rx="20" ry="10" fill="#f43f5e" opacity="0.35"/>
+    <ellipse cx="332" cy="280" rx="20" ry="10" fill="#f43f5e" opacity="0.35"/>
+
+    <!-- Eyes (Open State) -->
+    <g id="eyes_open" inkscape:label="Eyes Open [Hide {when: blinkL > 0.5}]">
+      <!-- Left Eye -->
+      <circle cx="206" cy="235" r="22" fill="#ffffff" stroke="#1e1b4b" stroke-width="3"/>
+      <circle id="pupil_left" cx="206" cy="235" r="14" fill="#312e81"/>
+      <circle cx="212" cy="229" r="5" fill="#ffffff"/>
+
+      <!-- Right Eye -->
+      <circle cx="306" cy="235" r="22" fill="#ffffff" stroke="#1e1b4b" stroke-width="3"/>
+      <circle id="pupil_right" cx="306" cy="235" r="14" fill="#312e81"/>
+      <circle cx="312" cy="229" r="5" fill="#ffffff"/>
+    </g>
+
+    <!-- Eyes (Closed / Blink State) -->
+    <g id="eyes_closed" inkscape:label="Eyes Closed [Show {when: blinkL > 0.5}]" style="display: none;">
+      <path d="M 186 240 Q 206 250 226 240" fill="none" stroke="#1e1b4b" stroke-width="4" stroke-linecap="round"/>
+      <path d="M 286 240 Q 306 250 326 240" fill="none" stroke="#1e1b4b" stroke-width="4" stroke-linecap="round"/>
+    </g>
+
+    <!-- Mouth (Neutral) -->
+    <g id="mouth_neutral" inkscape:label="Mouth Neutral [Hide {when: mouthOpen > 0.2}]">
+      <path d="M 240 305 Q 256 315 272 305" fill="none" stroke="#be123c" stroke-width="4" stroke-linecap="round"/>
+    </g>
+
+    <!-- Mouth (Open) -->
+    <g id="mouth_open" inkscape:label="Mouth Open [Show {when: mouthOpen > 0.2}]" style="display: none;">
+      <ellipse cx="256" cy="315" rx="18" ry="14" fill="#be123c" stroke="#9f1239" stroke-width="3"/>
+      <path d="M 244 322 Q 256 312 268 322 Z" fill="#fb7185"/>
+    </g>
+
+    <!-- Front Bangs / Hair -->
+    <g id="hair_front" inkscape:label="Front Hair [Dist {factor: 0.15}]">
+      <path d="M 136 210 Q 160 130 256 130 Q 352 130 376 210 Q 320 160 256 180 Q 192 160 136 210 Z" fill="url(#hairGrad)"/>
+      <path d="M 220 170 Q 240 220 236 230 Q 250 190 260 175 Z" fill="#3730a3"/>
+    </g>
+  </g>
+</svg>

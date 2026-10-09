@@ -3,6 +3,7 @@
 *.dll
 *.so
 *.dylib
+/svgtuber
 dist/
 build/
 scratch/
