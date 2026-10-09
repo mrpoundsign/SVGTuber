@@ -18,6 +18,15 @@ const btnCalibrate = document.getElementById("btn-calibrate");
 const trackingStatus = document.getElementById("tracking-status");
 const fpsDisplay = document.getElementById("fps-display");
 
+// Audio Controls & VU Meter
+const micSelect = document.getElementById("mic-select");
+const btnToggleMic = document.getElementById("btn-toggle-mic");
+const modeSelect = document.getElementById("mode-select");
+const settingsModeSelect = document.getElementById("settings-mode-select");
+const vuMeterBar = document.getElementById("vu-meter-bar");
+const noiseGateMarker = document.getElementById("noise-gate-marker");
+const valVuMeter = document.getElementById("val-vu-meter");
+
 // Gauges
 const gaugeYaw = document.getElementById("gauge-yaw");
 const gaugePitch = document.getElementById("gauge-pitch");
@@ -46,6 +55,14 @@ let animFrameId = null;
 let tickerWorker = null;
 let audioContext = null;
 
+// Audio Streaming State
+let micStream = null;
+let micSource = null;
+let analyserNode = null;
+let audioDataArray = null;
+let micRunning = false;
+let smoothedAudioVol = 0;
+
 // Inline Web Worker ticker to maintain 60 FPS in background tabs
 function initTickerWorker() {
   if (tickerWorker) return;
@@ -70,11 +87,16 @@ function initTickerWorker() {
 
     tickerWorker = new Worker(URL.createObjectURL(workerBlob));
     tickerWorker.onmessage = () => {
-      if (!webcamRunning) return;
-      // In background tabs, requestAnimationFrame is paused by the browser.
-      // The worker tick steps the detection loop without screen redraw.
-      if (document.hidden) {
-        processFrame(false);
+      if (webcamRunning) {
+        // In background tabs, requestAnimationFrame is paused by the browser.
+        // The worker tick steps the detection loop without screen redraw.
+        if (document.hidden) {
+          processFrame(false);
+        }
+      } else if (micRunning) {
+        if (document.hidden) {
+          processAudioOnlyFrame(false);
+        }
       }
     };
   } catch (err) {
@@ -82,8 +104,8 @@ function initTickerWorker() {
   }
 }
 
-// Silent AudioContext keep-alive to prevent Chromium from throttling/discarding background tab
-function startAudioKeepAlive() {
+// AudioContext & silent keep-alive to prevent Chromium from throttling/discarding background tab
+function getOrCreateAudioContext() {
   try {
     if (!audioContext) {
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -100,14 +122,199 @@ function startAudioKeepAlive() {
   } catch (e) {
     console.warn("[Studio Tracker] Web Audio keep-alive error:", e);
   }
+  return audioContext;
 }
 
 function stopAudioKeepAlive() {
-  if (audioContext) {
+  if (audioContext && !micRunning) {
     try {
       audioContext.close();
     } catch (e) {}
     audioContext = null;
+  }
+}
+
+// Enumerate audio input devices
+async function populateAudioDevices() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioDevices = devices.filter(d => d.kind === "audioinput");
+    if (micSelect) {
+      const currentVal = micSelect.value;
+      micSelect.innerHTML = "";
+      if (audioDevices.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "Default Microphone";
+        micSelect.appendChild(option);
+      } else {
+        audioDevices.forEach((device, i) => {
+          const option = document.createElement("option");
+          option.value = device.deviceId;
+          option.textContent = device.label || `Microphone ${i + 1}`;
+          micSelect.appendChild(option);
+        });
+        if (currentVal) micSelect.value = currentVal;
+      }
+    }
+  } catch (err) {
+    console.warn("[Studio Tracker] Could not enumerate audio devices:", err);
+  }
+}
+
+// Web Audio API Microphone Capture
+async function toggleMic() {
+  if (micRunning) {
+    stopMic();
+    return;
+  }
+  await startMic();
+}
+
+async function startMic() {
+  const ctx = getOrCreateAudioContext();
+  const deviceId = micSelect ? micSelect.value : "";
+  const constraints = {
+    audio: deviceId ? { deviceId: { exact: deviceId } } : true
+  };
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia(constraints);
+    micSource = ctx.createMediaStreamSource(micStream);
+    analyserNode = ctx.createAnalyser();
+    analyserNode.fftSize = 512;
+    analyserNode.smoothingTimeConstant = 0.2;
+    micSource.connect(analyserNode);
+    audioDataArray = new Float32Array(analyserNode.fftSize);
+
+    micRunning = true;
+    if (btnToggleMic) {
+      btnToggleMic.textContent = "Stop Mic";
+      btnToggleMic.classList.add("btn-danger");
+    }
+
+    await populateAudioDevices();
+
+    if (tickerWorker) {
+      tickerWorker.postMessage('start');
+    }
+
+    if (!webcamRunning) {
+      startAudioOnlyLoop();
+    }
+  } catch (err) {
+    console.error("[Studio Tracker] Microphone access error:", err);
+    updateStatus(`Mic error: ${err.message}`, "status-warn");
+  }
+}
+
+function stopMic() {
+  micRunning = false;
+  if (micSource) {
+    try { micSource.disconnect(); } catch (e) {}
+    micSource = null;
+  }
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  }
+  analyserNode = null;
+  audioDataArray = null;
+  smoothedAudioVol = 0;
+
+  if (btnToggleMic) {
+    btnToggleMic.textContent = "Start Mic";
+    btnToggleMic.classList.remove("btn-danger");
+  }
+  if (vuMeterBar) vuMeterBar.style.width = "0%";
+  if (valVuMeter) valVuMeter.textContent = "0%";
+
+  if (!webcamRunning) {
+    if (tickerWorker) tickerWorker.postMessage('stop');
+    stopAudioKeepAlive();
+    sendTrackingLoss({ volume: 0, isSpeaking: false });
+  }
+}
+
+// Compute RMS Audio Volume & Speech Gate
+function sampleAudio() {
+  if (!micRunning || !analyserNode || !audioDataArray) {
+    return null;
+  }
+  analyserNode.getFloatTimeDomainData(audioDataArray);
+  let sum = 0;
+  for (let i = 0; i < audioDataArray.length; i++) {
+    const v = audioDataArray[i];
+    sum += v * v;
+  }
+  const rms = Math.sqrt(sum / audioDataArray.length);
+
+  const decay = parseFloat(sliderDecaySmooth?.value || 0.10);
+  if (rms > smoothedAudioVol) {
+    smoothedAudioVol = rms; // instant attack
+  } else {
+    smoothedAudioVol = smoothedAudioVol * (1 - decay) + rms * decay; // smooth release
+  }
+
+  const micGain = parseFloat(sliderMicGain?.value || 1.5);
+  const noiseGate = parseFloat(sliderNoiseGate?.value || 0.04);
+  const isSpeaking = (smoothedAudioVol * micGain) >= noiseGate;
+
+  return { active: true, volume: smoothedAudioVol, isSpeaking };
+}
+
+function updateAudioUI(audioState) {
+  if (!vuMeterBar || !valVuMeter) return;
+  if (!audioState || !audioState.active) {
+    vuMeterBar.style.width = "0%";
+    valVuMeter.textContent = "0%";
+    vuMeterBar.style.background = "#4b5563";
+    return;
+  }
+  const micGain = parseFloat(sliderMicGain?.value || 1.5);
+  const noiseGate = parseFloat(sliderNoiseGate?.value || 0.04);
+
+  const displayPercent = Math.min(100, Math.round(audioState.volume * micGain * 100));
+  vuMeterBar.style.width = `${displayPercent}%`;
+  valVuMeter.textContent = `${displayPercent}%`;
+
+  if (audioState.isSpeaking) {
+    vuMeterBar.style.background = "#22c55e"; // bright green
+  } else {
+    vuMeterBar.style.background = "#4b5563"; // gray below noise gate
+  }
+
+  if (noiseGateMarker) {
+    const gatePercent = Math.min(100, Math.round(noiseGate * 100));
+    noiseGateMarker.style.left = `${gatePercent}%`;
+  }
+}
+
+function startAudioOnlyLoop() {
+  function audioLoop() {
+    if (!micRunning || webcamRunning) return;
+    if (!document.hidden) {
+      processAudioOnlyFrame(true);
+    }
+    requestAnimationFrame(audioLoop);
+  }
+  requestAnimationFrame(audioLoop);
+}
+
+function processAudioOnlyFrame(renderUI = true) {
+  if (!micRunning) return;
+  const now = performance.now();
+  const audioState = sampleAudio();
+  if (renderUI) {
+    updateAudioUI(audioState);
+  }
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    const frame = {
+      timestamp: now,
+      present: false,
+      audio: audioState
+    };
+    socket.send(JSON.stringify(frame));
   }
 }
 
@@ -192,6 +399,7 @@ async function initMediaPipe() {
     btnToggleCamera.disabled = false;
     initTickerWorker();
     await populateCameraDevices();
+    await populateAudioDevices();
   } catch (err) {
     console.error("[Studio Tracker] Failed to initialize MediaPipe:", err);
     updateStatus(`Error loading AI model: ${err.message}`, "status-error");
@@ -222,10 +430,14 @@ async function toggleCamera() {
       cancelAnimationFrame(animFrameId);
       animFrameId = null;
     }
-    if (tickerWorker) {
-      tickerWorker.postMessage('stop');
+    if (micRunning) {
+      startAudioOnlyLoop();
+    } else {
+      if (tickerWorker) {
+        tickerWorker.postMessage('stop');
+      }
+      stopAudioKeepAlive();
     }
-    stopAudioKeepAlive();
 
     if (video.srcObject) {
       video.srcObject.getTracks().forEach(t => t.stop());
@@ -233,7 +445,7 @@ async function toggleCamera() {
     }
     btnToggleCamera.textContent = "Start Camera";
     btnToggleCamera.classList.remove("btn-danger");
-    updateStatus("Camera Stopped", "status-warn");
+    updateStatus(micRunning ? "Audio Lip-Sync Active" : "Camera Stopped", micRunning ? "status-ok" : "status-warn");
     canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
     sendTrackingLoss();
     return;
@@ -261,9 +473,14 @@ async function toggleCamera() {
       canvas.height = video.videoHeight;
 
       // Start background keep-alive mechanisms
-      startAudioKeepAlive();
+      getOrCreateAudioContext();
       if (tickerWorker) {
         tickerWorker.postMessage('start');
+      }
+
+      // Auto-start microphone if not running yet
+      if (!micRunning) {
+        startMic().catch(e => console.warn("[Studio Tracker] Auto-start mic:", e));
       }
 
       animFrameId = requestAnimationFrame(predictLoop);
@@ -332,6 +549,12 @@ function processFrame(renderUI = true) {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
       }
 
+      // Sample Audio
+      const audioState = sampleAudio();
+      if (renderUI) {
+        updateAudioUI(audioState);
+      }
+
       // Stream to Go server
       if (socket && socket.readyState === WebSocket.OPEN) {
         const frame = {
@@ -343,7 +566,8 @@ function processFrame(renderUI = true) {
           x: pose.x,
           y: pose.y,
           z: pose.z,
-          blendshapes: blendshapes
+          blendshapes: blendshapes,
+          audio: audioState
         };
         socket.send(JSON.stringify(frame));
       }
@@ -363,7 +587,11 @@ function processFrame(renderUI = true) {
         updateStatus("Tracking Face", "status-ok");
       }
     } else {
-      sendTrackingLoss();
+      const audioState = sampleAudio();
+      if (renderUI) {
+        updateAudioUI(audioState);
+      }
+      sendTrackingLoss(audioState);
       if (renderUI) {
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
         updateStatus("No Face Detected", "status-warn");
@@ -403,11 +631,12 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-function sendTrackingLoss() {
+function sendTrackingLoss(audioState) {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({
       timestamp: performance.now(),
-      present: false
+      present: false,
+      audio: audioState || sampleAudio()
     }));
   }
 }
@@ -440,6 +669,17 @@ btnCalibrate.addEventListener("click", () => {
 });
 
 btnToggleCamera.addEventListener("click", toggleCamera);
+if (btnToggleMic) {
+  btnToggleMic.addEventListener("click", toggleMic);
+}
+if (micSelect) {
+  micSelect.addEventListener("change", () => {
+    if (micRunning) {
+      // Reconnect with new device
+      startMic();
+    }
+  });
+}
 
 // Setup on load
 connectWebSocket();
@@ -452,6 +692,14 @@ const sliderBlinkThreshold = document.getElementById("slider-blink-threshold");
 const sliderEyeGain = document.getElementById("slider-eye-gain");
 const sliderYawMultiplier = document.getElementById("slider-yaw-multiplier");
 const sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier");
+
+// Audio Settings Sliders
+const sliderMicGain = document.getElementById("slider-mic-gain");
+const sliderNoiseGate = document.getElementById("slider-noise-gate");
+const sliderDecaySmooth = document.getElementById("slider-decay-smooth");
+const valMicGain = document.getElementById("val-mic-gain");
+const valNoiseGate = document.getElementById("val-noise-gate");
+const valDecaySmooth = document.getElementById("val-decay-smooth");
 
 const valMouthGain = document.getElementById("val-mouth-gain");
 const valMouthThreshold = document.getElementById("val-mouth-threshold");
@@ -484,15 +732,25 @@ async function loadSettings() {
 }
 
 function syncSettingsToUI(s) {
-  if (!s || !s.tracking) return;
-  const t = s.tracking;
-
-  if (sliderMouthGain) sliderMouthGain.value = t.mouthGain || 1.4;
-  if (sliderMouthThreshold) sliderMouthThreshold.value = t.mouthThreshold || 0.08;
-  if (sliderBlinkThreshold) sliderBlinkThreshold.value = t.blinkThreshold || 0.45;
-  if (sliderEyeGain) sliderEyeGain.value = t.eyeGazeGain || 1.0;
-  if (sliderYawMultiplier) sliderYawMultiplier.value = t.yawMultiplier || 1.0;
-  if (sliderPitchMultiplier) sliderPitchMultiplier.value = t.pitchMultiplier || 1.0;
+  if (!s) return;
+  if (s.tracking) {
+    const t = s.tracking;
+    if (sliderMouthGain) sliderMouthGain.value = t.mouthGain || 1.4;
+    if (sliderMouthThreshold) sliderMouthThreshold.value = t.mouthThreshold || 0.08;
+    if (sliderBlinkThreshold) sliderBlinkThreshold.value = t.blinkThreshold || 0.45;
+    if (sliderEyeGain) sliderEyeGain.value = t.eyeGazeGain || 1.0;
+    if (sliderYawMultiplier) sliderYawMultiplier.value = t.yawMultiplier || 1.0;
+    if (sliderPitchMultiplier) sliderPitchMultiplier.value = t.pitchMultiplier || 1.0;
+  }
+  if (s.audio) {
+    const a = s.audio;
+    const mode = a.mode || "hybrid";
+    if (modeSelect) modeSelect.value = mode;
+    if (settingsModeSelect) settingsModeSelect.value = mode;
+    if (sliderMicGain) sliderMicGain.value = a.micGain || 1.5;
+    if (sliderNoiseGate) sliderNoiseGate.value = a.noiseGate || 0.04;
+    if (sliderDecaySmooth) sliderDecaySmooth.value = a.decaySmooth || 0.10;
+  }
 
   updateSliderLabels();
 }
@@ -504,6 +762,16 @@ function updateSliderLabels() {
   if (valEyeGain && sliderEyeGain) valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
   if (valYawMultiplier && sliderYawMultiplier) valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier) valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
+
+  if (valMicGain && sliderMicGain) valMicGain.textContent = `${parseFloat(sliderMicGain.value).toFixed(1)}x`;
+  if (valNoiseGate && sliderNoiseGate) valNoiseGate.textContent = parseFloat(sliderNoiseGate.value).toFixed(2);
+  if (valDecaySmooth && sliderDecaySmooth) valDecaySmooth.textContent = parseFloat(sliderDecaySmooth.value).toFixed(2);
+
+  // Update noise gate marker on VU meter
+  if (noiseGateMarker && sliderNoiseGate) {
+    const gatePercent = Math.min(100, Math.round(parseFloat(sliderNoiseGate.value) * 100));
+    noiseGateMarker.style.left = `${gatePercent}%`;
+  }
 }
 
 function collectSettingsFromUI() {
@@ -518,6 +786,12 @@ function collectSettingsFromUI() {
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || 1.0),
       rollMultiplier: 1.0,
       poseSmoothing: 1.0
+    },
+    audio: {
+      mode: settingsModeSelect?.value || modeSelect?.value || "hybrid",
+      micGain: parseFloat(sliderMicGain?.value || 1.5),
+      noiseGate: parseFloat(sliderNoiseGate?.value || 0.04),
+      decaySmooth: parseFloat(sliderDecaySmooth?.value || 0.10)
     }
   };
 }
@@ -558,12 +832,29 @@ function onSliderInput() {
   sliderBlinkThreshold,
   sliderEyeGain,
   sliderYawMultiplier,
-  sliderPitchMultiplier
+  sliderPitchMultiplier,
+  sliderMicGain,
+  sliderNoiseGate,
+  sliderDecaySmooth
 ].forEach(slider => {
   if (slider) {
     slider.addEventListener("input", onSliderInput);
   }
 });
+
+function onModeChange(e) {
+  const newMode = e.target.value;
+  if (modeSelect) modeSelect.value = newMode;
+  if (settingsModeSelect) settingsModeSelect.value = newMode;
+  sendSettingsUpdate(true);
+}
+
+if (modeSelect) {
+  modeSelect.addEventListener("change", onModeChange);
+}
+if (settingsModeSelect) {
+  settingsModeSelect.addEventListener("change", onModeChange);
+}
 
 if (btnSaveSettings) {
   btnSaveSettings.addEventListener("click", () => sendSettingsUpdate(true));

@@ -121,10 +121,10 @@ func TestEngine_EyeGaze(t *testing.T) {
 		Timestamp: 1000,
 		Present:   true,
 		Blendshapes: map[string]float64{
-			"eyeLookInLeft":     0.8,
-			"eyeLookOutRight":   0.8,
-			"eyeLookDownLeft":   0.6,
-			"eyeLookDownRight":  0.6,
+			"eyeLookOutLeft":   0.8,
+			"eyeLookInRight":   0.8,
+			"eyeLookDownLeft":  0.6,
+			"eyeLookDownRight": 0.6,
 		},
 	}
 	out := eng.Process(f)
@@ -140,7 +140,7 @@ func TestEngine_EyeGaze(t *testing.T) {
 func TestEngine_HybridAudioMode(t *testing.T) {
 	eng := NewEngine() // default mode is hybrid
 
-	// 1. Silent mic: mouth should remain closed even with minor optical camera noise
+	// 1. Silent mic: mouth should remain closed with minor optical camera noise
 	fQuiet := FaceFrame{
 		Timestamp: 1000,
 		Present:   true,
@@ -148,6 +148,7 @@ func TestEngine_HybridAudioMode(t *testing.T) {
 			"jawOpen": 0.05, // minor optical noise
 		},
 		Audio: &AudioPayload{
+			Active:     true,
 			Volume:     0.01,
 			IsSpeaking: false,
 		},
@@ -167,6 +168,7 @@ func TestEngine_HybridAudioMode(t *testing.T) {
 				"jawOpen": 0.05,
 			},
 			Audio: &AudioPayload{
+				Active:     true,
 				Volume:     0.5,
 				IsSpeaking: true,
 			},
@@ -179,6 +181,46 @@ func TestEngine_HybridAudioMode(t *testing.T) {
 	}
 	if !outSpeaking.IsSpeaking {
 		t.Errorf("Expected IsSpeaking=true")
+	}
+}
+
+func TestEngine_HybridNoMic_WideMouth(t *testing.T) {
+	eng := NewEngine() // hybrid mode
+
+	// No mic on (Audio is nil)
+	fNoMic := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"jawOpen": 0.35, // user opens mouth wide
+		},
+		Audio: nil,
+	}
+	out := eng.Process(fNoMic)
+	if out.MouthOpen <= 0.2 {
+		t.Errorf("Expected MouthOpen > 0.2 when mouth opened wide without mic, got %f", out.MouthOpen)
+	}
+}
+
+func TestEngine_HybridSilentMic_WideMouth(t *testing.T) {
+	eng := NewEngine() // hybrid mode
+
+	// Mic on, but user is silent (e.g. yawn, silent gasp)
+	fSilentWide := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"jawOpen": 0.35, // user opens mouth wide
+		},
+		Audio: &AudioPayload{
+			Active:     true,
+			Volume:     0.0,
+			IsSpeaking: false,
+		},
+	}
+	out := eng.Process(fSilentWide)
+	if out.MouthOpen <= 0.2 {
+		t.Errorf("Expected MouthOpen > 0.2 for silent wide mouth in hybrid mode, got %f", out.MouthOpen)
 	}
 }
 

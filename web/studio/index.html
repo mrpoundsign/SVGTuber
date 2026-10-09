@@ -357,6 +357,31 @@
         <button id="btn-calibrate" class="btn btn-secondary">Set Neutral Pose</button>
       </div>
 
+      <div class="controls-row" style="margin-top: -6px;">
+        <select id="mic-select">
+          <option value="">Default Microphone</option>
+        </select>
+        <button id="btn-toggle-mic" class="btn">Start Mic</button>
+        <select id="mode-select" style="max-width: 140px;">
+          <option value="hybrid">Hybrid (Cam+Mic)</option>
+          <option value="camera">Camera Only</option>
+          <option value="audio">Audio Only</option>
+        </select>
+      </div>
+
+      <!-- Audio Lip-Sync Gauges -->
+      <div class="gauge-section">
+        <div class="gauge-section-title">Audio Lip-Sync (Web Audio RMS)</div>
+        <div class="gauge-item">
+          <label>Mic Level</label>
+          <div class="gauge-bar-track" style="position: relative;">
+            <div id="vu-meter-bar" class="gauge-bar-fill" style="background: #22c55e; width: 0%;"></div>
+            <div id="noise-gate-marker" title="Noise Gate Threshold" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #f59e0b; left: 4%; z-index: 2;"></div>
+          </div>
+          <span id="val-vu-meter" class="gauge-value">0%</span>
+        </div>
+      </div>
+
       <!-- Head Pose Gauges -->
       <div class="gauge-section">
         <div class="gauge-section-title">Head Orientation (One-Euro Filtered)</div>
@@ -452,7 +477,7 @@
         </div>
 
         <div class="slider-group">
-          <div class="gauge-section-title">Mouth Responsiveness</div>
+          <div class="gauge-section-title">Mouth Responsiveness (Camera)</div>
           <div class="slider-item">
             <label for="slider-mouth-gain">Sensitivity (Gain)</label>
             <input type="range" id="slider-mouth-gain" min="0.5" max="3.0" step="0.05" value="1.4">
@@ -462,6 +487,34 @@
             <label for="slider-mouth-threshold">Open Threshold</label>
             <input type="range" id="slider-mouth-threshold" min="0.02" max="0.25" step="0.01" value="0.08">
             <span id="val-mouth-threshold" class="slider-val">0.08</span>
+          </div>
+        </div>
+
+        <div class="slider-group">
+          <div class="gauge-section-title">Microphone & Lip-Sync (Audio)</div>
+          <div class="slider-item">
+            <label for="settings-mode-select">Tracking Mode</label>
+            <select id="settings-mode-select" style="padding: 4px 8px; font-size: 12px;">
+              <option value="hybrid">Hybrid (Cam + Mic)</option>
+              <option value="camera">Camera Only</option>
+              <option value="audio">Audio Only</option>
+            </select>
+            <span></span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-mic-gain">Mic Gain</label>
+            <input type="range" id="slider-mic-gain" min="0.5" max="4.0" step="0.1" value="1.5">
+            <span id="val-mic-gain" class="slider-val">1.5x</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-noise-gate">Noise Gate</label>
+            <input type="range" id="slider-noise-gate" min="0.005" max="0.15" step="0.005" value="0.04">
+            <span id="val-noise-gate" class="slider-val">0.04</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-decay-smooth">Decay Release</label>
+            <input type="range" id="slider-decay-smooth" min="0.05" max="0.5" step="0.05" value="0.10">
+            <span id="val-decay-smooth" class="slider-val">0.10</span>
           </div>
         </div>
 

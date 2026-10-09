@@ -105,7 +105,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	var audioMouth float64
 	var isSpeaking bool
 	var audioVolume float64
-	if raw.Audio != nil {
+	hasActiveAudio := raw.Audio != nil && (raw.Audio.Active || raw.Audio.Volume > 0 || raw.Audio.IsSpeaking)
+	if hasActiveAudio {
 		audioVolume = raw.Audio.Volume
 		gainVol := raw.Audio.Volume * as.MicGain
 		if gainVol >= as.NoiseGate {
@@ -114,8 +115,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		}
 	}
 
-	// Audio-only mode without camera present
-	if !raw.Present && mode == "audio" {
+	// Audio-driven mode without camera present
+	if !raw.Present && (mode == "audio" || (mode == "hybrid" && isSpeaking)) {
 		return ParamFrame{
 			Type:           "param_frame",
 			T:              raw.Timestamp,
@@ -190,10 +191,12 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		browOuterR := bs["browOuterUpRight"]
 		browUp = (browInner + browOuterL + browOuterR) / 3.0
 
-		// Gaze horizontal: looking right is +X, looking left is -X
+		// Gaze horizontal (mirrored for VTuber / webcam perspective):
+		// When user looks left, pupils move screen-left (-X).
+		// When user looks right, pupils move screen-right (+X).
 		lookRight := (bs["eyeLookInLeft"] + bs["eyeLookOutRight"]) / 2.0
 		lookLeft := (bs["eyeLookOutLeft"] + bs["eyeLookInRight"]) / 2.0
-		eyeX = (lookRight - lookLeft) * ts.EyeGazeGain
+		eyeX = (lookLeft - lookRight) * ts.EyeGazeGain
 
 		// Gaze vertical: SVG Y is downwards, so looking down is +Y, looking up is -Y
 		lookUp := (bs["eyeLookUpLeft"] + bs["eyeLookUpRight"]) / 2.0
@@ -211,14 +214,19 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	case "hybrid":
 		fallthrough
 	default:
-		if raw.Audio != nil {
+		if hasActiveAudio {
 			if isSpeaking {
+				// Voice detected: drive mouth with audio or wide optical expression
 				finalMouth = math.Max(audioMouth, opticalMouth)
+			} else if opticalMouth > ts.MouthThreshold {
+				// Deliberate wide mouth opening even if silent (gasp, yawn, silent expression)
+				finalMouth = opticalMouth
 			} else {
-				// Noise-gated silence: eliminate camera optical mouth jitter
+				// Silent and mouth is near neutral: suppress camera optical jitter
 				finalMouth = 0.0
 			}
 		} else {
+			// No mic active: purely optical camera tracking
 			finalMouth = opticalMouth
 		}
 	}

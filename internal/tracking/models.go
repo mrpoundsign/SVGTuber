@@ -2,6 +2,7 @@ package tracking
 
 // AudioPayload represents microphone audio level and speech state from the Studio.
 type AudioPayload struct {
+	Active     bool    `json:"active"`     // true if microphone is active/running
 	Volume     float64 `json:"volume"`     // normalized RMS volume [0.0, 1.0]
 	IsSpeaking bool    `json:"isSpeaking"` // noise-gated speech trigger
 }
