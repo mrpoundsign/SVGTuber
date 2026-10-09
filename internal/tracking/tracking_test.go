@@ -260,3 +260,225 @@ func TestEngine_AudioOnlyMode(t *testing.T) {
 		t.Errorf("Expected negative HeadY (speech bounce bob), got %f", out.HeadY)
 	}
 }
+
+func TestEngine_IndependentEyeSensitivity(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	s := cfgMgr.Get()
+	s.Tracking.BlinkThresholdL = 0.30
+	s.Tracking.BlinkThresholdR = 0.60
+	s.Tracking.BlinkSyncDelayMs = 0 // test pure independent thresholds without delay
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// Feed frame where raw blink is 0.45 for both eyes
+	// 0.45 >= 0.30 (Left triggered), but 0.45 < 0.60 (Right not triggered)
+	f := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.45,
+			"eyeBlinkRight": 0.45,
+		},
+	}
+	out := eng.Process(f)
+
+	if !out.IsBlinkL {
+		t.Errorf("Expected Left eye to trigger (threshold 0.30, got %f)", out.BlinkL)
+	}
+	if out.IsBlinkR {
+		t.Errorf("Expected Right eye NOT to trigger (threshold 0.60, got %f)", out.BlinkR)
+	}
+}
+
+func TestEngine_BlinkSynchronizationDelay(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	s := cfgMgr.Get()
+	s.Tracking.BlinkThresholdL = 0.45
+	s.Tracking.BlinkThresholdR = 0.45
+	s.Tracking.BlinkSyncDelayMs = 50.0 // 50ms sync window
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// Step 1: Left eye closes at t=1000ms, Right eye is still open.
+	// Within the 50ms sync window, both eyes should remain open to prevent a 1-frame micro-wink!
+	f1 := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.8,
+			"eyeBlinkRight": 0.1,
+		},
+	}
+	out1 := eng.Process(f1)
+	if out1.IsBlinkL || out1.IsBlinkR {
+		t.Errorf("Expected both eyes open during sync window, got L=%v R=%v", out1.IsBlinkL, out1.IsBlinkR)
+	}
+
+	// Step 2: Right eye closes at t=1030ms (30ms later, within 50ms window).
+	// Bilateral blink confirmed! Both eyes snap shut simultaneously.
+	f2 := FaceFrame{
+		Timestamp: 1030,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.8,
+			"eyeBlinkRight": 0.8,
+		},
+	}
+	out2 := eng.Process(f2)
+	if !out2.IsBlinkL || !out2.IsBlinkR {
+		t.Errorf("Expected both eyes closed together, got L=%v R=%v", out2.IsBlinkL, out2.IsBlinkR)
+	}
+
+	// Step 3: Reopening at t=1120ms. Left eye opens ahead of Right eye (e.g. 0.1 vs 0.55).
+	// Within reopening sync window, hold both eyes closed to prevent reopening flutter!
+	f3 := FaceFrame{
+		Timestamp: 1120,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.1,
+			"eyeBlinkRight": 0.55,
+		},
+	}
+	out3 := eng.Process(f3)
+	if !out3.IsBlinkL || !out3.IsBlinkR {
+		t.Errorf("Expected both eyes to stay closed during reopening sync window, got L=%v R=%v", out3.IsBlinkL, out3.IsBlinkR)
+	}
+
+	// Step 4: Right eye opens at t=1140ms (20ms later). Both eyes open cleanly together.
+	f4 := FaceFrame{
+		Timestamp: 1140,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.1,
+			"eyeBlinkRight": 0.1,
+		},
+	}
+	out4 := eng.Process(f4)
+	if out4.IsBlinkL || out4.IsBlinkR {
+		t.Errorf("Expected both eyes open cleanly, got L=%v R=%v", out4.IsBlinkL, out4.IsBlinkR)
+	}
+}
+
+func TestEngine_IntentionalWink(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	s := cfgMgr.Get()
+	s.Tracking.BlinkThresholdL = 0.45
+	s.Tracking.BlinkThresholdR = 0.45
+	s.Tracking.BlinkSyncDelayMs = 50.0
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// Step 1: Left eye closes at t=1000ms, Right eye open
+	f1 := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.85,
+			"eyeBlinkRight": 0.05,
+		},
+	}
+	_ = eng.Process(f1)
+
+	// Step 2: At t=1060ms (60ms elapsed > 50ms delay), Right eye is STILL open.
+	// Sync delay expired: confirmed intentional wink! Left eye closes, Right eye open.
+	f2 := FaceFrame{
+		Timestamp: 1060,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.85,
+			"eyeBlinkRight": 0.05,
+		},
+	}
+	out2 := eng.Process(f2)
+	if !out2.IsBlinkL {
+		t.Errorf("Expected Left eye to be closed for confirmed wink, got %v", out2.IsBlinkL)
+	}
+	if out2.IsBlinkR {
+		t.Errorf("Expected Right eye to stay open for wink, got %v", out2.IsBlinkR)
+	}
+}
+
+func TestEngine_WinkIsBlink(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	s := cfgMgr.Get()
+	s.Tracking.BlinkThresholdL = 0.45
+	s.Tracking.BlinkThresholdR = 0.45
+	s.Tracking.WinkIsBlink = true
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// Step 1: User winks Left eye only (Right eye open)
+	f1 := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.85,
+			"eyeBlinkRight": 0.05,
+		},
+	}
+	out1 := eng.Process(f1)
+	if !out1.IsBlinkL || !out1.IsBlinkR {
+		t.Errorf("Expected BOTH eyes to close when WinkIsBlink=true, got L=%v R=%v", out1.IsBlinkL, out1.IsBlinkR)
+	}
+	if out1.BlinkL < 0.8 || out1.BlinkR < 0.8 {
+		t.Errorf("Expected mirrored analog blinks, got BlinkL=%f BlinkR=%f", out1.BlinkL, out1.BlinkR)
+	}
+
+	// Step 2: User opens both eyes
+	f2 := FaceFrame{
+		Timestamp: 1030,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.05,
+			"eyeBlinkRight": 0.05,
+		},
+	}
+	out2 := eng.Process(f2)
+	if out2.IsBlinkL || out2.IsBlinkR {
+		t.Errorf("Expected both eyes open when eyes are open, got L=%v R=%v", out2.IsBlinkL, out2.IsBlinkR)
+	}
+
+	// Step 3: User winks Right eye only (Left eye open)
+	f3 := FaceFrame{
+		Timestamp: 1060,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.05,
+			"eyeBlinkRight": 0.90,
+		},
+	}
+	out3 := eng.Process(f3)
+	if !out3.IsBlinkL || !out3.IsBlinkR {
+		t.Errorf("Expected BOTH eyes to close on Right wink when WinkIsBlink=true, got L=%v R=%v", out3.IsBlinkL, out3.IsBlinkR)
+	}
+}
+
+

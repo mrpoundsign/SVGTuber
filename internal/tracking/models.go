@@ -39,9 +39,13 @@ type ParamFrame struct {
 	MouthOpen      float64            `json:"mouthOpen"` // 0.0 to 1.0
 	Smile          float64            `json:"smile"`     // 0.0 to 1.0
 	BrowUp         float64            `json:"browUp"`    // 0.0 to 1.0
-	MouthThreshold float64            `json:"mouthThreshold"`
-	BlinkThreshold float64            `json:"blinkThreshold"`
-	SmileThreshold float64            `json:"smileThreshold"`
+	MouthThreshold   float64            `json:"mouthThreshold"`
+	BlinkThreshold   float64            `json:"blinkThreshold"`
+	BlinkThresholdL  float64            `json:"blinkThresholdL"`
+	BlinkThresholdR  float64            `json:"blinkThresholdR"`
+	BlinkSyncDelayMs float64            `json:"blinkSyncDelayMs"`
+	WinkIsBlink      bool               `json:"winkIsBlink,omitempty"`
+	SmileThreshold   float64            `json:"smileThreshold"`
 	AudioVolume    float64            `json:"audioVolume,omitempty"`
 	IsSpeaking     bool               `json:"isSpeaking,omitempty"`
 	IsBlinkL       bool               `json:"isBlinkL"`

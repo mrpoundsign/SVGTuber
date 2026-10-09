@@ -23,14 +23,14 @@
      inkscape:deskcolor="#505050"
      showgrid="false"
      inkscape:zoom="2.2792969"
-     inkscape:cx="256"
+     inkscape:cx="256.43873"
      inkscape:cy="256"
      inkscape:window-width="2560"
      inkscape:window-height="1369"
      inkscape:window-x="1072"
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
-     inkscape:current-layer="eyes_closed" />
+     inkscape:current-layer="mouth_open" />
   <defs
      id="defs4">
     <radialGradient
@@ -177,11 +177,11 @@
         <circle
            cx="306"
            cy="235"
-           r="22"
            fill="#ffffff"
            stroke="#1e1b4b"
            stroke-width="3"
-           id="circle12" />
+           id="circle12"
+           r="22" />
         <g
            id="pupil_right"
            inkscape:label="Pupil Right [Move {x: eyeX; y: eyeY; range: 6}]">
@@ -259,7 +259,7 @@
     <!-- Mouth (Open) with Scale -->
     <g
        id="mouth_open"
-       inkscape:label="Mouth Open [Show {when: isMouthOpen}; Scale {y: mouthOpen; from: 0.5; to: 1.4; pivot: top}]"
+       inkscape:label="Mouth Open [Show {when: isMouthOpen}; Scale {y: mouthOpen; from: 0.25; to: 1.2; pivot: top}; Scale {x: mouthOpen; from: 0.5; to: 1.2; pivot: top}]"
        style="display: none;">
       <ellipse
          cx="256"
@@ -291,5 +291,10 @@
          fill="#3730a3"
          id="path20" />
     </g>
+    <path
+       style="fill:none;stroke:#280b0b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;paint-order:stroke fill markers"
+       d="m 255.78063,258.41302 c -29.39503,26.76264 2.63239,28.07883 2.63239,28.07883"
+       id="path1"
+       sodipodi:nodetypes="cc" />
   </g>
 </svg>

@@ -13,14 +13,18 @@ import (
 type TrackingSettings struct {
 	MouthGain       float64 `json:"mouthGain"`       // Multiplier on raw jawOpen (default: 1.4)
 	MouthThreshold  float64 `json:"mouthThreshold"`  // Open mouth trigger threshold (default: 0.08)
-	BlinkThreshold  float64 `json:"blinkThreshold"`  // Closed eye trigger threshold (default: 0.45)
-	SmileThreshold  float64 `json:"smileThreshold"`  // Smile trigger threshold (default: 0.50)
-	EnableSmile     bool    `json:"enableSmile"`     // Enable smile expression tracking (default: true)
-	EyeGazeGain     float64 `json:"eyeGazeGain"`     // Multiplier on pupil gaze range (default: 1.0)
-	YawMultiplier   float64 `json:"yawMultiplier"`   // Head yaw rotation sensitivity (default: 1.0)
-	PitchMultiplier float64 `json:"pitchMultiplier"` // Head pitch rotation sensitivity (default: 1.0)
-	RollMultiplier  float64 `json:"rollMultiplier"`  // Head roll tilt sensitivity (default: 1.0)
-	PoseSmoothing   float64 `json:"poseSmoothing"`   // Smoothing strength multiplier (default: 1.0)
+	BlinkThreshold   float64 `json:"blinkThreshold"`   // Closed eye trigger threshold (legacy fallback, default: 0.45)
+	BlinkThresholdL  float64 `json:"blinkThresholdL"`  // Left eye closed trigger threshold (default: 0.45)
+	BlinkThresholdR  float64 `json:"blinkThresholdR"`  // Right eye closed trigger threshold (default: 0.45)
+	BlinkSyncDelayMs float64 `json:"blinkSyncDelayMs"` // Window to synchronize bilateral blinks in ms (default: 50.0)
+	WinkIsBlink      bool    `json:"winkIsBlink"`      // When true, closing either eye closes both eyes (default: false)
+	SmileThreshold   float64 `json:"smileThreshold"`   // Smile trigger threshold (default: 0.50)
+	EnableSmile      bool    `json:"enableSmile"`      // Enable smile expression tracking (default: true)
+	EyeGazeGain      float64 `json:"eyeGazeGain"`      // Multiplier on pupil gaze range (default: 1.0)
+	YawMultiplier    float64 `json:"yawMultiplier"`    // Head yaw rotation sensitivity (default: 1.0)
+	PitchMultiplier  float64 `json:"pitchMultiplier"`  // Head pitch rotation sensitivity (default: 1.0)
+	RollMultiplier   float64 `json:"rollMultiplier"`   // Head roll tilt sensitivity (default: 1.0)
+	PoseSmoothing    float64 `json:"poseSmoothing"`    // Smoothing strength multiplier (default: 1.0)
 }
 
 // AudioSettings contains microphone lip-sync and blending configuration.
@@ -43,16 +47,20 @@ func DefaultSettings() Settings {
 	return Settings{
 		Version: 1,
 		Tracking: TrackingSettings{
-			MouthGain:       1.4,
-			MouthThreshold:  0.08,
-			BlinkThreshold:  0.45,
-			SmileThreshold:  0.50,
-			EnableSmile:     true,
-			EyeGazeGain:     1.0,
-			YawMultiplier:   1.0,
-			PitchMultiplier: 1.0,
-			RollMultiplier:  1.0,
-			PoseSmoothing:   1.0,
+			MouthGain:        1.4,
+			MouthThreshold:   0.08,
+			BlinkThreshold:   0.45,
+			BlinkThresholdL:  0.45,
+			BlinkThresholdR:  0.45,
+			BlinkSyncDelayMs: 50.0,
+			WinkIsBlink:      false,
+			SmileThreshold:   0.50,
+			EnableSmile:      true,
+			EyeGazeGain:      1.0,
+			YawMultiplier:    1.0,
+			PitchMultiplier:  1.0,
+			RollMultiplier:   1.0,
+			PoseSmoothing:    1.0,
 		},
 		Audio: AudioSettings{
 			Mode:        "hybrid",
@@ -166,6 +174,25 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.BlinkThreshold <= 0 {
 		s.Tracking.BlinkThreshold = 0.45
+	}
+	if s.Tracking.BlinkThresholdL <= 0 {
+		if s.Tracking.BlinkThreshold > 0 {
+			s.Tracking.BlinkThresholdL = s.Tracking.BlinkThreshold
+		} else {
+			s.Tracking.BlinkThresholdL = 0.45
+		}
+	}
+	if s.Tracking.BlinkThresholdR <= 0 {
+		if s.Tracking.BlinkThreshold > 0 {
+			s.Tracking.BlinkThresholdR = s.Tracking.BlinkThreshold
+		} else {
+			s.Tracking.BlinkThresholdR = 0.45
+		}
+	}
+	if s.Tracking.BlinkSyncDelayMs < 0 {
+		s.Tracking.BlinkSyncDelayMs = 0
+	} else if s.Tracking.BlinkSyncDelayMs == 0 && s.Tracking.BlinkThresholdL == s.Tracking.BlinkThreshold {
+		s.Tracking.BlinkSyncDelayMs = 50.0
 	}
 	if s.Tracking.SmileThreshold <= 0 {
 		s.Tracking.SmileThreshold = 0.50

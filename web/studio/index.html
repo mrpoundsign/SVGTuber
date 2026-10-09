@@ -413,15 +413,19 @@
         <div class="gauge-section-title">Facial Blendshapes</div>
         <div class="gauge-item">
           <label>Blink Left</label>
-          <div class="gauge-bar-track">
+          <div class="gauge-bar-track" style="position: relative;">
             <div id="gauge-blink-l" class="gauge-bar-fill"></div>
+            <div id="blink-threshold-marker-l" title="Left Eye Threshold" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #38bdf8; left: 45%; z-index: 2;"></div>
           </div>
+          <span id="val-blink-l" class="gauge-value">0%</span>
         </div>
         <div class="gauge-item">
           <label>Blink Right</label>
-          <div class="gauge-bar-track">
+          <div class="gauge-bar-track" style="position: relative;">
             <div id="gauge-blink-r" class="gauge-bar-fill"></div>
+            <div id="blink-threshold-marker-r" title="Right Eye Threshold" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #38bdf8; left: 45%; z-index: 2;"></div>
           </div>
+          <span id="val-blink-r" class="gauge-value">0%</span>
         </div>
         <div class="gauge-item">
           <label>Mouth Open</label>
@@ -536,9 +540,27 @@
         <div class="slider-group">
           <div class="gauge-section-title">Eyes & Head Pose</div>
           <div class="slider-item">
-            <label for="slider-blink-threshold">Blink Threshold</label>
-            <input type="range" id="slider-blink-threshold" min="0.2" max="0.7" step="0.02" value="0.45">
-            <span id="val-blink-threshold" class="slider-val">0.45</span>
+            <label for="slider-blink-threshold-l">Left Eye Threshold</label>
+            <input type="range" id="slider-blink-threshold-l" min="0.2" max="0.7" step="0.02" value="0.45">
+            <span id="val-blink-threshold-l" class="slider-val">0.45</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-blink-threshold-r">Right Eye Threshold</label>
+            <input type="range" id="slider-blink-threshold-r" min="0.2" max="0.7" step="0.02" value="0.45">
+            <span id="val-blink-threshold-r" class="slider-val">0.45</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-blink-sync-delay">Blink Sync Delay</label>
+            <input type="range" id="slider-blink-sync-delay" min="0" max="150" step="5" value="50">
+            <span id="val-blink-sync-delay" class="slider-val">50ms</span>
+          </div>
+          <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between;">
+            <label style="margin-bottom: 0;">Wink is Blink</label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 0;">
+              <input type="checkbox" id="checkbox-wink-is-blink" style="width: 16px; height: 16px; accent-color: var(--accent);">
+              <span style="font-size: 11px; color: var(--text-muted);">Mirror Eyes</span>
+            </label>
+            <span></span>
           </div>
           <div class="slider-item">
             <label for="slider-eye-gain">Pupil Gaze Range</label>

@@ -31,7 +31,10 @@
     smile: 0,
     browUp: 0,
     mouthThreshold: 0.08,
-    blinkThreshold: 0.45
+    blinkThreshold: 0.45,
+    blinkThresholdL: 0.45,
+    blinkThresholdR: 0.45,
+    blinkSyncDelayMs: 50
   };
   let animLoopStarted = false;
 
@@ -245,11 +248,11 @@
           const lower = match.toLowerCase();
           if (lower === 'blinkl' || lower === 'isblinkl') {
             const b = getParam('isBlinkL', null);
-            return String(b !== null ? Boolean(b) : getParam('blinkL', 0) >= getParam('blinkThreshold', 0.45));
+            return String(b !== null ? Boolean(b) : getParam('blinkL', 0) >= getParam('blinkThresholdL', getParam('blinkThreshold', 0.45)));
           }
           if (lower === 'blinkr' || lower === 'isblinkr') {
             const b = getParam('isBlinkR', null);
-            return String(b !== null ? Boolean(b) : getParam('blinkR', 0) >= getParam('blinkThreshold', 0.45));
+            return String(b !== null ? Boolean(b) : getParam('blinkR', 0) >= getParam('blinkThresholdR', getParam('blinkThreshold', 0.45)));
           }
           if (lower === 'mouthopen' || lower === 'ismouthopen') {
             const b = getParam('isMouthOpen', null);

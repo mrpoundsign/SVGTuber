@@ -22,6 +22,17 @@ type Engine struct {
 	filter       *PoseFilter
 	lastRaw      FaceFrame
 	configMgr    *config.Manager
+
+	// Blink synchronization & wink detection state
+	pendingCloseL    bool
+	pendingCloseR    bool
+	pendingOpenL     bool
+	pendingOpenR     bool
+	closeTimeL       float64
+	closeTimeR       float64
+	openTimeL        float64
+	openTimeR        float64
+	inBilateralBlink bool
 }
 
 // NewEngine creates a new tracking Engine.
@@ -76,6 +87,15 @@ func (e *Engine) ResetCalibration() {
 	e.neutralSmile = 0
 	e.neutralMouth = 0
 	e.calibrated = false
+	e.pendingCloseL = false
+	e.pendingCloseR = false
+	e.pendingOpenL = false
+	e.pendingOpenR = false
+	e.closeTimeL = 0
+	e.closeTimeR = 0
+	e.openTimeL = 0
+	e.openTimeR = 0
+	e.inBilateralBlink = false
 	e.filter.Reset()
 }
 
@@ -104,6 +124,29 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		as = def.Audio
 	}
 
+	threshL := ts.BlinkThresholdL
+	if threshL <= 0 {
+		threshL = ts.BlinkThreshold
+	}
+	if threshL <= 0 {
+		threshL = 0.45
+	}
+
+	threshR := ts.BlinkThresholdR
+	if threshR <= 0 {
+		threshR = ts.BlinkThreshold
+	}
+	if threshR <= 0 {
+		threshR = 0.45
+	}
+
+	syncDelay := ts.BlinkSyncDelayMs
+	if syncDelay < 0 {
+		syncDelay = 0
+	} else if syncDelay == 0 && ts.BlinkThresholdL == 0 {
+		syncDelay = 50.0
+	}
+
 	mode := as.Mode
 	if mode == "" {
 		mode = "hybrid"
@@ -126,32 +169,41 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	// Audio-driven mode without camera present
 	if !raw.Present && (mode == "audio" || (mode == "hybrid" && isSpeaking)) {
 		filtMouth := e.filter.mouthOpen.Filter(audioMouth, tSec)
+		e.pendingCloseL = false
+		e.pendingCloseR = false
+		e.pendingOpenL = false
+		e.pendingOpenR = false
+		e.inBilateralBlink = false
 		return ParamFrame{
-			Type:           "param_frame",
-			T:              raw.Timestamp,
-			Present:        true,
-			HeadYaw:        e.filter.yaw.Filter(0, tSec),
-			HeadPitch:      e.filter.pitch.Filter(0, tSec),
-			HeadRoll:       e.filter.roll.Filter(0, tSec),
-			HeadX:          e.filter.x.Filter(0, tSec),
-			HeadY:          e.filter.y.Filter(-audioMouth*4.0, tSec), // subtle speech bob
-			HeadZ:          e.filter.z.Filter(0, tSec),
-			EyeX:           e.filter.eyeX.Filter(0, tSec),
-			EyeY:           e.filter.eyeY.Filter(0, tSec),
-			BlinkL:         e.filter.blinkL.Filter(0, tSec),
-			BlinkR:         e.filter.blinkR.Filter(0, tSec),
-			MouthOpen:      filtMouth,
-			Smile:          e.filter.smile.Filter(0, tSec),
-			BrowUp:         e.filter.browUp.Filter(0, tSec),
-			MouthThreshold: ts.MouthThreshold,
-			BlinkThreshold: ts.BlinkThreshold,
-			SmileThreshold: ts.SmileThreshold,
-			AudioVolume:    audioVolume,
-			IsSpeaking:     isSpeaking,
-			IsBlinkL:       false,
-			IsBlinkR:       false,
-			IsMouthOpen:    filtMouth >= ts.MouthThreshold,
-			IsSmiling:      false,
+			Type:             "param_frame",
+			T:                raw.Timestamp,
+			Present:          true,
+			HeadYaw:          e.filter.yaw.Filter(0, tSec),
+			HeadPitch:        e.filter.pitch.Filter(0, tSec),
+			HeadRoll:         e.filter.roll.Filter(0, tSec),
+			HeadX:            e.filter.x.Filter(0, tSec),
+			HeadY:            e.filter.y.Filter(-audioMouth*4.0, tSec), // subtle speech bob
+			HeadZ:            e.filter.z.Filter(0, tSec),
+			EyeX:             e.filter.eyeX.Filter(0, tSec),
+			EyeY:             e.filter.eyeY.Filter(0, tSec),
+			BlinkL:           e.filter.blinkL.Filter(0, tSec),
+			BlinkR:           e.filter.blinkR.Filter(0, tSec),
+			MouthOpen:        filtMouth,
+			Smile:            e.filter.smile.Filter(0, tSec),
+			BrowUp:           e.filter.browUp.Filter(0, tSec),
+			MouthThreshold:   ts.MouthThreshold,
+			BlinkThreshold:   ts.BlinkThreshold,
+			BlinkThresholdL:  threshL,
+			BlinkThresholdR:  threshR,
+			BlinkSyncDelayMs: syncDelay,
+			WinkIsBlink:      ts.WinkIsBlink,
+			SmileThreshold:   ts.SmileThreshold,
+			AudioVolume:      audioVolume,
+			IsSpeaking:       isSpeaking,
+			IsBlinkL:         false,
+			IsBlinkR:         false,
+			IsMouthOpen:      filtMouth >= ts.MouthThreshold,
+			IsSmiling:        false,
 		}
 	}
 
@@ -161,32 +213,41 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		filtBlinkR := e.filter.blinkR.Filter(0, tSec)
 		filtMouth := e.filter.mouthOpen.Filter(0, tSec)
 		filtSmile := e.filter.smile.Filter(0, tSec)
+		e.pendingCloseL = false
+		e.pendingCloseR = false
+		e.pendingOpenL = false
+		e.pendingOpenR = false
+		e.inBilateralBlink = false
 		return ParamFrame{
-			Type:           "param_frame",
-			T:              raw.Timestamp,
-			Present:        false,
-			HeadYaw:        e.filter.yaw.Filter(0, tSec),
-			HeadPitch:      e.filter.pitch.Filter(0, tSec),
-			HeadRoll:       e.filter.roll.Filter(0, tSec),
-			HeadX:          e.filter.x.Filter(0, tSec),
-			HeadY:          e.filter.y.Filter(0, tSec),
-			HeadZ:          e.filter.z.Filter(0, tSec),
-			EyeX:           e.filter.eyeX.Filter(0, tSec),
-			EyeY:           e.filter.eyeY.Filter(0, tSec),
-			BlinkL:         filtBlinkL,
-			BlinkR:         filtBlinkR,
-			MouthOpen:      filtMouth,
-			Smile:          filtSmile,
-			BrowUp:         e.filter.browUp.Filter(0, tSec),
-			MouthThreshold: ts.MouthThreshold,
-			BlinkThreshold: ts.BlinkThreshold,
-			SmileThreshold: ts.SmileThreshold,
-			AudioVolume:    audioVolume,
-			IsSpeaking:     isSpeaking,
-			IsBlinkL:       filtBlinkL >= ts.BlinkThreshold,
-			IsBlinkR:       filtBlinkR >= ts.BlinkThreshold,
-			IsMouthOpen:    filtMouth >= ts.MouthThreshold,
-			IsSmiling:      filtSmile >= ts.SmileThreshold,
+			Type:             "param_frame",
+			T:                raw.Timestamp,
+			Present:          false,
+			HeadYaw:          e.filter.yaw.Filter(0, tSec),
+			HeadPitch:        e.filter.pitch.Filter(0, tSec),
+			HeadRoll:         e.filter.roll.Filter(0, tSec),
+			HeadX:            e.filter.x.Filter(0, tSec),
+			HeadY:            e.filter.y.Filter(0, tSec),
+			HeadZ:            e.filter.z.Filter(0, tSec),
+			EyeX:             e.filter.eyeX.Filter(0, tSec),
+			EyeY:             e.filter.eyeY.Filter(0, tSec),
+			BlinkL:           filtBlinkL,
+			BlinkR:           filtBlinkR,
+			MouthOpen:        filtMouth,
+			Smile:            filtSmile,
+			BrowUp:           e.filter.browUp.Filter(0, tSec),
+			MouthThreshold:   ts.MouthThreshold,
+			BlinkThreshold:   ts.BlinkThreshold,
+			BlinkThresholdL:  threshL,
+			BlinkThresholdR:  threshR,
+			BlinkSyncDelayMs: syncDelay,
+			WinkIsBlink:      ts.WinkIsBlink,
+			SmileThreshold:   ts.SmileThreshold,
+			AudioVolume:      audioVolume,
+			IsSpeaking:       isSpeaking,
+			IsBlinkL:         filtBlinkL >= threshL,
+			IsBlinkR:         filtBlinkR >= threshR,
+			IsMouthOpen:      filtMouth >= ts.MouthThreshold,
+			IsSmiling:        filtSmile >= ts.SmileThreshold,
 		}
 	}
 
@@ -287,32 +348,166 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	filtMouth := e.filter.mouthOpen.Filter(finalMouth, tSec)
 	filtSmile := e.filter.smile.Filter(smile, tSec)
 
-	return ParamFrame{
-		Type:           "param_frame",
-		T:              raw.Timestamp,
-		Present:        true,
-		HeadYaw:        e.filter.yaw.Filter(yaw, tSec),
-		HeadPitch:      e.filter.pitch.Filter(pitch, tSec),
-		HeadRoll:       e.filter.roll.Filter(roll, tSec),
-		HeadX:          e.filter.x.Filter(x, tSec),
-		HeadY:          e.filter.y.Filter(y, tSec),
-		HeadZ:          e.filter.z.Filter(z, tSec),
-		EyeX:           e.filter.eyeX.Filter(eyeX, tSec),
-		EyeY:           e.filter.eyeY.Filter(eyeY, tSec),
-		BlinkL:         filtBlinkL,
-		BlinkR:         filtBlinkR,
-		MouthOpen:      filtMouth,
-		Smile:          filtSmile,
-		BrowUp:         e.filter.browUp.Filter(browUp, tSec),
-		MouthThreshold: ts.MouthThreshold,
-		BlinkThreshold: ts.BlinkThreshold,
-		SmileThreshold: ts.SmileThreshold,
-		AudioVolume:    audioVolume,
-		IsSpeaking:     isSpeaking,
-		IsBlinkL:       filtBlinkL >= ts.BlinkThreshold,
-		IsBlinkR:       filtBlinkR >= ts.BlinkThreshold,
-		IsMouthOpen:    filtMouth >= ts.MouthThreshold,
-		IsSmiling:      filtSmile >= ts.SmileThreshold,
-		Raw:            raw.Blendshapes,
+	var isBlinkL, isBlinkR bool
+	if ts.WinkIsBlink {
+		e.pendingCloseL = false
+		e.pendingCloseR = false
+		e.pendingOpenL = false
+		e.pendingOpenR = false
+		closed := (blinkL >= threshL) || (blinkR >= threshR)
+		isBlinkL = closed
+		isBlinkR = closed
+		e.inBilateralBlink = closed
+		maxBlink := math.Max(filtBlinkL, filtBlinkR)
+		filtBlinkL = maxBlink
+		filtBlinkR = maxBlink
+	} else {
+		isBlinkL, isBlinkR = e.evaluateBlinks(blinkL, blinkR, threshL, threshR, syncDelay, raw.Timestamp)
 	}
+
+	return ParamFrame{
+		Type:             "param_frame",
+		T:                raw.Timestamp,
+		Present:          true,
+		HeadYaw:          e.filter.yaw.Filter(yaw, tSec),
+		HeadPitch:        e.filter.pitch.Filter(pitch, tSec),
+		HeadRoll:         e.filter.roll.Filter(roll, tSec),
+		HeadX:            e.filter.x.Filter(x, tSec),
+		HeadY:            e.filter.y.Filter(y, tSec),
+		HeadZ:            e.filter.z.Filter(z, tSec),
+		EyeX:             e.filter.eyeX.Filter(eyeX, tSec),
+		EyeY:             e.filter.eyeY.Filter(eyeY, tSec),
+		BlinkL:           filtBlinkL,
+		BlinkR:           filtBlinkR,
+		MouthOpen:        filtMouth,
+		Smile:            filtSmile,
+		BrowUp:           e.filter.browUp.Filter(browUp, tSec),
+		MouthThreshold:   ts.MouthThreshold,
+		BlinkThreshold:   ts.BlinkThreshold,
+		BlinkThresholdL:  threshL,
+		BlinkThresholdR:  threshR,
+		BlinkSyncDelayMs: syncDelay,
+		WinkIsBlink:      ts.WinkIsBlink,
+		SmileThreshold:   ts.SmileThreshold,
+		AudioVolume:      audioVolume,
+		IsSpeaking:       isSpeaking,
+		IsBlinkL:         isBlinkL,
+		IsBlinkR:         isBlinkR,
+		IsMouthOpen:      filtMouth >= ts.MouthThreshold,
+		IsSmiling:        filtSmile >= ts.SmileThreshold,
+		Raw:              raw.Blendshapes,
+	}
+}
+
+// evaluateBlinks applies independent thresholds and a synchronization delay window to
+// discriminate between natural bilateral blinks and intentional unilateral winks.
+func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs float64) (bool, bool) {
+	rawL := filtL >= threshL
+	rawR := filtR >= threshR
+
+	if syncDelay <= 0 {
+		e.pendingCloseL = false
+		e.pendingCloseR = false
+		e.pendingOpenL = false
+		e.pendingOpenR = false
+		e.inBilateralBlink = rawL && rawR
+		return rawL, rawR
+	}
+
+	// Guard against non-monotonic or wildly erratic timestamps
+	if e.pendingCloseL && (nowMs < e.closeTimeL || nowMs-e.closeTimeL > 2000) {
+		e.pendingCloseL = false
+	}
+	if e.pendingCloseR && (nowMs < e.closeTimeR || nowMs-e.closeTimeR > 2000) {
+		e.pendingCloseR = false
+	}
+	if e.pendingOpenL && (nowMs < e.openTimeL || nowMs-e.openTimeL > 2000) {
+		e.pendingOpenL = false
+	}
+	if e.pendingOpenR && (nowMs < e.openTimeR || nowMs-e.openTimeR > 2000) {
+		e.pendingOpenR = false
+	}
+
+	// Case 1: Both eyes closed simultaneously
+	if rawL && rawR {
+		e.pendingCloseL = false
+		e.pendingCloseR = false
+		e.pendingOpenL = false
+		e.pendingOpenR = false
+		e.inBilateralBlink = true
+		return true, true
+	}
+
+	// Case 2: Both eyes open simultaneously
+	if !rawL && !rawR {
+		e.pendingCloseL = false
+		e.pendingCloseR = false
+		e.pendingOpenL = false
+		e.pendingOpenR = false
+		e.inBilateralBlink = false
+		return false, false
+	}
+
+	// Case 3: Reopening from an existing bilateral blink.
+	// If one eye opens slightly ahead of the other during a normal blink release,
+	// hold both closed for the syncDelay window to prevent exit winking flutter.
+	if e.inBilateralBlink {
+		if !rawL && rawR {
+			if !e.pendingOpenL {
+				e.pendingOpenL = true
+				e.openTimeL = nowMs
+			}
+			if nowMs-e.openTimeL < syncDelay && nowMs >= e.openTimeL {
+				return true, true
+			}
+			// Delay expired: intentional wink hold
+			e.inBilateralBlink = false
+			e.pendingOpenL = false
+			return false, true
+		}
+		if rawL && !rawR {
+			if !e.pendingOpenR {
+				e.pendingOpenR = true
+				e.openTimeR = nowMs
+			}
+			if nowMs-e.openTimeR < syncDelay && nowMs >= e.openTimeR {
+				return true, true
+			}
+			// Delay expired: intentional wink hold
+			e.inBilateralBlink = false
+			e.pendingOpenR = false
+			return true, false
+		}
+	}
+
+	// Case 4: Eye closure initiation.
+	// When one eye crosses threshold, delay unilateral wink output by syncDelay
+	// to give the second eye an opportunity to close for a clean bilateral blink.
+	if rawL && !rawR {
+		e.pendingCloseR = false
+		if !e.pendingCloseL {
+			e.pendingCloseL = true
+			e.closeTimeL = nowMs
+		}
+		if nowMs-e.closeTimeL < syncDelay && nowMs >= e.closeTimeL {
+			return false, false
+		}
+		// Delay expired: intentional Left wink
+		return true, false
+	}
+
+	if !rawL && rawR {
+		e.pendingCloseL = false
+		if !e.pendingCloseR {
+			e.pendingCloseR = true
+			e.closeTimeR = nowMs
+		}
+		if nowMs-e.closeTimeR < syncDelay && nowMs >= e.closeTimeR {
+			return false, false
+		}
+		// Delay expired: intentional Right wink
+		return false, true
+	}
+
+	return rawL, rawR
 }

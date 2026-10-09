@@ -37,6 +37,10 @@ const valRoll = document.getElementById("val-roll");
 
 const gaugeBlinkL = document.getElementById("gauge-blink-l");
 const gaugeBlinkR = document.getElementById("gauge-blink-r");
+const valBlinkL = document.getElementById("val-blink-l");
+const valBlinkR = document.getElementById("val-blink-r");
+const blinkThresholdMarkerL = document.getElementById("blink-threshold-marker-l");
+const blinkThresholdMarkerR = document.getElementById("blink-threshold-marker-r");
 const gaugeMouthOpen = document.getElementById("gauge-mouth-open");
 const gaugeSmile = document.getElementById("gauge-smile");
 const valSmile = document.getElementById("val-smile");
@@ -693,6 +697,8 @@ function updateGauges(pose, blendshapes) {
 
   gaugeBlinkL.style.width = `${Math.round(blinkL * 100)}%`;
   gaugeBlinkR.style.width = `${Math.round(blinkR * 100)}%`;
+  if (valBlinkL) valBlinkL.textContent = `${Math.round(blinkL * 100)}%`;
+  if (valBlinkR) valBlinkR.textContent = `${Math.round(blinkR * 100)}%`;
   gaugeMouthOpen.style.width = `${Math.round(mouthOpen * 100)}%`;
   gaugeSmile.style.width = `${Math.round(smile * 100)}%`;
   if (valSmile) valSmile.textContent = `${Math.round(smile * 100)}%`;
@@ -734,8 +740,11 @@ initMediaPipe();
 const sliderMouthGain = document.getElementById("slider-mouth-gain");
 const sliderMouthThreshold = document.getElementById("slider-mouth-threshold");
 const checkboxEnableSmile = document.getElementById("checkbox-enable-smile");
+const checkboxWinkIsBlink = document.getElementById("checkbox-wink-is-blink");
 const sliderSmileThreshold = document.getElementById("slider-smile-threshold");
-const sliderBlinkThreshold = document.getElementById("slider-blink-threshold");
+const sliderBlinkThresholdL = document.getElementById("slider-blink-threshold-l");
+const sliderBlinkThresholdR = document.getElementById("slider-blink-threshold-r");
+const sliderBlinkSyncDelay = document.getElementById("slider-blink-sync-delay");
 const sliderEyeGain = document.getElementById("slider-eye-gain");
 const sliderYawMultiplier = document.getElementById("slider-yaw-multiplier");
 const sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier");
@@ -751,7 +760,9 @@ const valDecaySmooth = document.getElementById("val-decay-smooth");
 const valMouthGain = document.getElementById("val-mouth-gain");
 const valMouthThreshold = document.getElementById("val-mouth-threshold");
 const valSmileThreshold = document.getElementById("val-smile-threshold");
-const valBlinkThreshold = document.getElementById("val-blink-threshold");
+const valBlinkThresholdL = document.getElementById("val-blink-threshold-l");
+const valBlinkThresholdR = document.getElementById("val-blink-threshold-r");
+const valBlinkSyncDelay = document.getElementById("val-blink-sync-delay");
 const valEyeGain = document.getElementById("val-eye-gain");
 const valYawMultiplier = document.getElementById("val-yaw-multiplier");
 const valPitchMultiplier = document.getElementById("val-pitch-multiplier");
@@ -787,7 +798,10 @@ function syncSettingsToUI(s) {
     if (sliderMouthThreshold) sliderMouthThreshold.value = t.mouthThreshold || 0.08;
     if (checkboxEnableSmile) checkboxEnableSmile.checked = t.enableSmile !== false;
     if (sliderSmileThreshold) sliderSmileThreshold.value = t.smileThreshold || 0.50;
-    if (sliderBlinkThreshold) sliderBlinkThreshold.value = t.blinkThreshold || 0.45;
+    if (checkboxWinkIsBlink) checkboxWinkIsBlink.checked = Boolean(t.winkIsBlink);
+    if (sliderBlinkThresholdL) sliderBlinkThresholdL.value = t.blinkThresholdL || t.blinkThreshold || 0.45;
+    if (sliderBlinkThresholdR) sliderBlinkThresholdR.value = t.blinkThresholdR || t.blinkThreshold || 0.45;
+    if (sliderBlinkSyncDelay) sliderBlinkSyncDelay.value = (t.blinkSyncDelayMs !== undefined ? t.blinkSyncDelayMs : 50);
     if (sliderEyeGain) sliderEyeGain.value = t.eyeGazeGain || 1.0;
     if (sliderYawMultiplier) sliderYawMultiplier.value = t.yawMultiplier || 1.0;
     if (sliderPitchMultiplier) sliderPitchMultiplier.value = t.pitchMultiplier || 1.0;
@@ -809,7 +823,9 @@ function updateSliderLabels() {
   if (valMouthGain && sliderMouthGain) valMouthGain.textContent = `${parseFloat(sliderMouthGain.value).toFixed(2)}x`;
   if (valMouthThreshold && sliderMouthThreshold) valMouthThreshold.textContent = parseFloat(sliderMouthThreshold.value).toFixed(2);
   if (valSmileThreshold && sliderSmileThreshold) valSmileThreshold.textContent = parseFloat(sliderSmileThreshold.value).toFixed(2);
-  if (valBlinkThreshold && sliderBlinkThreshold) valBlinkThreshold.textContent = parseFloat(sliderBlinkThreshold.value).toFixed(2);
+  if (valBlinkThresholdL && sliderBlinkThresholdL) valBlinkThresholdL.textContent = parseFloat(sliderBlinkThresholdL.value).toFixed(2);
+  if (valBlinkThresholdR && sliderBlinkThresholdR) valBlinkThresholdR.textContent = parseFloat(sliderBlinkThresholdR.value).toFixed(2);
+  if (valBlinkSyncDelay && sliderBlinkSyncDelay) valBlinkSyncDelay.textContent = `${sliderBlinkSyncDelay.value}ms`;
   if (valEyeGain && sliderEyeGain) valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
   if (valYawMultiplier && sliderYawMultiplier) valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier) valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
@@ -817,6 +833,14 @@ function updateSliderLabels() {
   if (smileThresholdMarker && sliderSmileThreshold) {
     const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
     smileThresholdMarker.style.left = `${smilePercent}%`;
+  }
+  if (blinkThresholdMarkerL && sliderBlinkThresholdL) {
+    const blinkPercent = Math.min(100, Math.round(parseFloat(sliderBlinkThresholdL.value) * 100));
+    blinkThresholdMarkerL.style.left = `${blinkPercent}%`;
+  }
+  if (blinkThresholdMarkerR && sliderBlinkThresholdR) {
+    const blinkPercent = Math.min(100, Math.round(parseFloat(sliderBlinkThresholdR.value) * 100));
+    blinkThresholdMarkerR.style.left = `${blinkPercent}%`;
   }
 
   if (valMicGain && sliderMicGain) valMicGain.textContent = `${parseFloat(sliderMicGain.value).toFixed(1)}x`;
@@ -838,7 +862,11 @@ function collectSettingsFromUI() {
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || 0.08),
       enableSmile: checkboxEnableSmile ? checkboxEnableSmile.checked : true,
       smileThreshold: parseFloat(sliderSmileThreshold?.value || 0.50),
-      blinkThreshold: parseFloat(sliderBlinkThreshold?.value || 0.45),
+      blinkThreshold: parseFloat(sliderBlinkThresholdL?.value || 0.45),
+      blinkThresholdL: parseFloat(sliderBlinkThresholdL?.value || 0.45),
+      blinkThresholdR: parseFloat(sliderBlinkThresholdR?.value || 0.45),
+      blinkSyncDelayMs: parseFloat(sliderBlinkSyncDelay?.value || 50),
+      winkIsBlink: checkboxWinkIsBlink ? checkboxWinkIsBlink.checked : false,
       eyeGazeGain: parseFloat(sliderEyeGain?.value || 1.0),
       yawMultiplier: parseFloat(sliderYawMultiplier?.value || 1.0),
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || 1.0),
@@ -888,7 +916,9 @@ function onSliderInput() {
   sliderMouthGain,
   sliderMouthThreshold,
   sliderSmileThreshold,
-  sliderBlinkThreshold,
+  sliderBlinkThresholdL,
+  sliderBlinkThresholdR,
+  sliderBlinkSyncDelay,
   sliderEyeGain,
   sliderYawMultiplier,
   sliderPitchMultiplier,
@@ -916,6 +946,9 @@ if (settingsModeSelect) {
 }
 if (checkboxEnableSmile) {
   checkboxEnableSmile.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (checkboxWinkIsBlink) {
+  checkboxWinkIsBlink.addEventListener("change", () => sendSettingsUpdate(true));
 }
 
 if (btnSaveSettings) {
