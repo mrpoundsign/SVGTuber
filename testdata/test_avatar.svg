@@ -1,80 +1,295 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg"
-     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-     width="512" height="512" viewBox="0 0 512 512" version="1.1">
-  <defs>
-    <radialGradient id="faceGrad" cx="50%" cy="45%" r="50%">
-      <stop offset="0%" stop-color="#ffeacc"/>
-      <stop offset="100%" stop-color="#ffd59e"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="512"
+   height="512"
+   viewBox="0 0 512 512"
+   version="1.1"
+   id="svg20"
+   sodipodi:docname="test_avatar.svg"
+   inkscape:version="1.4.4 (dcaf3e7, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview20"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     showgrid="false"
+     inkscape:zoom="2.2792969"
+     inkscape:cx="256"
+     inkscape:cy="256"
+     inkscape:window-width="2560"
+     inkscape:window-height="1369"
+     inkscape:window-x="1072"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="eyes_closed" />
+  <defs
+     id="defs4">
+    <radialGradient
+       id="faceGrad"
+       cx="50%"
+       cy="45%"
+       r="50%">
+      <stop
+         offset="0%"
+         stop-color="#ffeacc"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#ffd59e"
+         id="stop2" />
     </radialGradient>
-    <linearGradient id="hairGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#4f46e5"/>
-      <stop offset="100%" stop-color="#312e81"/>
+    <linearGradient
+       id="hairGrad"
+       x1="0%"
+       y1="0%"
+       x2="0%"
+       y2="100%">
+      <stop
+         offset="0%"
+         stop-color="#4f46e5"
+         id="stop3" />
+      <stop
+         offset="100%"
+         stop-color="#312e81"
+         id="stop4" />
     </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#hairGrad"
+       id="linearGradient20"
+       x1="78.519637"
+       y1="225.1666"
+       x2="82.572472"
+       y2="322.69577"
+       gradientTransform="matrix(1.7320508,0,0,0.57735027,0.43873179,-9.6520994)"
+       gradientUnits="userSpaceOnUse" />
   </defs>
-
   <!-- Body / Torso Layer with Idle Breathing -->
-  <g inkscape:groupmode="layer" id="layer_body" inkscape:label="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}]">
-    <path d="M 176 380 Q 256 360 336 380 L 370 512 L 142 512 Z" fill="#1e1b4b" stroke="#312e81" stroke-width="4"/>
-    <path d="M 230 380 L 256 420 L 282 380 Z" fill="#ffffff"/>
+  <g
+     inkscape:groupmode="layer"
+     id="layer_body"
+     inkscape:label="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}]">
+    <path
+       d="m 176,380 c 53.33333,-13.33333 106.66667,-13.33333 160,0 L 362.68662,399.83491 370,512 H 142 l 9.04658,-107.35793 z"
+       fill="#1e1b4b"
+       stroke="#312e81"
+       stroke-width="4"
+       id="path4"
+       sodipodi:nodetypes="ccccccc" />
+    <path
+       d="M 230 380 L 256 420 L 282 380 Z"
+       fill="#ffffff"
+       id="path5" />
   </g>
-
   <!-- Head & Face Layer with Follow Tracking -->
-  <g inkscape:groupmode="layer" id="layer_head" inkscape:label="Head [Follow {yaw: 15; pitch: 10; roll: 8; pivot: center}]">
+  <g
+     inkscape:groupmode="layer"
+     id="layer_head"
+     inkscape:label="Head [Follow {yaw: 15; pitch: 10; roll: 8; pivot: center}]">
     <!-- Back Hair -->
-    <path d="M 120 220 Q 90 340 140 400 Q 180 320 180 260 Z" fill="url(#hairGrad)"/>
-    <path d="M 392 220 Q 422 340 372 400 Q 332 320 332 260 Z" fill="url(#hairGrad)"/>
-
     <!-- Head Shape -->
-    <ellipse cx="256" cy="250" rx="120" ry="130" fill="url(#faceGrad)" stroke="#e2b885" stroke-width="3"/>
-
+    <g
+       id="g20"
+       inkscape:label="Back Hair [Dist {factor: 0.1}]">
+      <path
+         d="M 142.81405,213.85775 C 87.71551,250.86204 106.66667,360 140,400 166.66667,346.66667 180,300 180,260 Z"
+         fill="url(#hairGrad)"
+         id="path6"
+         sodipodi:nodetypes="cccc" />
+      <path
+         d="M 360.41131,218.6838 C 409.81277,222.5859 412.90918,340.39192 372,400 345.33333,346.66667 332,300 332,260 Z"
+         fill="url(#hairGrad)"
+         id="path7"
+         sodipodi:nodetypes="cccc" />
+    </g>
+    <ellipse
+       cx="256"
+       cy="250"
+       rx="120"
+       ry="130"
+       fill="url(#faceGrad)"
+       stroke="#e2b885"
+       stroke-width="3"
+       id="ellipse7" />
     <!-- Blush -->
-    <ellipse cx="180" cy="280" rx="20" ry="10" fill="#f43f5e" opacity="0.35"/>
-    <ellipse cx="332" cy="280" rx="20" ry="10" fill="#f43f5e" opacity="0.35"/>
-
+    <ellipse
+       cx="180"
+       cy="280"
+       rx="20"
+       ry="10"
+       fill="#f43f5e"
+       opacity="0.35"
+       id="ellipse8" />
+    <ellipse
+       cx="332"
+       cy="280"
+       rx="20"
+       ry="10"
+       fill="#f43f5e"
+       opacity="0.35"
+       id="ellipse9" />
     <!-- Eyes (Open State) -->
-    <g id="eyes_open" inkscape:label="Eyes Open [Hide {when: blinkL > blinkThreshold || blinkR > blinkThreshold}]">
+    <g
+       id="eyes_open"
+       inkscape:label="Eyes Open">
       <!-- Left Eye -->
-      <circle cx="206" cy="235" r="22" fill="#ffffff" stroke="#1e1b4b" stroke-width="3"/>
-      <g id="pupil_left" inkscape:label="Pupil Left [Move {x: eyeX; y: eyeY; range: 6}]">
-        <circle cx="206" cy="235" r="14" fill="#312e81"/>
-        <circle cx="212" cy="229" r="5" fill="#ffffff"/>
+      <g
+         id="eye_open_left"
+         inkscape:label="Left Eye Open [Hide {when: isBlinkL}]">
+        <circle
+           cx="206"
+           cy="235"
+           r="22"
+           fill="#ffffff"
+           stroke="#1e1b4b"
+           stroke-width="3"
+           id="circle9" />
+        <g
+           id="pupil_left"
+           inkscape:label="Pupil Left [Move {x: eyeX; y: eyeY; range: 6}]">
+          <circle
+             cx="206"
+             cy="235"
+             r="14"
+             fill="#312e81"
+             id="circle10" />
+          <circle
+             cx="212"
+             cy="229"
+             r="5"
+             fill="#ffffff"
+             id="circle11" />
+        </g>
       </g>
-
       <!-- Right Eye -->
-      <circle cx="306" cy="235" r="22" fill="#ffffff" stroke="#1e1b4b" stroke-width="3"/>
-      <g id="pupil_right" inkscape:label="Pupil Right [Move {x: eyeX; y: eyeY; range: 6}]">
-        <circle cx="306" cy="235" r="14" fill="#312e81"/>
-        <circle cx="312" cy="229" r="5" fill="#ffffff"/>
+      <g
+         id="eye_open_right"
+         inkscape:label="Right Eye Open [Hide {when: isBlinkR}]">
+        <circle
+           cx="306"
+           cy="235"
+           r="22"
+           fill="#ffffff"
+           stroke="#1e1b4b"
+           stroke-width="3"
+           id="circle12" />
+        <g
+           id="pupil_right"
+           inkscape:label="Pupil Right [Move {x: eyeX; y: eyeY; range: 6}]">
+          <circle
+             cx="306"
+             cy="235"
+             r="14"
+             fill="#312e81"
+             id="circle13" />
+          <circle
+             cx="312"
+             cy="229"
+             r="5"
+             fill="#ffffff"
+             id="circle14" />
+        </g>
       </g>
     </g>
-
     <!-- Eyes (Closed / Blink State) -->
-    <g id="eyes_closed" inkscape:label="Eyes Closed [Show {when: blinkL > blinkThreshold || blinkR > blinkThreshold}]" style="display: none;">
-      <path d="M 186 240 Q 206 250 226 240" fill="none" stroke="#1e1b4b" stroke-width="4" stroke-linecap="round"/>
-      <path d="M 286 240 Q 306 250 326 240" fill="none" stroke="#1e1b4b" stroke-width="4" stroke-linecap="round"/>
+    <g
+       id="eyes_closed"
+       inkscape:label="Eyes Closed">
+      <g
+         id="eye_closed_left"
+         inkscape:label="Left Eye Closed [Show {when: isBlinkL}]"
+         style="display: none;">
+        <path
+           d="M 186 240 Q 206 250 226 240"
+           fill="none"
+           stroke="#1e1b4b"
+           stroke-width="4"
+           stroke-linecap="round"
+           id="path14"
+           inkscape:label="path14" />
+      </g>
+      <g
+         id="eye_closed_right"
+         inkscape:label="Right Eye Closed [Show {when: isBlinkR}]"
+         style="display: none;">
+        <path
+           d="M 286 240 Q 306 250 326 240"
+           fill="none"
+           stroke="#1e1b4b"
+           stroke-width="4"
+           stroke-linecap="round"
+           id="path15"
+           inkscape:label="path15" />
+      </g>
     </g>
-
     <!-- Mouth (Neutral - resting flat line, visible by default) -->
-    <g id="mouth_neutral" inkscape:label="Mouth Neutral [Hide {when: mouthOpen > mouthThreshold || smile > smileThreshold}]">
-      <path d="M 244 310 Q 256 311 268 310" fill="none" stroke="#be123c" stroke-width="3.5" stroke-linecap="round"/>
+    <g
+       id="mouth_neutral"
+       inkscape:label="Mouth Neutral [Hide {when: isMouthOpen || isSmiling}]">
+      <path
+         d="M 244 310 Q 256 311 268 310"
+         fill="none"
+         stroke="#be123c"
+         stroke-width="3.5"
+         stroke-linecap="round"
+         id="path16" />
     </g>
-
     <!-- Mouth (Smiling curve) -->
-    <g id="mouth_smile" inkscape:label="Mouth Smile [Show {when: smile > smileThreshold}]" style="display: none;">
-      <path d="M 238 304 Q 256 319 274 304" fill="none" stroke="#be123c" stroke-width="4" stroke-linecap="round"/>
+    <g
+       id="mouth_smile"
+       inkscape:label="Mouth Smile [Show {when: isSmiling}]"
+       style="display: none;">
+      <path
+         d="M 238 304 Q 256 319 274 304"
+         fill="none"
+         stroke="#be123c"
+         stroke-width="4"
+         stroke-linecap="round"
+         id="path17" />
     </g>
-
     <!-- Mouth (Open) with Scale -->
-    <g id="mouth_open" inkscape:label="Mouth Open [Show {when: mouthOpen > mouthThreshold &amp;&amp; !(smile > smileThreshold)}; Scale {y: mouthOpen; from: 0.5; to: 1.4; pivot: top}]" style="display: none;">
-      <ellipse cx="256" cy="315" rx="18" ry="14" fill="#be123c" stroke="#9f1239" stroke-width="3"/>
-      <path d="M 244 322 Q 256 312 268 322 Z" fill="#fb7185"/>
+    <g
+       id="mouth_open"
+       inkscape:label="Mouth Open [Show {when: isMouthOpen}; Scale {y: mouthOpen; from: 0.5; to: 1.4; pivot: top}]"
+       style="display: none;">
+      <ellipse
+         cx="256"
+         cy="315"
+         rx="18"
+         ry="14"
+         fill="#be123c"
+         stroke="#9f1239"
+         stroke-width="3"
+         id="ellipse17" />
+      <path
+         d="M 244 322 Q 256 312 268 322 Z"
+         fill="#fb7185"
+         id="path18" />
     </g>
-
     <!-- Front Bangs / Hair with Parallax -->
-    <g id="hair_front" inkscape:label="Front Hair [Dist {factor: 0.18}]">
-      <path d="M 136 210 Q 160 130 256 130 Q 352 130 376 210 Q 320 160 256 180 Q 192 160 136 210 Z" fill="url(#hairGrad)"/>
-      <path d="M 220 170 Q 240 220 236 230 Q 250 190 260 175 Z" fill="#3730a3"/>
+    <g
+       id="hair_front"
+       inkscape:label="Front Hair"
+       transform="translate(0.87746358,-12.723222)">
+      <path
+         d="m 119.32819,226.23308 c 16,-53.33334 73.11054,-105.88518 137.11054,-105.88518 64,0 118.03942,53.86804 134.03942,107.20137 C 399.21165,310.91859 289.4533,167.1054 246.78663,180.43873 204.11996,167.1054 122.00171,291.6144 119.32819,226.23308 Z"
+         fill="url(#hairGrad)"
+         id="path19"
+         style="fill:url(#linearGradient20)"
+         sodipodi:nodetypes="csccc" />
+      <path
+         d="m 220,170 q 20,50 16,60 14,-40 24,-55 z"
+         fill="#3730a3"
+         id="path20" />
     </g>
   </g>
 </svg>

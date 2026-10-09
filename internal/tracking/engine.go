@@ -125,6 +125,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 
 	// Audio-driven mode without camera present
 	if !raw.Present && (mode == "audio" || (mode == "hybrid" && isSpeaking)) {
+		filtMouth := e.filter.mouthOpen.Filter(audioMouth, tSec)
 		return ParamFrame{
 			Type:           "param_frame",
 			T:              raw.Timestamp,
@@ -139,7 +140,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			EyeY:           e.filter.eyeY.Filter(0, tSec),
 			BlinkL:         e.filter.blinkL.Filter(0, tSec),
 			BlinkR:         e.filter.blinkR.Filter(0, tSec),
-			MouthOpen:      e.filter.mouthOpen.Filter(audioMouth, tSec),
+			MouthOpen:      filtMouth,
 			Smile:          e.filter.smile.Filter(0, tSec),
 			BrowUp:         e.filter.browUp.Filter(0, tSec),
 			MouthThreshold: ts.MouthThreshold,
@@ -147,11 +148,19 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			SmileThreshold: ts.SmileThreshold,
 			AudioVolume:    audioVolume,
 			IsSpeaking:     isSpeaking,
+			IsBlinkL:       false,
+			IsBlinkR:       false,
+			IsMouthOpen:    filtMouth >= ts.MouthThreshold,
+			IsSmiling:      false,
 		}
 	}
 
 	if !raw.Present {
 		// Face lost: smoothly filter down toward neutral (0)
+		filtBlinkL := e.filter.blinkL.Filter(0, tSec)
+		filtBlinkR := e.filter.blinkR.Filter(0, tSec)
+		filtMouth := e.filter.mouthOpen.Filter(0, tSec)
+		filtSmile := e.filter.smile.Filter(0, tSec)
 		return ParamFrame{
 			Type:           "param_frame",
 			T:              raw.Timestamp,
@@ -164,16 +173,20 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			HeadZ:          e.filter.z.Filter(0, tSec),
 			EyeX:           e.filter.eyeX.Filter(0, tSec),
 			EyeY:           e.filter.eyeY.Filter(0, tSec),
-			BlinkL:         e.filter.blinkL.Filter(0, tSec),
-			BlinkR:         e.filter.blinkR.Filter(0, tSec),
-			MouthOpen:      e.filter.mouthOpen.Filter(0, tSec),
-			Smile:          e.filter.smile.Filter(0, tSec),
+			BlinkL:         filtBlinkL,
+			BlinkR:         filtBlinkR,
+			MouthOpen:      filtMouth,
+			Smile:          filtSmile,
 			BrowUp:         e.filter.browUp.Filter(0, tSec),
 			MouthThreshold: ts.MouthThreshold,
 			BlinkThreshold: ts.BlinkThreshold,
 			SmileThreshold: ts.SmileThreshold,
 			AudioVolume:    audioVolume,
 			IsSpeaking:     isSpeaking,
+			IsBlinkL:       filtBlinkL >= ts.BlinkThreshold,
+			IsBlinkR:       filtBlinkR >= ts.BlinkThreshold,
+			IsMouthOpen:    filtMouth >= ts.MouthThreshold,
+			IsSmiling:      filtSmile >= ts.SmileThreshold,
 		}
 	}
 
@@ -269,6 +282,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		}
 	}
 
+	filtBlinkL := e.filter.blinkL.Filter(blinkL, tSec)
+	filtBlinkR := e.filter.blinkR.Filter(blinkR, tSec)
+	filtMouth := e.filter.mouthOpen.Filter(finalMouth, tSec)
+	filtSmile := e.filter.smile.Filter(smile, tSec)
+
 	return ParamFrame{
 		Type:           "param_frame",
 		T:              raw.Timestamp,
@@ -281,16 +299,20 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		HeadZ:          e.filter.z.Filter(z, tSec),
 		EyeX:           e.filter.eyeX.Filter(eyeX, tSec),
 		EyeY:           e.filter.eyeY.Filter(eyeY, tSec),
-		BlinkL:         e.filter.blinkL.Filter(blinkL, tSec),
-		BlinkR:         e.filter.blinkR.Filter(blinkR, tSec),
-		MouthOpen:      e.filter.mouthOpen.Filter(finalMouth, tSec),
-		Smile:          e.filter.smile.Filter(smile, tSec),
+		BlinkL:         filtBlinkL,
+		BlinkR:         filtBlinkR,
+		MouthOpen:      filtMouth,
+		Smile:          filtSmile,
 		BrowUp:         e.filter.browUp.Filter(browUp, tSec),
 		MouthThreshold: ts.MouthThreshold,
 		BlinkThreshold: ts.BlinkThreshold,
 		SmileThreshold: ts.SmileThreshold,
 		AudioVolume:    audioVolume,
 		IsSpeaking:     isSpeaking,
+		IsBlinkL:       filtBlinkL >= ts.BlinkThreshold,
+		IsBlinkR:       filtBlinkR >= ts.BlinkThreshold,
+		IsMouthOpen:    filtMouth >= ts.MouthThreshold,
+		IsSmiling:      filtSmile >= ts.SmileThreshold,
 		Raw:            raw.Blendshapes,
 	}
 }

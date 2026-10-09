@@ -44,5 +44,9 @@ type ParamFrame struct {
 	SmileThreshold float64            `json:"smileThreshold"`
 	AudioVolume    float64            `json:"audioVolume,omitempty"`
 	IsSpeaking     bool               `json:"isSpeaking,omitempty"`
+	IsBlinkL       bool               `json:"isBlinkL"`
+	IsBlinkR       bool               `json:"isBlinkR"`
+	IsMouthOpen    bool               `json:"isMouthOpen"`
+	IsSmiling      bool               `json:"isSmiling"`
 	Raw            map[string]float64 `json:"raw,omitempty"`
 }

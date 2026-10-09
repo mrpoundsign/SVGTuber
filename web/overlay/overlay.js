@@ -204,12 +204,16 @@
     const def = DEFAULT_PARAM_FALLBACKS.hasOwnProperty(lower) ? DEFAULT_PARAM_FALLBACKS[lower] : fallback;
 
     if (!latestParams) return def;
-    if (latestParams.hasOwnProperty(clean) && typeof latestParams[clean] === 'number') {
-      return latestParams[clean];
+    if (latestParams.hasOwnProperty(clean)) {
+      if (typeof latestParams[clean] === 'number' || typeof latestParams[clean] === 'boolean') {
+        return latestParams[clean];
+      }
     }
     for (const key of Object.keys(latestParams)) {
-      if (key.toLowerCase() === lower && typeof latestParams[key] === 'number') {
-        return latestParams[key];
+      if (key.toLowerCase() === lower) {
+        if (typeof latestParams[key] === 'number' || typeof latestParams[key] === 'boolean') {
+          return latestParams[key];
+        }
       }
     }
     if (latestParams.raw) {
@@ -225,23 +229,50 @@
     return def;
   }
 
-  // Safe evaluation of boolean condition expressions (e.g. "blinkL > 0.45 || blinkR > 0.45")
+  // Safe evaluation of boolean condition expressions (e.g. "isBlinkL", "isMouthOpen || isSmiling", "blinkL >= 0.45")
   function evaluateCondition(expr, params) {
     if (!expr) return true;
     try {
       const decoded = expr.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-      // Replace known parameter variables with actual numeric values
+      const hasComparison = /[><=!]=?/.test(decoded);
+
+      // Replace known parameter variables with actual numeric or boolean values
       const sanitized = decoded.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match) => {
         if (match === 'true' || match === 'false') return match;
+
+        // If expression has no comparison operator (pure boolean shorthand, e.g. "isSmiling", "blinkL")
+        if (!hasComparison) {
+          const lower = match.toLowerCase();
+          if (lower === 'blinkl' || lower === 'isblinkl') {
+            const b = getParam('isBlinkL', null);
+            return String(b !== null ? Boolean(b) : getParam('blinkL', 0) >= getParam('blinkThreshold', 0.45));
+          }
+          if (lower === 'blinkr' || lower === 'isblinkr') {
+            const b = getParam('isBlinkR', null);
+            return String(b !== null ? Boolean(b) : getParam('blinkR', 0) >= getParam('blinkThreshold', 0.45));
+          }
+          if (lower === 'mouthopen' || lower === 'ismouthopen') {
+            const b = getParam('isMouthOpen', null);
+            return String(b !== null ? Boolean(b) : getParam('mouthOpen', 0) >= getParam('mouthThreshold', 0.08));
+          }
+          if (lower === 'smile' || lower === 'issmiling') {
+            const b = getParam('isSmiling', null);
+            return String(b !== null ? Boolean(b) : getParam('smile', 0) >= getParam('smileThreshold', 0.50));
+          }
+          if (lower === 'speaking' || lower === 'isspeaking') {
+            return String(Boolean(getParam('isSpeaking', false)));
+          }
+        }
+
         const val = getParam(match, null);
-        if (typeof val === 'number') {
+        if (typeof val === 'boolean' || typeof val === 'number') {
           return String(val);
         }
         return '0';
       });
 
-      // Simple safe evaluation limited to numbers and logical comparison operators
-      if (/^[0-9\.\s><=!&|()+\-*\/]+$/.test(sanitized)) {
+      // Simple safe evaluation limited to numbers, booleans, and logical comparison operators
+      if (/^[0-9\.\s><=!&|()+\-*\/a-zA-Z]+$/.test(sanitized)) {
         return Boolean(Function(`"use strict"; return (${sanitized});`)());
       }
     } catch (e) {
