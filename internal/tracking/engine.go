@@ -85,10 +85,59 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	}
 
 	var ts config.TrackingSettings
+	var as config.AudioSettings
 	if e.configMgr != nil {
-		ts = e.configMgr.Get().Tracking
+		s := e.configMgr.Get()
+		ts = s.Tracking
+		as = s.Audio
 	} else {
-		ts = config.DefaultSettings().Tracking
+		def := config.DefaultSettings()
+		ts = def.Tracking
+		as = def.Audio
+	}
+
+	mode := as.Mode
+	if mode == "" {
+		mode = "hybrid"
+	}
+
+	// Compute audio volume and speech state
+	var audioMouth float64
+	var isSpeaking bool
+	var audioVolume float64
+	if raw.Audio != nil {
+		audioVolume = raw.Audio.Volume
+		gainVol := raw.Audio.Volume * as.MicGain
+		if gainVol >= as.NoiseGate {
+			audioMouth = math.Min(1.0, (gainVol-as.NoiseGate)/(1.0-as.NoiseGate))
+			isSpeaking = true
+		}
+	}
+
+	// Audio-only mode without camera present
+	if !raw.Present && mode == "audio" {
+		return ParamFrame{
+			Type:           "param_frame",
+			T:              raw.Timestamp,
+			Present:        true,
+			HeadYaw:        e.filter.yaw.Filter(0, tSec),
+			HeadPitch:      e.filter.pitch.Filter(0, tSec),
+			HeadRoll:       e.filter.roll.Filter(0, tSec),
+			HeadX:          e.filter.x.Filter(0, tSec),
+			HeadY:          e.filter.y.Filter(-audioMouth*4.0, tSec), // subtle speech bob
+			HeadZ:          e.filter.z.Filter(0, tSec),
+			EyeX:           e.filter.eyeX.Filter(0, tSec),
+			EyeY:           e.filter.eyeY.Filter(0, tSec),
+			BlinkL:         e.filter.blinkL.Filter(0, tSec),
+			BlinkR:         e.filter.blinkR.Filter(0, tSec),
+			MouthOpen:      e.filter.mouthOpen.Filter(audioMouth, tSec),
+			Smile:          e.filter.smile.Filter(0, tSec),
+			BrowUp:         e.filter.browUp.Filter(0, tSec),
+			MouthThreshold: ts.MouthThreshold,
+			BlinkThreshold: ts.BlinkThreshold,
+			AudioVolume:    audioVolume,
+			IsSpeaking:     isSpeaking,
+		}
 	}
 
 	if !raw.Present {
@@ -112,6 +161,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BrowUp:         e.filter.browUp.Filter(0, tSec),
 			MouthThreshold: ts.MouthThreshold,
 			BlinkThreshold: ts.BlinkThreshold,
+			AudioVolume:    audioVolume,
+			IsSpeaking:     isSpeaking,
 		}
 	}
 
@@ -124,11 +175,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	z := raw.Z - e.neutralZ
 
 	// Extract standard ARKit facial blendshapes
-	var blinkL, blinkR, mouthOpen, smile, browUp, eyeX, eyeY float64
+	var blinkL, blinkR, opticalMouth, smile, browUp, eyeX, eyeY float64
 	if bs := raw.Blendshapes; bs != nil {
 		blinkL = bs["eyeBlinkLeft"]
 		blinkR = bs["eyeBlinkRight"]
-		mouthOpen = math.Min(1.0, bs["jawOpen"]*ts.MouthGain)
+		opticalMouth = math.Min(1.0, bs["jawOpen"]*ts.MouthGain)
 
 		smileLeft := bs["mouthSmileLeft"]
 		smileRight := bs["mouthSmileRight"]
@@ -150,6 +201,28 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		eyeY = (lookDown - lookUp) * ts.EyeGazeGain
 	}
 
+	// Determine final mouth open based on active tracking mode
+	var finalMouth float64
+	switch mode {
+	case "camera":
+		finalMouth = opticalMouth
+	case "audio":
+		finalMouth = audioMouth
+	case "hybrid":
+		fallthrough
+	default:
+		if raw.Audio != nil {
+			if isSpeaking {
+				finalMouth = math.Max(audioMouth, opticalMouth)
+			} else {
+				// Noise-gated silence: eliminate camera optical mouth jitter
+				finalMouth = 0.0
+			}
+		} else {
+			finalMouth = opticalMouth
+		}
+	}
+
 	return ParamFrame{
 		Type:           "param_frame",
 		T:              raw.Timestamp,
@@ -164,11 +237,13 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		EyeY:           e.filter.eyeY.Filter(eyeY, tSec),
 		BlinkL:         e.filter.blinkL.Filter(blinkL, tSec),
 		BlinkR:         e.filter.blinkR.Filter(blinkR, tSec),
-		MouthOpen:      e.filter.mouthOpen.Filter(mouthOpen, tSec),
+		MouthOpen:      e.filter.mouthOpen.Filter(finalMouth, tSec),
 		Smile:          e.filter.smile.Filter(smile, tSec),
 		BrowUp:         e.filter.browUp.Filter(browUp, tSec),
 		MouthThreshold: ts.MouthThreshold,
 		BlinkThreshold: ts.BlinkThreshold,
+		AudioVolume:    audioVolume,
+		IsSpeaking:     isSpeaking,
 		Raw:            raw.Blendshapes,
 	}
 }

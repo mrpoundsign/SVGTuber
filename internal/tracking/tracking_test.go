@@ -3,7 +3,10 @@ package tracking
 import (
 	"math"
 	"math/rand"
+	"path/filepath"
 	"testing"
+
+	"github.com/mrpoundsign/SVGTuber/internal/config"
 )
 
 func TestOneEuroFilter_NoiseReduction(t *testing.T) {
@@ -131,5 +134,87 @@ func TestEngine_EyeGaze(t *testing.T) {
 	}
 	if out.EyeY <= 0.4 {
 		t.Errorf("Expected EyeY > 0.4 when looking down, got %f", out.EyeY)
+	}
+}
+
+func TestEngine_HybridAudioMode(t *testing.T) {
+	eng := NewEngine() // default mode is hybrid
+
+	// 1. Silent mic: mouth should remain closed even with minor optical camera noise
+	fQuiet := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"jawOpen": 0.05, // minor optical noise
+		},
+		Audio: &AudioPayload{
+			Volume:     0.01,
+			IsSpeaking: false,
+		},
+	}
+	outQuiet := eng.Process(fQuiet)
+	if outQuiet.MouthOpen > 0.01 {
+		t.Errorf("Expected MouthOpen near 0 when audio is silent in hybrid mode, got %f", outQuiet.MouthOpen)
+	}
+
+	// 2. Speaking into mic: feed a burst of speech frames
+	var outSpeaking ParamFrame
+	for i := 1; i <= 6; i++ {
+		fSpeaking := FaceFrame{
+			Timestamp: float64(1000 + i*16),
+			Present:   true,
+			Blendshapes: map[string]float64{
+				"jawOpen": 0.05,
+			},
+			Audio: &AudioPayload{
+				Volume:     0.5,
+				IsSpeaking: true,
+			},
+		}
+		outSpeaking = eng.Process(fSpeaking)
+	}
+
+	if outSpeaking.MouthOpen <= 0.3 {
+		t.Errorf("Expected MouthOpen > 0.3 after speech burst, got %f", outSpeaking.MouthOpen)
+	}
+	if !outSpeaking.IsSpeaking {
+		t.Errorf("Expected IsSpeaking=true")
+	}
+}
+
+func TestEngine_AudioOnlyMode(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	// Set mode to audio
+	s := cfgMgr.Get()
+	s.Audio.Mode = "audio"
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// User speaks without camera present
+	f := FaceFrame{
+		Timestamp: 1000,
+		Present:   false, // camera off
+		Audio: &AudioPayload{
+			Volume:     0.6,
+			IsSpeaking: true,
+		},
+	}
+	out := eng.Process(f)
+
+	if !out.Present {
+		t.Errorf("Expected Present=true during speech in audio-only mode")
+	}
+	if out.MouthOpen <= 0.3 {
+		t.Errorf("Expected MouthOpen > 0.3, got %f", out.MouthOpen)
+	}
+	if out.HeadY >= 0 {
+		t.Errorf("Expected negative HeadY (speech bounce bob), got %f", out.HeadY)
 	}
 }

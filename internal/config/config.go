@@ -21,10 +21,19 @@ type TrackingSettings struct {
 	PoseSmoothing   float64 `json:"poseSmoothing"`   // Smoothing strength multiplier (default: 1.0)
 }
 
+// AudioSettings contains microphone lip-sync and blending configuration.
+type AudioSettings struct {
+	Mode        string  `json:"mode"`        // "hybrid", "camera", "audio" (default: "hybrid")
+	MicGain     float64 `json:"micGain"`     // Multiplier on raw mic volume (default: 1.5)
+	NoiseGate   float64 `json:"noiseGate"`   // Threshold below which input is silence (default: 0.04)
+	DecaySmooth float64 `json:"decaySmooth"` // Envelope release smoothing (default: 0.1)
+}
+
 // Settings represents the complete user configuration.
 type Settings struct {
 	Version  int              `json:"version"`
 	Tracking TrackingSettings `json:"tracking"`
+	Audio    AudioSettings    `json:"audio"`
 }
 
 // DefaultSettings returns a initialized Settings object with tuned defaults.
@@ -40,6 +49,12 @@ func DefaultSettings() Settings {
 			PitchMultiplier: 1.0,
 			RollMultiplier:  1.0,
 			PoseSmoothing:   1.0,
+		},
+		Audio: AudioSettings{
+			Mode:        "hybrid",
+			MicGain:     1.5,
+			NoiseGate:   0.04,
+			DecaySmooth: 0.1,
 		},
 	}
 }
@@ -159,6 +174,18 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.RollMultiplier <= 0 {
 		s.Tracking.RollMultiplier = 1.0
+	}
+	if s.Audio.Mode == "" {
+		s.Audio.Mode = "hybrid"
+	}
+	if s.Audio.MicGain <= 0 {
+		s.Audio.MicGain = 1.5
+	}
+	if s.Audio.NoiseGate <= 0 {
+		s.Audio.NoiseGate = 0.04
+	}
+	if s.Audio.DecaySmooth <= 0 {
+		s.Audio.DecaySmooth = 0.1
 	}
 
 	m.mu.Lock()

@@ -43,6 +43,8 @@ func TestConfigManager_SaveAndLoad(t *testing.T) {
 	updated.Tracking.MouthGain = 2.2
 	updated.Tracking.MouthThreshold = 0.05
 	updated.Tracking.YawMultiplier = 1.3
+	updated.Audio.Mode = "audio"
+	updated.Audio.MicGain = 2.0
 
 	if err := mgr.Update(updated); err != nil {
 		t.Fatalf("Update failed: %v", err)
@@ -68,6 +70,12 @@ func TestConfigManager_SaveAndLoad(t *testing.T) {
 	}
 	if loaded.Tracking.YawMultiplier != 1.3 {
 		t.Errorf("Expected reloaded YawMultiplier 1.3, got %f", loaded.Tracking.YawMultiplier)
+	}
+	if loaded.Audio.Mode != "audio" {
+		t.Errorf("Expected reloaded Audio.Mode 'audio', got %q", loaded.Audio.Mode)
+	}
+	if loaded.Audio.MicGain != 2.0 {
+		t.Errorf("Expected reloaded Audio.MicGain 2.0, got %f", loaded.Audio.MicGain)
 	}
 
 	// Reset
