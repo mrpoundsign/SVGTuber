@@ -1,0 +1,3 @@
+# Antigravity WSL Command Execution Rule
+
+- **Append `; exit $?` to shell commands in `run_command` under WSL**: When running on WSL (Windows Subsystem for Linux), non-interactive subshells can linger, hang, or die prematurely if not explicitly closed. Always append `; exit $?` to the end of commands run via `run_command` under WSL (e.g., `git status -s ; exit $?`, `go test ./... ; exit $?`, `./build.sh lint && ./build.sh test ; exit $?`). Using `; exit $?` (rather than `&& exit`) guarantees that `exit` runs unconditionally even if preceding commands return non-zero exit codes, while preserving the command's original exit code.
