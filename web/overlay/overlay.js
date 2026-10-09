@@ -5,6 +5,15 @@
   let reconnectTimer = null;
 
   let activeRigBindings = [];
+  let boundMouthNeutral = null;
+  let boundMouthSmile = null;
+  let boundMouthOpen = null;
+  let boundEyesOpen = null;
+  let boundEyesClosed = null;
+  let boundEyeOpenL = null;
+  let boundEyeClosedL = null;
+  let boundEyeOpenR = null;
+  let boundEyeClosedR = null;
   // Initialize with neutral defaults so Idle breathing and initial positioning work immediately
   let latestParams = {
     present: false,
@@ -52,6 +61,15 @@
 
   function bindRig(rigDef) {
     activeRigBindings = [];
+    boundMouthNeutral = null;
+    boundMouthSmile = null;
+    boundMouthOpen = null;
+    boundEyesOpen = null;
+    boundEyesClosed = null;
+    boundEyeOpenL = null;
+    boundEyeClosedL = null;
+    boundEyeOpenR = null;
+    boundEyeClosedR = null;
     if (!rigDef || !rigDef.elements || rigDef.elements.length === 0) {
       return;
     }
@@ -66,6 +84,16 @@
       if (!el) {
         return;
       }
+
+      if (elem.id === 'mouth_neutral') boundMouthNeutral = el;
+      if (elem.id === 'mouth_smile') boundMouthSmile = el;
+      if (elem.id === 'mouth_open') boundMouthOpen = el;
+      if (elem.id === 'eyes_open') boundEyesOpen = el;
+      if (elem.id === 'eyes_closed') boundEyesClosed = el;
+      if (elem.id === 'eye_open_left' || elem.id === 'g3') boundEyeOpenL = el;
+      if (elem.id === 'eye_closed_left' || elem.id === 'g5') boundEyeClosedL = el;
+      if (elem.id === 'eye_open_right' || elem.id === 'g2') boundEyeOpenR = el;
+      if (elem.id === 'eye_closed_right' || elem.id === 'g4') boundEyeClosedR = el;
 
       // Calculate pivot coordinate using element bounding box
       let cx = 0, cy = 0;
@@ -330,6 +358,35 @@
       } else {
         el.style.transform = '';
       }
+    }
+
+    // Mutual exclusivity for mouth layers to guarantee zero overlap and no disappearing mouth
+    if (boundMouthNeutral || boundMouthSmile || boundMouthOpen) {
+      const isSmile = boundMouthSmile && boundMouthSmile.style.display !== 'none';
+      const isOpen = boundMouthOpen && boundMouthOpen.style.display !== 'none';
+
+      if (isSmile) {
+        if (boundMouthNeutral) boundMouthNeutral.style.display = 'none';
+        if (boundMouthOpen) boundMouthOpen.style.display = 'none';
+      } else if (isOpen) {
+        if (boundMouthNeutral) boundMouthNeutral.style.display = 'none';
+        if (boundMouthSmile) boundMouthSmile.style.display = 'none';
+      } else if (boundMouthNeutral) {
+        boundMouthNeutral.style.display = 'inline';
+      }
+    }
+
+    // Mutual exclusivity for independent eye blink layers
+    if (boundEyeClosedL && boundEyeClosedL.style.display !== 'none') {
+      if (boundEyeOpenL) boundEyeOpenL.style.display = 'none';
+    }
+    if (boundEyeClosedR && boundEyeClosedR.style.display !== 'none') {
+      if (boundEyeOpenR) boundEyeOpenR.style.display = 'none';
+    }
+
+    // Mutual exclusivity for combined eye blink group (if legacy avatar uses whole-eye group)
+    if (boundEyesClosed && boundEyesClosed.style.display !== 'none' && !boundEyeClosedL && !boundEyeClosedR) {
+      if (boundEyesOpen) boundEyesOpen.style.display = 'none';
     }
   }
 
