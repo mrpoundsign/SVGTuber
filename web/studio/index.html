@@ -431,9 +431,11 @@
         </div>
         <div class="gauge-item">
           <label>Smile</label>
-          <div class="gauge-bar-track">
+          <div class="gauge-bar-track" style="position: relative;">
             <div id="gauge-smile" class="gauge-bar-fill" style="background: #38bdf8;"></div>
+            <div id="smile-threshold-marker" title="Smile Threshold" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #f59e0b; left: 35%; z-index: 2;"></div>
           </div>
+          <span id="val-smile" class="gauge-value">0%</span>
         </div>
       </div>
     </div>
@@ -487,6 +489,19 @@
             <label for="slider-mouth-threshold">Open Threshold</label>
             <input type="range" id="slider-mouth-threshold" min="0.02" max="0.25" step="0.01" value="0.08">
             <span id="val-mouth-threshold" class="slider-val">0.08</span>
+          </div>
+          <div class="slider-item">
+            <label for="checkbox-enable-smile">Detect Smiles</label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+              <input type="checkbox" id="checkbox-enable-smile" checked style="width: 16px; height: 16px; accent-color: var(--accent);">
+              <span style="font-size: 11px; color: var(--text-muted);">Enable</span>
+            </label>
+            <span></span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-smile-threshold">Smile Threshold</label>
+            <input type="range" id="slider-smile-threshold" min="0.2" max="0.9" step="0.05" value="0.50">
+            <span id="val-smile-threshold" class="slider-val">0.50</span>
           </div>
         </div>
 

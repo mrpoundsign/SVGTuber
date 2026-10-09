@@ -17,6 +17,8 @@ type Engine struct {
 	neutralX     float64
 	neutralY     float64
 	neutralZ     float64
+	neutralSmile float64
+	neutralMouth float64
 	filter       *PoseFilter
 	lastRaw      FaceFrame
 	configMgr    *config.Manager
@@ -52,6 +54,10 @@ func (e *Engine) Calibrate() {
 	e.neutralX = e.lastRaw.X
 	e.neutralY = e.lastRaw.Y
 	e.neutralZ = e.lastRaw.Z
+	if bs := e.lastRaw.Blendshapes; bs != nil {
+		e.neutralSmile = (bs["mouthSmileLeft"] + bs["mouthSmileRight"]) / 2.0
+		e.neutralMouth = bs["jawOpen"]
+	}
 	e.calibrated = true
 	e.filter.Reset()
 }
@@ -67,6 +73,8 @@ func (e *Engine) ResetCalibration() {
 	e.neutralX = 0
 	e.neutralY = 0
 	e.neutralZ = 0
+	e.neutralSmile = 0
+	e.neutralMouth = 0
 	e.calibrated = false
 	e.filter.Reset()
 }
@@ -136,6 +144,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BrowUp:         e.filter.browUp.Filter(0, tSec),
 			MouthThreshold: ts.MouthThreshold,
 			BlinkThreshold: ts.BlinkThreshold,
+			SmileThreshold: ts.SmileThreshold,
 			AudioVolume:    audioVolume,
 			IsSpeaking:     isSpeaking,
 		}
@@ -162,6 +171,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BrowUp:         e.filter.browUp.Filter(0, tSec),
 			MouthThreshold: ts.MouthThreshold,
 			BlinkThreshold: ts.BlinkThreshold,
+			SmileThreshold: ts.SmileThreshold,
 			AudioVolume:    audioVolume,
 			IsSpeaking:     isSpeaking,
 		}
@@ -180,11 +190,39 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	if bs := raw.Blendshapes; bs != nil {
 		blinkL = bs["eyeBlinkLeft"]
 		blinkR = bs["eyeBlinkRight"]
-		opticalMouth = math.Min(1.0, bs["jawOpen"]*ts.MouthGain)
 
-		smileLeft := bs["mouthSmileLeft"]
-		smileRight := bs["mouthSmileRight"]
-		smile = (smileLeft + smileRight) / 2.0
+		rawJaw := bs["jawOpen"]
+		if e.calibrated && e.neutralMouth > 0 {
+			if rawJaw > e.neutralMouth {
+				denom := 1.0 - e.neutralMouth
+				if denom > 0.05 {
+					rawJaw = (rawJaw - e.neutralMouth) / denom
+				}
+			} else {
+				rawJaw = 0.0
+			}
+		}
+		opticalMouth = math.Min(1.0, rawJaw*ts.MouthGain)
+
+		if ts.EnableSmile {
+			rawSmile := (bs["mouthSmileLeft"] + bs["mouthSmileRight"]) / 2.0
+			if e.calibrated && e.neutralSmile > 0 {
+				if rawSmile > e.neutralSmile {
+					denom := 1.0 - e.neutralSmile
+					if denom > 0.05 {
+						smile = (rawSmile - e.neutralSmile) / denom
+					} else {
+						smile = rawSmile - e.neutralSmile
+					}
+				} else {
+					smile = 0.0
+				}
+			} else {
+				smile = rawSmile
+			}
+		} else {
+			smile = 0.0
+		}
 
 		browInner := bs["browInnerUp"]
 		browOuterL := bs["browOuterUpLeft"]
@@ -250,6 +288,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		BrowUp:         e.filter.browUp.Filter(browUp, tSec),
 		MouthThreshold: ts.MouthThreshold,
 		BlinkThreshold: ts.BlinkThreshold,
+		SmileThreshold: ts.SmileThreshold,
 		AudioVolume:    audioVolume,
 		IsSpeaking:     isSpeaking,
 		Raw:            raw.Blendshapes,

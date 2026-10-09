@@ -14,6 +14,8 @@ type TrackingSettings struct {
 	MouthGain       float64 `json:"mouthGain"`       // Multiplier on raw jawOpen (default: 1.4)
 	MouthThreshold  float64 `json:"mouthThreshold"`  // Open mouth trigger threshold (default: 0.08)
 	BlinkThreshold  float64 `json:"blinkThreshold"`  // Closed eye trigger threshold (default: 0.45)
+	SmileThreshold  float64 `json:"smileThreshold"`  // Smile trigger threshold (default: 0.50)
+	EnableSmile     bool    `json:"enableSmile"`     // Enable smile expression tracking (default: true)
 	EyeGazeGain     float64 `json:"eyeGazeGain"`     // Multiplier on pupil gaze range (default: 1.0)
 	YawMultiplier   float64 `json:"yawMultiplier"`   // Head yaw rotation sensitivity (default: 1.0)
 	PitchMultiplier float64 `json:"pitchMultiplier"` // Head pitch rotation sensitivity (default: 1.0)
@@ -44,6 +46,8 @@ func DefaultSettings() Settings {
 			MouthGain:       1.4,
 			MouthThreshold:  0.08,
 			BlinkThreshold:  0.45,
+			SmileThreshold:  0.50,
+			EnableSmile:     true,
 			EyeGazeGain:     1.0,
 			YawMultiplier:   1.0,
 			PitchMultiplier: 1.0,
@@ -162,6 +166,9 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.BlinkThreshold <= 0 {
 		s.Tracking.BlinkThreshold = 0.45
+	}
+	if s.Tracking.SmileThreshold <= 0 {
+		s.Tracking.SmileThreshold = 0.50
 	}
 	if s.Tracking.EyeGazeGain <= 0 {
 		s.Tracking.EyeGazeGain = 1.0

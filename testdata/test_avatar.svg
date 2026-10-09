@@ -55,13 +55,18 @@
       <path d="M 286 240 Q 306 250 326 240" fill="none" stroke="#1e1b4b" stroke-width="4" stroke-linecap="round"/>
     </g>
 
-    <!-- Mouth (Neutral) -->
-    <g id="mouth_neutral" inkscape:label="Mouth Neutral [Hide {when: mouthOpen > mouthThreshold}]">
-      <path d="M 240 305 Q 256 315 272 305" fill="none" stroke="#be123c" stroke-width="4" stroke-linecap="round"/>
+    <!-- Mouth (Neutral - resting flat line, visible by default) -->
+    <g id="mouth_neutral" inkscape:label="Mouth Neutral [Hide {when: mouthOpen > mouthThreshold || smile > smileThreshold}]">
+      <path d="M 244 310 Q 256 311 268 310" fill="none" stroke="#be123c" stroke-width="3.5" stroke-linecap="round"/>
+    </g>
+
+    <!-- Mouth (Smiling curve) -->
+    <g id="mouth_smile" inkscape:label="Mouth Smile [Show {when: smile > smileThreshold}]" style="display: none;">
+      <path d="M 238 304 Q 256 319 274 304" fill="none" stroke="#be123c" stroke-width="4" stroke-linecap="round"/>
     </g>
 
     <!-- Mouth (Open) with Scale -->
-    <g id="mouth_open" inkscape:label="Mouth Open [Show {when: mouthOpen > mouthThreshold}; Scale {y: mouthOpen; from: 0.5; to: 1.4; pivot: top}]" style="display: none;">
+    <g id="mouth_open" inkscape:label="Mouth Open [Show {when: mouthOpen > mouthThreshold &amp;&amp; !(smile > smileThreshold)}; Scale {y: mouthOpen; from: 0.5; to: 1.4; pivot: top}]" style="display: none;">
       <ellipse cx="256" cy="315" rx="18" ry="14" fill="#be123c" stroke="#9f1239" stroke-width="3"/>
       <path d="M 244 322 Q 256 312 268 322 Z" fill="#fb7185"/>
     </g>

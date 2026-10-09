@@ -163,37 +163,47 @@
     }
   }
 
+  const DEFAULT_PARAM_FALLBACKS = {
+    mouththreshold: 0.08,
+    blinkthreshold: 0.45,
+    smilethreshold: 0.35,
+  };
+
   function getParam(name, fallback = 0) {
-    if (!latestParams || !name) return fallback;
+    if (!name) return fallback;
     const clean = name.trim();
-    if (latestParams.hasOwnProperty(clean)) {
+    const lower = clean.toLowerCase();
+    const def = DEFAULT_PARAM_FALLBACKS.hasOwnProperty(lower) ? DEFAULT_PARAM_FALLBACKS[lower] : fallback;
+
+    if (!latestParams) return def;
+    if (latestParams.hasOwnProperty(clean) && typeof latestParams[clean] === 'number') {
       return latestParams[clean];
     }
-    const lower = clean.toLowerCase();
     for (const key of Object.keys(latestParams)) {
       if (key.toLowerCase() === lower && typeof latestParams[key] === 'number') {
         return latestParams[key];
       }
     }
     if (latestParams.raw) {
-      if (latestParams.raw.hasOwnProperty(clean)) {
+      if (latestParams.raw.hasOwnProperty(clean) && typeof latestParams.raw[clean] === 'number') {
         return latestParams.raw[clean];
       }
       for (const key of Object.keys(latestParams.raw)) {
-        if (key.toLowerCase() === lower) {
+        if (key.toLowerCase() === lower && typeof latestParams.raw[key] === 'number') {
           return latestParams.raw[key];
         }
       }
     }
-    return fallback;
+    return def;
   }
 
   // Safe evaluation of boolean condition expressions (e.g. "blinkL > 0.45 || blinkR > 0.45")
   function evaluateCondition(expr, params) {
     if (!expr) return true;
     try {
+      const decoded = expr.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
       // Replace known parameter variables with actual numeric values
-      const sanitized = expr.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match) => {
+      const sanitized = decoded.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match) => {
         if (match === 'true' || match === 'false') return match;
         const val = getParam(match, null);
         if (typeof val === 'number') {
@@ -203,7 +213,7 @@
       });
 
       // Simple safe evaluation limited to numbers and logical comparison operators
-      if (/^[0-9\.\s><=!=&|()+\-*/]+$/.test(sanitized)) {
+      if (/^[0-9\.\s><=!&|()+\-*\/]+$/.test(sanitized)) {
         return Boolean(Function(`"use strict"; return (${sanitized});`)());
       }
     } catch (e) {

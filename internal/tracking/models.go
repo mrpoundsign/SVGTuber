@@ -41,6 +41,7 @@ type ParamFrame struct {
 	BrowUp         float64            `json:"browUp"`    // 0.0 to 1.0
 	MouthThreshold float64            `json:"mouthThreshold"`
 	BlinkThreshold float64            `json:"blinkThreshold"`
+	SmileThreshold float64            `json:"smileThreshold"`
 	AudioVolume    float64            `json:"audioVolume,omitempty"`
 	IsSpeaking     bool               `json:"isSpeaking,omitempty"`
 	Raw            map[string]float64 `json:"raw,omitempty"`

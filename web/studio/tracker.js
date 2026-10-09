@@ -39,6 +39,8 @@ const gaugeBlinkL = document.getElementById("gauge-blink-l");
 const gaugeBlinkR = document.getElementById("gauge-blink-r");
 const gaugeMouthOpen = document.getElementById("gauge-mouth-open");
 const gaugeSmile = document.getElementById("gauge-smile");
+const valSmile = document.getElementById("val-smile");
+const smileThresholdMarker = document.getElementById("smile-threshold-marker");
 
 let faceLandmarker = null;
 let runningMode = "VIDEO";
@@ -62,6 +64,14 @@ let analyserNode = null;
 let audioDataArray = null;
 let micRunning = false;
 let smoothedAudioVol = 0;
+
+// Calibration reference state
+let latestRawPose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
+let latestRawBlendshapes = {};
+let neutralPose = { yaw: 0, pitch: 0, roll: 0 };
+let neutralSmile = 0;
+let neutralMouth = 0;
+let isCalibrated = false;
 
 // Inline Web Worker ticker to maintain 60 FPS in background tabs
 function initTickerWorker() {
@@ -642,23 +652,50 @@ function sendTrackingLoss(audioState) {
 }
 
 function updateGauges(pose, blendshapes) {
-  valYaw.textContent = `${pose.yaw.toFixed(1)}°`;
-  valPitch.textContent = `${pose.pitch.toFixed(1)}°`;
-  valRoll.textContent = `${pose.roll.toFixed(1)}°`;
+  latestRawPose = pose;
+  latestRawBlendshapes = blendshapes;
 
-  gaugeYaw.style.width = `${Math.max(0, Math.min(100, ((pose.yaw + 30) / 60) * 100))}%`;
-  gaugePitch.style.width = `${Math.max(0, Math.min(100, ((pose.pitch + 30) / 60) * 100))}%`;
-  gaugeRoll.style.width = `${Math.max(0, Math.min(100, ((pose.roll + 30) / 60) * 100))}%`;
+  const displayYaw = isCalibrated ? pose.yaw - neutralPose.yaw : pose.yaw;
+  const displayPitch = isCalibrated ? pose.pitch - neutralPose.pitch : pose.pitch;
+  const displayRoll = isCalibrated ? pose.roll - neutralPose.roll : pose.roll;
+
+  valYaw.textContent = `${displayYaw.toFixed(1)}°`;
+  valPitch.textContent = `${displayPitch.toFixed(1)}°`;
+  valRoll.textContent = `${displayRoll.toFixed(1)}°`;
+
+  gaugeYaw.style.width = `${Math.max(0, Math.min(100, ((displayYaw + 30) / 60) * 100))}%`;
+  gaugePitch.style.width = `${Math.max(0, Math.min(100, ((displayPitch + 30) / 60) * 100))}%`;
+  gaugeRoll.style.width = `${Math.max(0, Math.min(100, ((displayRoll + 30) / 60) * 100))}%`;
 
   const blinkL = blendshapes.eyeBlinkLeft || 0;
   const blinkR = blendshapes.eyeBlinkRight || 0;
-  const mouthOpen = blendshapes.jawOpen || 0;
-  const smile = ((blendshapes.mouthSmileLeft || 0) + (blendshapes.mouthSmileRight || 0)) / 2;
+
+  let mouthOpen = blendshapes.jawOpen || 0;
+  if (isCalibrated && neutralMouth > 0) {
+    if (mouthOpen > neutralMouth) {
+      const denom = 1.0 - neutralMouth;
+      mouthOpen = denom > 0.05 ? (mouthOpen - neutralMouth) / denom : 0;
+    } else {
+      mouthOpen = 0;
+    }
+  }
+
+  const rawSmile = ((blendshapes.mouthSmileLeft || 0) + (blendshapes.mouthSmileRight || 0)) / 2;
+  let smile = rawSmile;
+  if (isCalibrated && neutralSmile > 0) {
+    if (rawSmile > neutralSmile) {
+      const denom = 1.0 - neutralSmile;
+      smile = denom > 0.05 ? (rawSmile - neutralSmile) / denom : rawSmile - neutralSmile;
+    } else {
+      smile = 0;
+    }
+  }
 
   gaugeBlinkL.style.width = `${Math.round(blinkL * 100)}%`;
   gaugeBlinkR.style.width = `${Math.round(blinkR * 100)}%`;
   gaugeMouthOpen.style.width = `${Math.round(mouthOpen * 100)}%`;
   gaugeSmile.style.width = `${Math.round(smile * 100)}%`;
+  if (valSmile) valSmile.textContent = `${Math.round(smile * 100)}%`;
 }
 
 // Calibrate Neutral Pose Button
@@ -666,6 +703,14 @@ btnCalibrate.addEventListener("click", () => {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: "calibrate" }));
   }
+  if (latestRawPose) {
+    neutralPose = { yaw: latestRawPose.yaw, pitch: latestRawPose.pitch, roll: latestRawPose.roll };
+  }
+  if (latestRawBlendshapes) {
+    neutralSmile = ((latestRawBlendshapes.mouthSmileLeft || 0) + (latestRawBlendshapes.mouthSmileRight || 0)) / 2;
+    neutralMouth = latestRawBlendshapes.jawOpen || 0;
+  }
+  isCalibrated = true;
 });
 
 btnToggleCamera.addEventListener("click", toggleCamera);
@@ -688,6 +733,8 @@ initMediaPipe();
 // Settings & Tunable Sliders Management
 const sliderMouthGain = document.getElementById("slider-mouth-gain");
 const sliderMouthThreshold = document.getElementById("slider-mouth-threshold");
+const checkboxEnableSmile = document.getElementById("checkbox-enable-smile");
+const sliderSmileThreshold = document.getElementById("slider-smile-threshold");
 const sliderBlinkThreshold = document.getElementById("slider-blink-threshold");
 const sliderEyeGain = document.getElementById("slider-eye-gain");
 const sliderYawMultiplier = document.getElementById("slider-yaw-multiplier");
@@ -703,6 +750,7 @@ const valDecaySmooth = document.getElementById("val-decay-smooth");
 
 const valMouthGain = document.getElementById("val-mouth-gain");
 const valMouthThreshold = document.getElementById("val-mouth-threshold");
+const valSmileThreshold = document.getElementById("val-smile-threshold");
 const valBlinkThreshold = document.getElementById("val-blink-threshold");
 const valEyeGain = document.getElementById("val-eye-gain");
 const valYawMultiplier = document.getElementById("val-yaw-multiplier");
@@ -737,6 +785,8 @@ function syncSettingsToUI(s) {
     const t = s.tracking;
     if (sliderMouthGain) sliderMouthGain.value = t.mouthGain || 1.4;
     if (sliderMouthThreshold) sliderMouthThreshold.value = t.mouthThreshold || 0.08;
+    if (checkboxEnableSmile) checkboxEnableSmile.checked = t.enableSmile !== false;
+    if (sliderSmileThreshold) sliderSmileThreshold.value = t.smileThreshold || 0.50;
     if (sliderBlinkThreshold) sliderBlinkThreshold.value = t.blinkThreshold || 0.45;
     if (sliderEyeGain) sliderEyeGain.value = t.eyeGazeGain || 1.0;
     if (sliderYawMultiplier) sliderYawMultiplier.value = t.yawMultiplier || 1.0;
@@ -758,10 +808,16 @@ function syncSettingsToUI(s) {
 function updateSliderLabels() {
   if (valMouthGain && sliderMouthGain) valMouthGain.textContent = `${parseFloat(sliderMouthGain.value).toFixed(2)}x`;
   if (valMouthThreshold && sliderMouthThreshold) valMouthThreshold.textContent = parseFloat(sliderMouthThreshold.value).toFixed(2);
+  if (valSmileThreshold && sliderSmileThreshold) valSmileThreshold.textContent = parseFloat(sliderSmileThreshold.value).toFixed(2);
   if (valBlinkThreshold && sliderBlinkThreshold) valBlinkThreshold.textContent = parseFloat(sliderBlinkThreshold.value).toFixed(2);
   if (valEyeGain && sliderEyeGain) valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
   if (valYawMultiplier && sliderYawMultiplier) valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier) valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
+
+  if (smileThresholdMarker && sliderSmileThreshold) {
+    const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
+    smileThresholdMarker.style.left = `${smilePercent}%`;
+  }
 
   if (valMicGain && sliderMicGain) valMicGain.textContent = `${parseFloat(sliderMicGain.value).toFixed(1)}x`;
   if (valNoiseGate && sliderNoiseGate) valNoiseGate.textContent = parseFloat(sliderNoiseGate.value).toFixed(2);
@@ -780,6 +836,8 @@ function collectSettingsFromUI() {
     tracking: {
       mouthGain: parseFloat(sliderMouthGain?.value || 1.4),
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || 0.08),
+      enableSmile: checkboxEnableSmile ? checkboxEnableSmile.checked : true,
+      smileThreshold: parseFloat(sliderSmileThreshold?.value || 0.50),
       blinkThreshold: parseFloat(sliderBlinkThreshold?.value || 0.45),
       eyeGazeGain: parseFloat(sliderEyeGain?.value || 1.0),
       yawMultiplier: parseFloat(sliderYawMultiplier?.value || 1.0),
@@ -829,6 +887,7 @@ function onSliderInput() {
 [
   sliderMouthGain,
   sliderMouthThreshold,
+  sliderSmileThreshold,
   sliderBlinkThreshold,
   sliderEyeGain,
   sliderYawMultiplier,
@@ -854,6 +913,9 @@ if (modeSelect) {
 }
 if (settingsModeSelect) {
   settingsModeSelect.addEventListener("change", onModeChange);
+}
+if (checkboxEnableSmile) {
+  checkboxEnableSmile.addEventListener("change", () => sendSettingsUpdate(true));
 }
 
 if (btnSaveSettings) {
