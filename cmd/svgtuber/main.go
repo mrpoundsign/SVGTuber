@@ -99,7 +99,14 @@ func openBrowser(url string) {
 	case "darwin":
 		cmd = exec.Command("open", url)
 	default:
-		cmd = exec.Command("xdg-open", url)
+		// Check for WSL or Linux desktop utilities
+		if _, err := exec.LookPath("wslview"); err == nil {
+			cmd = exec.Command("wslview", url)
+		} else if _, err := exec.LookPath("cmd.exe"); err == nil {
+			cmd = exec.Command("cmd.exe", "/c", "start", "", url)
+		} else {
+			cmd = exec.Command("xdg-open", url)
+		}
 	}
 	_ = cmd.Start()
 }
