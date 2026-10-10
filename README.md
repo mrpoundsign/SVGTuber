@@ -11,6 +11,15 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 
 ---
 
+## 📸 Screenshots
+
+| 1. Rig in Inkscape | 2. Track in Studio | 3. Stream in OBS |
+|:---:|:---:|:---:|
+| [![Inkscape Rigging](docs/images/inkscape_rigging.png)](docs/RIGGING_GUIDE.md) | [![Studio Dashboard](docs/images/studio_dashboard.png)](docs/images/studio_dashboard.png) | [![OBS Browser Source](docs/images/obs_browser_source.png)](docs/images/obs_browser_source.png) |
+| *Declarative directives in layer labels* | *MediaPipe face tracking & sensitivity sliders* | *Crisp, transparent vector overlay* |
+
+---
+
 ## ✨ Features
 
 - **Pure Go & Zero-CGO:** Single static binary with zero native dependencies—compiles cleanly across Windows, Linux, and macOS.

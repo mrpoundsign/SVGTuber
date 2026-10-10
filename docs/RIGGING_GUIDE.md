@@ -22,6 +22,8 @@ Unlike traditional PNGTubers that swap flat bitmap sprites or complex Live2D rig
 
 In Inkscape's **Layers and Objects** dock (`Ctrl+Shift+L`), layers at the **top of the panel are rendered in front (foreground)**, while layers at the **bottom are rendered in back (background)**.
 
+![Inkscape Layers and Objects Rigging](images/inkscape_rigging.png)
+
 Organize your layers in Inkscape from top to bottom (front to back) as follows:
 
 ```text
@@ -249,3 +251,13 @@ SVGTuber automatically scans your avatar SVG for any layer using the `is[A-Z]*` 
    ```
 2. Keep Inkscape and SVGTuber open side-by-side.
 3. Every time you save (`Ctrl+S`) in Inkscape, SVGTuber immediately re-scans your rig and updates your avatar in OBS and Studio in real-time. If you added a new expression, click **`↻ Reload Rig`** in Studio to refresh the buttons instantly!
+
+![SVGTuber Studio Face Tracker & Live Preview](images/studio_dashboard.png)
+
+### 4. Displaying in OBS Studio
+1. In OBS Studio, add a new **Browser Source** to your scene.
+2. Set **URL** to `http://localhost:7420/overlay`.
+3. Set **Width** to `1920` and **Height** to `1080` (or match your canvas resolution).
+4. SVGTuber renders with a transparent background by default, compositing your avatar cleanly over games, backgrounds, or stream overlays.
+
+![OBS Browser Source Properties & Stream Canvas](images/obs_browser_source.png)
