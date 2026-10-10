@@ -2,38 +2,81 @@
 
 **Real-Time Vector VTuber Engine for Inkscape & OBS Studio**
 
-SVGTuber brings multi-layer vector avatars created in **Inkscape** directly into **OBS Studio** with live webcam face tracking and instantaneous hot-reloading.
+[![Go Report Card](https://goreportcard.com/badge/github.com/mrpoundsign/SVGTuber)](https://goreportcard.com/report/github.com/mrpoundsign/SVGTuber)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
-Unlike traditional PNGTuber tools that swap static bitmaps, SVGTuber preserves native SVG resolution at any scale, rendering directly in OBS's hardware-accelerated Browser Source.
+SVGTuber brings multi-layer vector avatars created in **Inkscape** directly into **OBS Studio** with live webcam face tracking, microphone lipsync, and instantaneous hot-reloading.
+
+Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweight 3D/Live2D engines with complex runtimes, SVGTuber preserves crisp vector fidelity at any stream resolution, rendering directly in OBS's hardware-accelerated Browser Source.
 
 ---
 
-## ✨ Features (Milestone 1)
+## ✨ Features
 
-- **Pure Go Core:** Single zero-dependency binary (`CGO_ENABLED=0`) with embedded web interfaces.
-- **OBS Browser Source Ready:** Transparent overlay (`/overlay`) rendering SVGs inline in the DOM.
-- **Instant Hot-Reloading:** Uses `fsnotify` with atomic write detection—saving changes in Inkscape updates your avatar on stream instantly.
-- **Studio Dashboard:** Web-based control panel (`/studio`) to preview artwork and copy OBS links.
+- **Pure Go & Zero-CGO:** Single static binary with zero native dependencies—compiles cleanly across Windows, Linux, and macOS.
+- **In-Browser Face Tracking:** Runs Google MediaPipe Vision FaceLandmarker in WebAssembly; extracts 52 ARKit blendshapes and head rotation angles (Yaw, Pitch, Roll).
+- **Smooth Temporal Filtering:** Pure-Go 1€ (One-Euro) adaptive filter eliminates tracking jitter at rest while keeping rapid blinks and head turns snappy and responsive.
+- **Declarative Inkscape Rigging:** Rig layers directly in Inkscape using simple labels (`[Follow]`, `[Dist]`, `[Show]`, `[Hide]`, `[Scale]`, `[Move]`, `[Idle]`).
+- **Hybrid Microphone Lipsync:** Blend webcam facial expressions with microphone Web Audio RMS volume for natural, reliable conversational speech.
+- **Dynamic Expression Hotkeys:** Auto-discovers custom expression layers (like `isBlush`, `isSweat`, `isAngry`) from your SVG with in-tab hotkeys (`1`–`9`) and REST webhook endpoints for **Elgato Stream Deck** and **Touch Portal**.
+- **Instant Hot-Reloading:** Saving your avatar in Inkscape (`Ctrl+S`) immediately updates the puppet on stream without dropping frames or restarting OBS.
+- **Background Resilient:** Web Worker clock and silent audio keep tracking active even when the Studio dashboard is running minimized or behind games.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Build & Run
+### 1. Build from Source
 ```bash
-# Build using the build script:
-./build.sh build       # builds build/svgtuber (Linux)
-./build.sh windows     # builds build/svgtuber.exe (Windows)
+# Build binary for your current OS:
+./build.sh build
 
-# Run with the sample avatar
-./build/svgtuber -avatar testdata/test_avatar.svg
+# Or cross-compile for Windows (.exe):
+./build.sh windows
 ```
 
-### 2. Add to OBS Studio
-1. In OBS, add a new **Browser Source**.
-2. Set the URL to: `http://localhost:7420/overlay`
-3. Set your desired dimensions (e.g. `1080 x 1080` or `1920 x 1080`).
-4. Ensure *Shutdown source when not visible* is unchecked for instant scene switches.
+### 2. Run SVGTuber
+```bash
+# Launch with the included test avatar and open the Studio dashboard:
+./build/svgtuber -avatar testdata/test_avatar.svg -open-studio
+```
+
+### 3. Add to OBS Studio
+1. In OBS Studio, add a new **Browser Source** to your scene.
+2. Set the **URL** to:
+   ```text
+   http://localhost:7420/overlay
+   ```
+3. Set your canvas resolution (e.g. `1080 x 1080` or `1920 x 1080`).
+4. Ensure **Shutdown source when not visible** is unchecked for instantaneous scene transitions.
+
+---
+
+## 🎨 Artist & Rigging Guide
+
+Want to rig your own character in Inkscape? Check out our complete guide:
+
+📖 **[Read the Artist & Rigging Guide](docs/RIGGING_GUIDE.md)**
+- Layer hierarchy recommendations
+- Syntax for `[Follow]`, `[Dist]`, `[Show]`, `[Hide]`, `[Move]`, `[Scale]`, and `[Idle]`
+- Creating custom toggleable expressions and Stream Deck webhooks
+
+---
+
+## 🎮 Stream Deck & Touch Portal Integration
+
+SVGTuber exposes a REST API for remote expression triggers and scene automation:
+
+| Action | HTTP Request |
+|---|---|
+| **Toggle Expression** | `POST http://localhost:7420/api/expressions/toggle?name=<name>` |
+| **Set State** | `POST http://localhost:7420/api/expressions/set?name=<name>&active=true\|false` |
+| **Timed Trigger** | `POST http://localhost:7420/api/expressions/trigger?name=<name>&duration=3s` |
+| **Clear All Expressions** | `POST http://localhost:7420/api/expressions/reset` |
+| **Reload Avatar Rig** | `POST http://localhost:7420/api/avatar/reload` |
+| **Neutral Pose Calibrate** | `POST http://localhost:7420/api/calibrate` |
+
+> In the Studio dashboard (`/studio`), click the 📋 copy icon next to any expression button to immediately grab its Stream Deck webhook URL!
 
 ---
 
@@ -45,17 +88,6 @@ Unlike traditional PNGTuber tools that swap static bitmaps, SVGTuber preserves n
 | `-port` | `7420` | HTTP & WebSocket server port |
 | `-open-studio` | `false` | Automatically launch Studio in default web browser |
 | `-version` | `false` | Print version and build info |
-
----
-
-## 🗺️ Roadmap & Milestones
-
-See [planning/roadmap.md](planning/roadmap.md) for architecture and roadmap details:
-1. **Milestone 1: Server Skeleton & OBS Overlay Core** (Current)
-2. **Milestone 2: Web Studio & MediaPipe Face Tracking** (Webcam blendshapes + One-Euro filter)
-3. **Milestone 3: Rig Label Directives & Live Vector Animation** (IAMS-style Inkscape labels)
-4. **Milestone 4: Audio Lip-Sync & Hybrid Mode** (Mic volume talking triggers)
-5. **Milestone 5: Stream Controls, Packaging & Release** (Hotkeys, GoReleaser, docs)
 
 ---
 
