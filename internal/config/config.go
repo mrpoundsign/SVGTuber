@@ -37,9 +37,10 @@ type AudioSettings struct {
 
 // Settings represents the complete user configuration.
 type Settings struct {
-	Version  int              `json:"version"`
-	Tracking TrackingSettings `json:"tracking"`
-	Audio    AudioSettings    `json:"audio"`
+	Version    int              `json:"version"`
+	AvatarPath string           `json:"avatarPath,omitempty"`
+	Tracking   TrackingSettings `json:"tracking"`
+	Audio      AudioSettings    `json:"audio"`
 }
 
 // DefaultSettings returns a initialized Settings object with tuned defaults.
@@ -122,19 +123,39 @@ func (m *Manager) Get() Settings {
 	return m.settings
 }
 
+// GetAvatarPath returns the persisted avatar path from settings.
+func (m *Manager) GetAvatarPath() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.settings.AvatarPath
+}
+
+// SetAvatarPath updates the avatar path and persists it to disk.
+func (m *Manager) SetAvatarPath(p string) error {
+	m.mu.Lock()
+	m.settings.AvatarPath = p
+	m.mu.Unlock()
+	return m.Save()
+}
+
 // Update updates the active settings and persists them to disk.
 func (m *Manager) Update(newSettings Settings) error {
 	m.mu.Lock()
+	// Preserve configured AvatarPath if incoming payload leaves it empty
+	if newSettings.AvatarPath == "" && m.settings.AvatarPath != "" {
+		newSettings.AvatarPath = m.settings.AvatarPath
+	}
 	m.settings = newSettings
 	m.mu.Unlock()
 
 	return m.Save()
 }
 
-// Reset restores settings to default values and saves to disk.
+// Reset restores settings to default values and saves to disk while preserving avatarPath.
 func (m *Manager) Reset() (Settings, error) {
 	defaults := DefaultSettings()
 	m.mu.Lock()
+	defaults.AvatarPath = m.settings.AvatarPath
 	m.settings = defaults
 	m.mu.Unlock()
 

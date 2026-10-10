@@ -37,8 +37,11 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 
 ### 2. Run SVGTuber
 ```bash
-# Launch with the included test avatar and open the Studio dashboard:
-./build/svgtuber -avatar testdata/test_avatar.svg -open-studio
+# Simply place 'avatar.svg' in the current folder and run:
+./build/svgtuber -open-studio
+
+# Or specify a custom avatar file (persisted to settings for future launches):
+./build/svgtuber -avatar path/to/my_avatar.svg -open-studio
 ```
 
 ### 3. Add to OBS Studio
@@ -84,7 +87,7 @@ SVGTuber exposes a REST API for remote expression triggers and scene automation:
 
 | Flag | Default | Description |
 |---|---|---|
-| `-avatar` | `testdata/test_avatar.svg` | Path to the Inkscape SVG avatar file |
+| `-avatar` | `avatar.svg` or saved in config | Path to the Inkscape SVG avatar file (persisted to config) |
 | `-port` | `7420` | HTTP & WebSocket server port |
 | `-open-studio` | `false` | Automatically launch Studio in default web browser |
 | `-version` | `false` | Print version and build info |

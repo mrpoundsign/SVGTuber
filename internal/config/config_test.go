@@ -78,6 +78,14 @@ func TestConfigManager_SaveAndLoad(t *testing.T) {
 		t.Errorf("Expected reloaded Audio.MicGain 2.0, got %f", loaded.Audio.MicGain)
 	}
 
+	// Set and test AvatarPath
+	if err := mgr2.SetAvatarPath("/path/to/my_avatar.svg"); err != nil {
+		t.Fatalf("SetAvatarPath failed: %v", err)
+	}
+	if mgr2.GetAvatarPath() != "/path/to/my_avatar.svg" {
+		t.Errorf("Expected AvatarPath '/path/to/my_avatar.svg', got %q", mgr2.GetAvatarPath())
+	}
+
 	// Reset
 	reset, err := mgr2.Reset()
 	if err != nil {
@@ -85,5 +93,8 @@ func TestConfigManager_SaveAndLoad(t *testing.T) {
 	}
 	if reset.Tracking.MouthGain != 1.4 {
 		t.Errorf("Expected reset MouthGain 1.4, got %f", reset.Tracking.MouthGain)
+	}
+	if reset.AvatarPath != "/path/to/my_avatar.svg" {
+		t.Errorf("Expected AvatarPath to be preserved after reset, got %q", reset.AvatarPath)
 	}
 }

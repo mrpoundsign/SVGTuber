@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"time"
@@ -26,7 +27,7 @@ var (
 )
 
 func main() {
-	avatarPath := flag.String("avatar", "testdata/test_avatar.svg", "Path to the Inkscape SVG avatar file")
+	avatarFlag := flag.String("avatar", "", "Path to the Inkscape SVG avatar file (saved to config when specified)")
 	port := flag.Int("port", 7420, "Port for the HTTP and WebSocket server")
 	openStudio := flag.Bool("open-studio", false, "Automatically open the Studio control page in default browser")
 	showVersion := flag.Bool("version", false, "Print version information and exit")
@@ -37,26 +38,79 @@ func main() {
 		return
 	}
 
-	if _, err := os.Stat(*avatarPath); os.IsNotExist(err) {
-		log.Fatalf("Avatar SVG file does not exist: %s", *avatarPath)
-	}
-
 	cfgMgr, err := config.NewManager()
 	if err != nil {
 		log.Printf("[Warning] Failed to initialize config manager: %v (using defaults)", err)
 	}
 
+	// Resolve avatar path:
+	// 1. Explicit -avatar flag (persisted to config)
+	// 2. avatar.svg in current working directory (persisted to config)
+	// 3. Previously saved avatar path in config
+	// 4. Fallback to testdata/test_avatar.svg
+	var avatarPath string
+	if *avatarFlag != "" {
+		absPath, err := filepath.Abs(*avatarFlag)
+		if err != nil {
+			absPath = *avatarFlag
+		}
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			log.Fatalf("Specified avatar SVG file does not exist: %s", *avatarFlag)
+		}
+		avatarPath = absPath
+		if cfgMgr != nil {
+			if err := cfgMgr.SetAvatarPath(absPath); err != nil {
+				log.Printf("[Warning] Failed to save avatar path to config: %v", err)
+			}
+		}
+	} else {
+		cwdAvatar := "avatar.svg"
+		if _, err := os.Stat(cwdAvatar); err == nil {
+			abs, err := filepath.Abs(cwdAvatar)
+			if err != nil {
+				abs = cwdAvatar
+			}
+			avatarPath = abs
+			if cfgMgr != nil {
+				_ = cfgMgr.SetAvatarPath(abs)
+			}
+			log.Printf("[Config] Found 'avatar.svg' in current directory; saved to config: %s", abs)
+		} else if cfgMgr != nil && cfgMgr.GetAvatarPath() != "" {
+			saved := cfgMgr.GetAvatarPath()
+			if _, err := os.Stat(saved); err == nil {
+				avatarPath = saved
+				log.Printf("[Config] Using avatar from saved config: %s", saved)
+			} else {
+				log.Printf("[Config] Previously saved avatar path does not exist: %s", saved)
+			}
+		}
+
+		if avatarPath == "" {
+			fallback := "testdata/test_avatar.svg"
+			if _, err := os.Stat(fallback); err == nil {
+				if abs, err := filepath.Abs(fallback); err == nil {
+					avatarPath = abs
+				} else {
+					avatarPath = fallback
+				}
+				log.Printf("[Config] No avatar specified or found; using sample avatar: %s", avatarPath)
+			} else {
+				log.Fatalf("No avatar SVG found! Place an 'avatar.svg' in the current directory or specify with -avatar <path>.")
+			}
+		}
+	}
+
 	hub := server.NewHub()
 	engine := tracking.NewEngine(cfgMgr)
-	srv := server.New(*port, *avatarPath, hub, engine, cfgMgr)
+	srv := server.New(*port, avatarPath, hub, engine, cfgMgr)
 
 	if err := srv.Start(); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 
 	// Initialize file watcher for live reload
-	fw, err := watcher.New(*avatarPath, 100*time.Millisecond, func() {
-		log.Printf("[Watcher] Avatar %s updated on disk. Broadcasting reload to overlays.", *avatarPath)
+	fw, err := watcher.New(avatarPath, 100*time.Millisecond, func() {
+		log.Printf("[Watcher] Avatar %s updated on disk. Broadcasting reload to overlays.", avatarPath)
 		if _, err := srv.ReloadRig(); err != nil {
 			log.Printf("[Watcher] Error reloading rig: %v", err)
 		}
@@ -74,7 +128,7 @@ func main() {
 	fmt.Println("====================================================")
 	fmt.Printf("  SVGTuber %s - Vector VTuber Engine\n", version)
 	fmt.Println("====================================================")
-	fmt.Printf("  Avatar:      %s\n", *avatarPath)
+	fmt.Printf("  Avatar:      %s\n", avatarPath)
 	fmt.Printf("  Studio:      %s\n", studioURL)
 	fmt.Printf("  OBS Overlay: %s\n", overlayURL)
 	if cfgMgr != nil {
