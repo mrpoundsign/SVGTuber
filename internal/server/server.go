@@ -109,14 +109,21 @@ func (s *Server) Start() error {
 		http.NotFound(w, r)
 	})
 
-	// Sub-filesystems for embedded web assets
-	overlayFS, err := fs.Sub(web.StaticFS, "overlay")
-	if err != nil {
-		return fmt.Errorf("loading overlay static assets: %w", err)
-	}
-	studioFS, err := fs.Sub(web.StaticFS, "studio")
-	if err != nil {
-		return fmt.Errorf("loading studio static assets: %w", err)
+	// Sub-filesystems for web assets: prefer live disk assets during local development if present
+	var overlayFS fs.FS
+	var studioFS fs.FS
+	if fi, err := os.Stat("web/overlay"); err == nil && fi.IsDir() {
+		overlayFS = os.DirFS("web/overlay")
+		studioFS = os.DirFS("web/studio")
+	} else {
+		overlayFS, err = fs.Sub(web.StaticFS, "overlay")
+		if err != nil {
+			return fmt.Errorf("loading overlay static assets: %w", err)
+		}
+		studioFS, err = fs.Sub(web.StaticFS, "studio")
+		if err != nil {
+			return fmt.Errorf("loading studio static assets: %w", err)
+		}
 	}
 
 	mux.Handle("/overlay/", http.StripPrefix("/overlay/", http.FileServer(http.FS(overlayFS))))

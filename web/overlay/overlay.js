@@ -161,10 +161,13 @@
         }
       }
 
+      const baseTransform = elem.transform || el.getAttribute('transform') || '';
+
       activeRigBindings.push({
         el,
         cx,
         cy,
+        baseTransform,
         directives: elem.directives || []
       });
     });
@@ -410,13 +413,39 @@
         }
       }
 
-      // Apply hardware-accelerated transform with view-box transformBox
-      if (rot !== 0 || tx !== 0 || ty !== 0 || sx !== 1 || sy !== 1) {
-        el.style.transformBox = 'view-box';
-        el.style.transformOrigin = `${b.cx}px ${b.cy}px`;
-        el.style.transform = `translate(${tx.toFixed(2)}px, ${ty.toFixed(2)}px) rotate(${rot.toFixed(2)}deg) scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
-      } else {
+      // Apply transforms using SVG transform attribute so existing element transforms (Inkscape/Illustrator)
+      // are preserved and never overridden by CSS cascade rules.
+      let animParts = [];
+      if (tx !== 0 || ty !== 0) {
+        animParts.push(`translate(${tx.toFixed(2)}, ${ty.toFixed(2)})`);
+      }
+      if (rot !== 0) {
+        animParts.push(`rotate(${rot.toFixed(2)}, ${b.cx.toFixed(2)}, ${b.cy.toFixed(2)})`);
+      }
+      if (sx !== 1 || sy !== 1) {
+        animParts.push(`translate(${b.cx.toFixed(2)}, ${b.cy.toFixed(2)}) scale(${sx.toFixed(4)}, ${sy.toFixed(4)}) translate(${(-b.cx).toFixed(2)}, ${(-b.cy).toFixed(2)})`);
+      }
+
+      // Ensure no residual style.transform overrides the SVG transform attribute
+      if (el.style.transform) {
         el.style.transform = '';
+      }
+      if (el.style.transformBox) {
+        el.style.transformBox = '';
+      }
+      if (el.style.transformOrigin) {
+        el.style.transformOrigin = '';
+      }
+
+      if (animParts.length > 0) {
+        const animStr = animParts.join(' ');
+        el.setAttribute('transform', b.baseTransform ? `${b.baseTransform.trim()} ${animStr}` : animStr);
+      } else {
+        if (b.baseTransform) {
+          el.setAttribute('transform', b.baseTransform.trim());
+        } else {
+          el.removeAttribute('transform');
+        }
       }
     }
 

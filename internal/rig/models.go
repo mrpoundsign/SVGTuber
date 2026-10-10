@@ -10,6 +10,7 @@ type Directive struct {
 type RigElement struct {
 	ID         string      `json:"id"`
 	Label      string      `json:"label"`
+	Transform  string      `json:"transform,omitempty"`
 	Directives []Directive `json:"directives"`
 }
 

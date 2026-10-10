@@ -127,10 +127,12 @@ func (p *SVGParser) Parse(svgData []byte) (*RigDefinition, error) {
 		}
 
 		var id string
+		var transform string
 		for _, attr := range startElem.Attr {
 			if attr.Name.Local == "id" {
 				id = attr.Value
-				break
+			} else if attr.Name.Local == "transform" {
+				transform = attr.Value
 			}
 		}
 
@@ -164,6 +166,7 @@ func (p *SVGParser) Parse(svgData []byte) (*RigDefinition, error) {
 				elements = append(elements, RigElement{
 					ID:         id,
 					Label:      label,
+					Transform:  transform,
 					Directives: directives,
 				})
 			}

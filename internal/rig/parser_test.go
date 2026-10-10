@@ -89,7 +89,7 @@ func TestParseDirectives(t *testing.T) {
 func TestParseSVG(t *testing.T) {
 	svg := `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
-  <g id="layer_head" inkscape:label="Head [Follow {yaw: 12; pitch: 8}]">
+  <g id="layer_head" inkscape:label="Head [Follow {yaw: 12; pitch: 8}]" transform="translate(0, 50)">
     <circle cx="50" cy="50" r="40"/>
   </g>
   <g id="eye_closed" inkscape:label="Eyes Closed [Show {when: blinkL > 0.5}]">
@@ -113,10 +113,16 @@ func TestParseSVG(t *testing.T) {
 	if elem0.ID != "layer_head" || len(elem0.Directives) != 1 || elem0.Directives[0].Type != "Follow" {
 		t.Errorf("Unexpected element 0: %+v", elem0)
 	}
+	if elem0.Transform != "translate(0, 50)" {
+		t.Errorf("Expected element 0 transform 'translate(0, 50)', got %q", elem0.Transform)
+	}
 
 	elem1 := rigDef.Elements[1]
 	if elem1.ID != "eye_closed" || len(elem1.Directives) != 1 || elem1.Directives[0].Type != "Show" {
 		t.Errorf("Unexpected element 1: %+v", elem1)
+	}
+	if elem1.Transform != "" {
+		t.Errorf("Expected element 1 transform empty, got %q", elem1.Transform)
 	}
 }
 
