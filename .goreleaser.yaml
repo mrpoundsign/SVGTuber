@@ -1,0 +1,53 @@
+version: 2
+
+project_name: svgtuber
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: svgtuber
+    main: ./cmd/svgtuber
+    binary: svgtuber
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    builds:
+      - svgtuber
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - src: testdata/test_avatar.svg
+        dst: avatar.svg
+      - LICENSE
+      - README.md
+      - docs/RIGGING_GUIDE.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
