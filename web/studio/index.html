@@ -266,6 +266,61 @@
       font-family: monospace;
       font-size: 13px;
     }
+    /* Expression Buttons & Quick Controls */
+    .expr-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #181824;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      user-select: none;
+    }
+    .expr-btn:hover {
+      background: #252538;
+      color: var(--text-main);
+      border-color: #4b4b66;
+    }
+    .expr-btn.active {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 10px rgba(99, 102, 241, 0.4);
+    }
+    .expr-key-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-family: monospace;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+    .expr-btn.active .expr-key-badge {
+      background: rgba(99, 102, 241, 0.5);
+      color: #fff;
+    }
+    .expr-copy-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 2px 4px;
+      font-size: 11px;
+      border-radius: 3px;
+      margin-left: 2px;
+    }
+    .expr-copy-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-main);
+    }
+
     /* Sliders & Settings Group */
     .slider-group {
       display: flex;
@@ -468,6 +523,27 @@
         <div class="obs-link-box">
           <span id="overlay-url">http://localhost:7420/overlay</span>
           <button class="btn btn-secondary" onclick="copyOverlayUrl()">Copy URL</button>
+        </div>
+      </div>
+
+      <!-- Expressions & Quick Controls -->
+      <div style="margin-top: 14px; background: #181820; border: 1px solid var(--border-color); border-radius: 8px; padding: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="font-size: 13px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+            <span>Expressions & Hotkeys</span>
+            <span id="expression-count-badge" class="badge" style="font-size: 10px; padding: 1px 6px;">0</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button id="btn-reload-avatar" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" title="Re-scan avatar SVG from disk for newly added layers and expressions">↻ Reload Rig</button>
+            <button id="btn-clear-expressions" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;">Clear All</button>
+          </div>
+        </div>
+        <div id="expressions-container" style="display: flex; flex-wrap: wrap; gap: 8px; min-height: 38px; align-items: center;">
+          <span style="font-size: 12px; color: var(--text-muted);">Loading avatar expressions...</span>
+        </div>
+        <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
+          <span>Keys <strong>1-9</strong> toggle expressions when Studio is active. Copy icon copies Stream Deck API URL.</span>
+          <span id="expression-status" style="color: var(--accent); font-weight: 500;"></span>
         </div>
       </div>
 

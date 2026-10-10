@@ -14,6 +14,7 @@
   let boundEyeClosedL = null;
   let boundEyeOpenR = null;
   let boundEyeClosedR = null;
+  let activeExpressions = {};
   // Initialize with neutral defaults so Idle breathing and initial positioning work immediately
   let latestParams = {
     present: false,
@@ -88,15 +89,18 @@
         return;
       }
 
-      if (elem.id === 'mouth_neutral') boundMouthNeutral = el;
-      if (elem.id === 'mouth_smile') boundMouthSmile = el;
-      if (elem.id === 'mouth_open') boundMouthOpen = el;
-      if (elem.id === 'eyes_open') boundEyesOpen = el;
-      if (elem.id === 'eyes_closed') boundEyesClosed = el;
-      if (elem.id === 'eye_open_left' || elem.id === 'g3') boundEyeOpenL = el;
-      if (elem.id === 'eye_closed_left' || elem.id === 'g5') boundEyeClosedL = el;
-      if (elem.id === 'eye_open_right' || elem.id === 'g2') boundEyeOpenR = el;
-      if (elem.id === 'eye_closed_right' || elem.id === 'g4') boundEyeClosedR = el;
+      const lowerId = (elem.id || '').toLowerCase();
+      const lowerLabel = (elem.label || '').toLowerCase();
+
+      if (lowerId === 'mouth_neutral' || lowerLabel.includes('mouth neutral')) boundMouthNeutral = el;
+      if (lowerId === 'mouth_smile' || lowerLabel.includes('mouth smile')) boundMouthSmile = el;
+      if (lowerId === 'mouth_open' || lowerLabel.includes('mouth open')) boundMouthOpen = el;
+      if (lowerId === 'eyes_open' || lowerLabel.includes('eyes open')) boundEyesOpen = el;
+      if (lowerId === 'eyes_closed' || lowerLabel.includes('eyes closed')) boundEyesClosed = el;
+      if (lowerId === 'eye_open_left' || lowerLabel.includes('left eye open')) boundEyeOpenL = el;
+      if (lowerId === 'eye_closed_left' || lowerLabel.includes('left eye closed')) boundEyeClosedL = el;
+      if (lowerId === 'eye_open_right' || lowerLabel.includes('right eye open')) boundEyeOpenR = el;
+      if (lowerId === 'eye_closed_right' || lowerLabel.includes('right eye closed')) boundEyeClosedR = el;
 
       // Calculate pivot coordinate using element bounding box
       let cx = 0, cy = 0;
@@ -243,9 +247,16 @@
       const sanitized = decoded.replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match) => {
         if (match === 'true' || match === 'false') return match;
 
+        const lower = match.toLowerCase();
+
+        // Check custom toggleable expressions first (e.g. "blush", "isBlush", "tears", "isAngry")
+        const exprName = lower.startsWith('is') && lower.length > 2 ? lower.substring(2) : lower;
+        if (activeExpressions && (activeExpressions[exprName] !== undefined || activeExpressions[lower] !== undefined)) {
+          return String(Boolean(activeExpressions[exprName] || activeExpressions[lower]));
+        }
+
         // If expression has no comparison operator (pure boolean shorthand, e.g. "isSmiling", "blinkL")
         if (!hasComparison) {
-          const lower = match.toLowerCase();
           if (lower === 'blinkl' || lower === 'isblinkl') {
             const b = getParam('isBlinkL', null);
             return String(b !== null ? Boolean(b) : getParam('blinkL', 0) >= getParam('blinkThresholdL', getParam('blinkThreshold', 0.45)));
@@ -465,9 +476,15 @@
         } else if (msg.type === 'rig_update') {
           console.log('[SVGTuber] Received rig update.');
           bindRig(msg.rig);
+        } else if (msg.type === 'expression_update') {
+          activeExpressions = msg.expressions || {};
+          applyRigTransforms(performance.now());
         } else if (msg.type === 'param_frame') {
           latestParams = msg;
           window.latestParams = msg;
+          if (msg.expressions) {
+            activeExpressions = Object.assign({}, activeExpressions, msg.expressions);
+          }
           // When overlay is in background tab/hidden iframe, rAF may pause; apply directly
           if (document.hidden) {
             applyRigTransforms(performance.now());

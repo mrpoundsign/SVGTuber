@@ -27,11 +27,14 @@ type Server struct {
 	avatarPath string
 	hub        *Hub
 	engine     *tracking.Engine
-	configMgr  *config.Manager
-	rigMu      sync.RWMutex
-	rigDef     *rig.RigDefinition
-	httpServer *http.Server
-	listener   net.Listener
+	configMgr    *config.Manager
+	rigMu        sync.RWMutex
+	rigDef       *rig.RigDefinition
+	expMgr       *ExpressionManager
+	trackerMu    sync.RWMutex
+	trackerConns map[*websocket.Conn]chan []byte
+	httpServer   *http.Server
+	listener     net.Listener
 }
 
 // New constructs an unstarted Server instance.
@@ -40,13 +43,31 @@ func New(port int, avatarPath string, hub *Hub, engine *tracking.Engine, cfg ...
 	if len(cfg) > 0 {
 		cm = cfg[0]
 	}
-	return &Server{
-		port:       port,
-		avatarPath: avatarPath,
-		hub:        hub,
-		engine:     engine,
-		configMgr:  cm,
+
+	s := &Server{
+		port:         port,
+		avatarPath:   avatarPath,
+		hub:          hub,
+		engine:       engine,
+		configMgr:    cm,
+		trackerConns: make(map[*websocket.Conn]chan []byte),
 	}
+
+	expMgr := NewExpressionManager(func(active map[string]bool) {
+		update := map[string]any{
+			"type":        "expression_update",
+			"expressions": active,
+		}
+		hub.BroadcastJSON(update)
+		s.broadcastTracker(update)
+	})
+	s.expMgr = expMgr
+
+	if engine != nil {
+		engine.SetExpressionProvider(expMgr.GetActive)
+	}
+
+	return s
 }
 
 // Start binds the port and starts listening for HTTP and WebSocket requests.
@@ -95,6 +116,14 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/calibrate", s.handleAPICalibrate)
 	mux.HandleFunc("/api/settings", s.handleAPISettings)
 	mux.HandleFunc("/api/settings/reset", s.handleAPISettingsReset)
+
+	// Expression REST endpoints
+	mux.HandleFunc("/api/expressions", s.handleAPIExpressions)
+	mux.HandleFunc("/api/expressions/toggle", s.handleAPIExpressionToggle)
+	mux.HandleFunc("/api/expressions/set", s.handleAPIExpressionSet)
+	mux.HandleFunc("/api/expressions/trigger", s.handleAPIExpressionTrigger)
+	mux.HandleFunc("/api/expressions/reset", s.handleAPIExpressionReset)
+	mux.HandleFunc("/api/avatar/reload", s.handleAPIAvatarReload)
 
 	// Initial parse of SVG rig definition
 	if _, err := s.ReloadRig(); err != nil {
@@ -168,6 +197,19 @@ func (s *Server) handleOverlayWS(w http.ResponseWriter, r *http.Request) {
 	s.hub.Register(conn)
 	defer s.hub.Unregister(conn)
 
+	// Send initial active expressions to new overlay connection
+	if s.expMgr != nil {
+		active := s.expMgr.GetActive()
+		if len(active) > 0 {
+			if data, err := json.Marshal(map[string]any{
+				"type":        "expression_update",
+				"expressions": active,
+			}); err == nil {
+				_ = conn.Write(r.Context(), websocket.MessageText, data)
+			}
+		}
+	}
+
 	// Keep connection open and read messages until closed
 	ctx := r.Context()
 	for {
@@ -190,6 +232,54 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 	log.Println("[Server] Studio tracker connected.")
+
+	msgCh := make(chan []byte, 16)
+	s.trackerMu.Lock()
+	if s.trackerConns == nil {
+		s.trackerConns = make(map[*websocket.Conn]chan []byte)
+	}
+	s.trackerConns[conn] = msgCh
+	s.trackerMu.Unlock()
+
+	defer func() {
+		s.trackerMu.Lock()
+		delete(s.trackerConns, conn)
+		close(msgCh)
+		s.trackerMu.Unlock()
+	}()
+
+	// Dedicated write pump for tracker connection
+	go func() {
+		for msg := range msgCh {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err := conn.Write(ctx, websocket.MessageText, msg)
+			cancel()
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	// Send initial rig and expression state to newly connected Studio tracker
+	s.rigMu.RLock()
+	currentRig := s.rigDef
+	s.rigMu.RUnlock()
+	if currentRig != nil {
+		if data, err := json.Marshal(map[string]any{"type": "rig_update", "rig": currentRig}); err == nil {
+			select {
+			case msgCh <- data:
+			default:
+			}
+		}
+	}
+	if s.expMgr != nil {
+		if data, err := json.Marshal(map[string]any{"type": "expression_update", "expressions": s.expMgr.GetActive()}); err == nil {
+			select {
+			case msgCh <- data:
+			default:
+			}
+		}
+	}
 
 	ctx := r.Context()
 	for {
@@ -218,6 +308,28 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 				if s.engine != nil {
 					s.engine.ResetCalibration()
 					_ = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"calibration_reset"}`))
+				}
+				continue
+			case "expression_toggle":
+				var p struct {
+					Name string `json:"name"`
+				}
+				if err := json.Unmarshal(data, &p); err == nil && p.Name != "" && s.expMgr != nil {
+					s.expMgr.Toggle(p.Name)
+				}
+				continue
+			case "expression_set":
+				var p struct {
+					Name   string `json:"name"`
+					Active bool   `json:"active"`
+				}
+				if err := json.Unmarshal(data, &p); err == nil && p.Name != "" && s.expMgr != nil {
+					s.expMgr.Set(p.Name, p.Active)
+				}
+				continue
+			case "expression_reset":
+				if s.expMgr != nil {
+					s.expMgr.Reset()
 				}
 				continue
 			}
@@ -326,13 +438,52 @@ func (s *Server) ReloadRig() (*rig.RigDefinition, error) {
 	s.rigDef = rigDef
 	s.rigMu.Unlock()
 
+	if s.expMgr != nil {
+		available := ExtractExpressionsFromRig(rigDef)
+		s.expMgr.SetAvailable(available)
+		log.Printf("[Server] Discovered %d expressions from avatar: %v", len(available), available)
+	}
+
 	log.Printf("[Server] Loaded rig with %d rigged elements.", len(rigDef.Elements))
 	s.hub.BroadcastJSON(map[string]any{
 		"type": "rig_update",
 		"rig":  rigDef,
 	})
+	s.broadcastTracker(map[string]any{
+		"type": "rig_update",
+		"rig":  rigDef,
+	})
 
 	return rigDef, nil
+}
+
+func (s *Server) broadcastTracker(v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return
+	}
+	s.trackerMu.RLock()
+	defer s.trackerMu.RUnlock()
+	for _, ch := range s.trackerConns {
+		select {
+		case ch <- data:
+		default:
+		}
+	}
+}
+
+func (s *Server) handleAPIAvatarReload(w http.ResponseWriter, r *http.Request) {
+	rigDef, err := s.ReloadRig()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.hub.BroadcastReload()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "reloaded",
+		"rig":    rigDef,
+	})
 }
 
 func (s *Server) handleRigJSON(w http.ResponseWriter, r *http.Request) {
@@ -348,6 +499,143 @@ func (s *Server) handleRigJSON(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	_ = json.NewEncoder(w).Encode(rigDef)
+}
+
+func (s *Server) handleAPIExpressions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.expMgr == nil {
+		http.Error(w, `{"error":"expression manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]any{
+		"active":    s.expMgr.GetActive(),
+		"available": s.expMgr.GetAvailable(),
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleAPIExpressionToggle(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.expMgr == nil {
+		http.Error(w, `{"error":"expression manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	if name == "" && r.Body != nil {
+		var req struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		name = req.Name
+	}
+
+	if name == "" {
+		http.Error(w, `{"error":"missing expression name parameter"}`, http.StatusBadRequest)
+		return
+	}
+
+	newState, activeMap := s.expMgr.Toggle(name)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":      "ok",
+		"name":        name,
+		"active":      newState,
+		"expressions": activeMap,
+	})
+}
+
+func (s *Server) handleAPIExpressionSet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.expMgr == nil {
+		http.Error(w, `{"error":"expression manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	activeStr := r.URL.Query().Get("active")
+	active := activeStr == "true" || activeStr == "1"
+
+	if (name == "" || activeStr == "") && r.Body != nil {
+		var req struct {
+			Name   string `json:"name"`
+			Active bool   `json:"active"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if name == "" {
+				name = req.Name
+			}
+			active = req.Active
+		}
+	}
+
+	if name == "" {
+		http.Error(w, `{"error":"missing expression name parameter"}`, http.StatusBadRequest)
+		return
+	}
+
+	activeMap := s.expMgr.Set(name, active)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":      "ok",
+		"name":        name,
+		"active":      active,
+		"expressions": activeMap,
+	})
+}
+
+func (s *Server) handleAPIExpressionTrigger(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.expMgr == nil {
+		http.Error(w, `{"error":"expression manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	name := r.URL.Query().Get("name")
+	durStr := r.URL.Query().Get("duration")
+	if name == "" && r.Body != nil {
+		var req struct {
+			Name     string `json:"name"`
+			Duration string `json:"duration"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			name = req.Name
+			if durStr == "" {
+				durStr = req.Duration
+			}
+		}
+	}
+
+	if name == "" {
+		http.Error(w, `{"error":"missing expression name parameter"}`, http.StatusBadRequest)
+		return
+	}
+
+	dur, _ := time.ParseDuration(durStr)
+	if dur <= 0 {
+		dur = 3 * time.Second
+	}
+
+	activeMap := s.expMgr.Trigger(name, dur)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":      "ok",
+		"name":        name,
+		"durationMs":  dur.Milliseconds(),
+		"expressions": activeMap,
+	})
+}
+
+func (s *Server) handleAPIExpressionReset(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.expMgr == nil {
+		http.Error(w, `{"error":"expression manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	activeMap := s.expMgr.Reset()
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":      "ok",
+		"expressions": activeMap,
+	})
 }
 
 // Shutdown gracefully stops the HTTP server.

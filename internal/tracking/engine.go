@@ -33,6 +33,7 @@ type Engine struct {
 	openTimeL        float64
 	openTimeR        float64
 	inBilateralBlink bool
+	exprProvider     func() map[string]bool
 }
 
 // NewEngine creates a new tracking Engine.
@@ -52,6 +53,13 @@ func (e *Engine) SetConfigManager(cm *config.Manager) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.configMgr = cm
+}
+
+// SetExpressionProvider sets a callback that returns currently active custom expressions.
+func (e *Engine) SetExpressionProvider(provider func() map[string]bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.exprProvider = provider
 }
 
 // Calibrate records the latest raw face pose as the neutral (zeroed) reference.
@@ -105,6 +113,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	defer e.mu.Unlock()
 
 	e.lastRaw = raw
+
+	var activeExprs map[string]bool
+	if e.exprProvider != nil {
+		activeExprs = e.exprProvider()
+	}
 
 	// Time in seconds for filter calculation
 	tSec := raw.Timestamp / 1000.0
@@ -204,6 +217,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			IsBlinkR:         false,
 			IsMouthOpen:      filtMouth >= ts.MouthThreshold,
 			IsSmiling:        false,
+			Expressions:      activeExprs,
 		}
 	}
 
@@ -248,6 +262,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			IsBlinkR:         filtBlinkR >= threshR,
 			IsMouthOpen:      filtMouth >= ts.MouthThreshold,
 			IsSmiling:        filtSmile >= ts.SmileThreshold,
+			Expressions:      activeExprs,
 		}
 	}
 
@@ -395,6 +410,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		IsBlinkR:         isBlinkR,
 		IsMouthOpen:      filtMouth >= ts.MouthThreshold,
 		IsSmiling:        filtSmile >= ts.SmileThreshold,
+		Expressions:      activeExprs,
 		Raw:              raw.Blendshapes,
 	}
 }

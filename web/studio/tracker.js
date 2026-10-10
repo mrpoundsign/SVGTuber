@@ -353,6 +353,11 @@ function connectWebSocket() {
       if (msg.type === "calibrated") {
         console.log("[Studio Tracker] Calibration confirmed by server.");
         showCalibratedFlash();
+      } else if (msg.type === "expression_update") {
+        activeExpressions = msg.expressions || {};
+        updateExpressionButtonsUI();
+      } else if (msg.type === "rig_update") {
+        loadExpressions();
       }
     } catch (e) {}
   };
@@ -978,3 +983,163 @@ if (btnResetSettings) {
 }
 
 loadSettings();
+
+// Expressions & Hotkeys Management
+let availableExpressions = [];
+let activeExpressions = {};
+const expressionsContainer = document.getElementById("expressions-container");
+const btnClearExpressions = document.getElementById("btn-clear-expressions");
+const expressionCountBadge = document.getElementById("expression-count-badge");
+const expressionStatus = document.getElementById("expression-status");
+
+async function loadExpressions() {
+  try {
+    const res = await fetch("/api/expressions");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    activeExpressions = data.active || {};
+    availableExpressions = data.available || [];
+    renderExpressionButtons();
+  } catch (err) {
+    console.warn("[Studio Tracker] Could not load /api/expressions:", err);
+  }
+}
+
+function renderExpressionButtons() {
+  if (!expressionsContainer) return;
+  expressionsContainer.innerHTML = "";
+  if (expressionCountBadge) {
+    expressionCountBadge.textContent = availableExpressions.length;
+  }
+
+  if (availableExpressions.length === 0) {
+    const emptySpan = document.createElement("span");
+    emptySpan.style.fontSize = "12px";
+    emptySpan.style.color = "var(--text-muted)";
+    emptySpan.textContent = "No custom expressions detected in current avatar rig.";
+    expressionsContainer.appendChild(emptySpan);
+    return;
+  }
+
+  availableExpressions.forEach((name, idx) => {
+    const btn = document.createElement("button");
+    btn.className = `expr-btn ${activeExpressions[name] ? "active" : ""}`;
+    btn.dataset.name = name;
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    btn.appendChild(labelSpan);
+
+    if (idx < 9) {
+      const keyBadge = document.createElement("span");
+      keyBadge.className = "expr-key-badge";
+      keyBadge.textContent = `${idx + 1}`;
+      keyBadge.title = `Press ${idx + 1} to toggle`;
+      btn.appendChild(keyBadge);
+    }
+
+    const copyBtn = document.createElement("span");
+    copyBtn.className = "expr-copy-btn";
+    copyBtn.title = "Copy Stream Deck API URL";
+    copyBtn.textContent = "📋";
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const apiUrl = `${location.origin}/api/expressions/toggle?name=${encodeURIComponent(name)}`;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(apiUrl).then(() => {
+          if (expressionStatus) {
+            expressionStatus.textContent = `Copied URL for "${name}"!`;
+            setTimeout(() => { expressionStatus.textContent = ""; }, 2000);
+          }
+        });
+      }
+    });
+    btn.appendChild(copyBtn);
+
+    btn.addEventListener("click", () => {
+      toggleExpression(name);
+    });
+
+    expressionsContainer.appendChild(btn);
+  });
+}
+
+function updateExpressionButtonsUI() {
+  if (!expressionsContainer) return;
+  const buttons = expressionsContainer.querySelectorAll(".expr-btn");
+  buttons.forEach(btn => {
+    const name = btn.dataset.name;
+    if (activeExpressions[name]) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+}
+
+async function toggleExpression(name) {
+  try {
+    const res = await fetch(`/api/expressions/toggle?name=${encodeURIComponent(name)}`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      activeExpressions = data.expressions || {};
+      updateExpressionButtonsUI();
+    }
+  } catch (err) {
+    console.error("[Studio Tracker] Error toggling expression:", err);
+  }
+}
+
+async function clearAllExpressions() {
+  try {
+    const res = await fetch("/api/expressions/reset", { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      activeExpressions = data.expressions || {};
+      updateExpressionButtonsUI();
+    }
+  } catch (err) {
+    console.error("[Studio Tracker] Error clearing expressions:", err);
+  }
+}
+
+if (btnClearExpressions) {
+  btnClearExpressions.addEventListener("click", clearAllExpressions);
+}
+
+const btnReloadAvatar = document.getElementById("btn-reload-avatar");
+if (btnReloadAvatar) {
+  btnReloadAvatar.addEventListener("click", async () => {
+    btnReloadAvatar.disabled = true;
+    btnReloadAvatar.textContent = "Reloading...";
+    try {
+      await fetch("/api/avatar/reload", { method: "POST" });
+      await loadExpressions();
+      if (expressionStatus) {
+        expressionStatus.textContent = "Avatar rig reloaded!";
+        setTimeout(() => { expressionStatus.textContent = ""; }, 2000);
+      }
+    } catch (e) {
+      console.error("[Studio Tracker] Reload rig error:", e);
+    } finally {
+      btnReloadAvatar.disabled = false;
+      btnReloadAvatar.textContent = "↻ Reload Rig";
+    }
+  });
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") {
+    return;
+  }
+  const keyNum = parseInt(e.key, 10);
+  if (!isNaN(keyNum) && keyNum >= 1 && keyNum <= 9) {
+    const idx = keyNum - 1;
+    if (availableExpressions && availableExpressions[idx]) {
+      e.preventDefault();
+      toggleExpression(availableExpressions[idx]);
+    }
+  }
+});
+
+loadExpressions();

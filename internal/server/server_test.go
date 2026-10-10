@@ -256,3 +256,66 @@ func TestServer_APISettings(t *testing.T) {
 		t.Errorf("Expected updated MouthGain 2.5, got %f", cfgMgr.Get().Tracking.MouthGain)
 	}
 }
+
+func TestServer_APIExpressions(t *testing.T) {
+	hub := NewHub()
+	srv := New(0, "testdata/test_avatar.svg", hub, nil)
+	srv.expMgr.SetAvailable([]string{"blush", "tears", "angry"})
+
+	// 1. GET /api/expressions
+	recGet := httptest.NewRecorder()
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/expressions", nil)
+	srv.handleAPIExpressions(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 on GET, got %d", recGet.Code)
+	}
+
+	var getResp struct {
+		Active    map[string]bool `json:"active"`
+		Available []string        `json:"available"`
+	}
+	if err := json.Unmarshal(recGet.Body.Bytes(), &getResp); err != nil {
+		t.Fatalf("Failed to decode GET response: %v", err)
+	}
+	if len(getResp.Available) != 3 {
+		t.Errorf("Expected 3 available expressions, got %d", len(getResp.Available))
+	}
+
+	// 2. POST /api/expressions/toggle?name=blush
+	recToggle := httptest.NewRecorder()
+	reqToggle := httptest.NewRequest(http.MethodPost, "/api/expressions/toggle?name=blush", nil)
+	srv.handleAPIExpressionToggle(recToggle, reqToggle)
+
+	if recToggle.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 on toggle, got %d", recToggle.Code)
+	}
+	if !srv.expMgr.GetActive()["blush"] {
+		t.Errorf("Expected blush to be active after toggle")
+	}
+
+	// 3. POST /api/expressions/set (JSON body)
+	recSet := httptest.NewRecorder()
+	reqSet := httptest.NewRequest(http.MethodPost, "/api/expressions/set", strings.NewReader(`{"name":"angry","active":true}`))
+	srv.handleAPIExpressionSet(recSet, reqSet)
+
+	if recSet.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 on set, got %d", recSet.Code)
+	}
+	if !srv.expMgr.GetActive()["angry"] {
+		t.Errorf("Expected angry to be active after set")
+	}
+
+	// 4. POST /api/expressions/reset
+	recReset := httptest.NewRecorder()
+	reqReset := httptest.NewRequest(http.MethodPost, "/api/expressions/reset", nil)
+	srv.handleAPIExpressionReset(recReset, reqReset)
+
+	if recReset.Code != http.StatusOK {
+		t.Fatalf("Expected status 200 on reset, got %d", recReset.Code)
+	}
+	if len(srv.expMgr.GetActive()) != 0 {
+		t.Errorf("Expected 0 active expressions after reset, got %v", srv.expMgr.GetActive())
+	}
+}
+

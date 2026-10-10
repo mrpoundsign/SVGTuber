@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -11,15 +12,17 @@ import (
 
 // AvatarWatcher monitors an SVG file for changes and triggers debounced callbacks.
 type AvatarWatcher struct {
-	filePath string
-	absPath  string
-	onChange func()
-	watcher  *fsnotify.Watcher
-	debounce time.Duration
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
-	mu       sync.Mutex
-	timer    *time.Timer
+	filePath    string
+	absPath     string
+	onChange    func()
+	watcher     *fsnotify.Watcher
+	debounce    time.Duration
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
+	mu          sync.Mutex
+	timer       *time.Timer
+	lastModTime time.Time
+	lastSize    int64
 }
 
 // New creates and starts an AvatarWatcher for the target SVG file.
@@ -44,13 +47,22 @@ func New(filePath string, debounce time.Duration, onChange func()) (*AvatarWatch
 	// Also watch the file directly if it exists
 	_ = fw.Add(absPath)
 
+	var initialMod time.Time
+	var initialSize int64
+	if fi, err := os.Stat(absPath); err == nil {
+		initialMod = fi.ModTime()
+		initialSize = fi.Size()
+	}
+
 	aw := &AvatarWatcher{
-		filePath: filePath,
-		absPath:  absPath,
-		onChange: onChange,
-		watcher:  fw,
-		debounce: debounce,
-		stopCh:   make(chan struct{}),
+		filePath:    filePath,
+		absPath:     absPath,
+		onChange:    onChange,
+		watcher:     fw,
+		debounce:    debounce,
+		stopCh:      make(chan struct{}),
+		lastModTime: initialMod,
+		lastSize:    initialSize,
 	}
 
 	aw.wg.Add(1)
@@ -62,10 +74,30 @@ func New(filePath string, debounce time.Duration, onChange func()) (*AvatarWatch
 func (aw *AvatarWatcher) loop() {
 	defer aw.wg.Done()
 
+	// 1-second polling ticker as a fallback for WSL where Windows apps modifying /mnt/c
+	// do not always propagate inotify filesystem events to Linux.
+	pollTicker := time.NewTicker(1 * time.Second)
+	defer pollTicker.Stop()
+
 	for {
 		select {
 		case <-aw.stopCh:
 			return
+		case <-pollTicker.C:
+			fi, err := os.Stat(aw.absPath)
+			if err == nil {
+				aw.mu.Lock()
+				modChanged := !fi.ModTime().Equal(aw.lastModTime)
+				sizeChanged := fi.Size() != aw.lastSize
+				if modChanged || sizeChanged {
+					aw.lastModTime = fi.ModTime()
+					aw.lastSize = fi.Size()
+					aw.mu.Unlock()
+					aw.triggerDebounced()
+				} else {
+					aw.mu.Unlock()
+				}
+			}
 		case event, ok := <-aw.watcher.Events:
 			if !ok {
 				return
@@ -73,6 +105,14 @@ func (aw *AvatarWatcher) loop() {
 			eventClean := filepath.Clean(event.Name)
 			if eventClean != aw.absPath {
 				continue
+			}
+
+			// Update cached stat
+			if fi, err := os.Stat(aw.absPath); err == nil {
+				aw.mu.Lock()
+				aw.lastModTime = fi.ModTime()
+				aw.lastSize = fi.Size()
+				aw.mu.Unlock()
 			}
 
 			// Respond to write, create, or rename events

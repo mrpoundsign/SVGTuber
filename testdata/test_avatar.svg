@@ -120,23 +120,41 @@
        stroke="#e2b885"
        stroke-width="3"
        id="ellipse7" />
-    <!-- Blush -->
-    <ellipse
-       cx="180"
-       cy="280"
-       rx="20"
-       ry="10"
-       fill="#f43f5e"
-       opacity="0.35"
-       id="ellipse8" />
-    <ellipse
-       cx="332"
-       cy="280"
-       rx="20"
-       ry="10"
-       fill="#f43f5e"
-       opacity="0.35"
-       id="ellipse9" />
+    <!-- Blush Expression -->
+    <g
+       id="expr_blush"
+       inkscape:label="Blush [Show {when: isBlush}]"
+       style="display: none;">
+      <ellipse
+         cx="180"
+         cy="280"
+         rx="22"
+         ry="11"
+         fill="#f43f5e"
+         opacity="0.65"
+         id="ellipse8" />
+      <ellipse
+         cx="332"
+         cy="280"
+         rx="22"
+         ry="11"
+         fill="#f43f5e"
+         opacity="0.65"
+         id="ellipse9" />
+    </g>
+    <!-- Sweat Expression -->
+    <g
+       id="expr_sweat"
+       inkscape:label="Sweat [Show {when: isSweat}]"
+       style="display: none;">
+      <path
+         d="M 345,185 C 345,185 338,198 338,206 A 7,7 0 0 0 352,206 C 352,198 345,185 345,185 Z"
+         fill="#38bdf8"
+         stroke="#0284c7"
+         stroke-width="1.5"
+         opacity="0.9"
+         id="path_sweat" />
+    </g>
     <!-- Eyes (Open State) -->
     <g
        id="eyes_open"
