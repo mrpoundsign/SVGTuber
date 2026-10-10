@@ -61,4 +61,4 @@ See [planning/roadmap.md](planning/roadmap.md) for architecture and roadmap deta
 
 ## 📄 License
 
-MIT &copy; 2026 mrpoundsign
+GNU Affero General Public License v3.0 (AGPL-3.0) &copy; 2026 mrpoundsign
