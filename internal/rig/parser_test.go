@@ -150,3 +150,33 @@ func TestParseSVG_TestAvatarFile(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSVG_VectorcraftFile(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/test_avatar_vectorcraft.svg")
+	if err != nil {
+		t.Fatalf("Failed to read test_avatar_vectorcraft.svg: %v", err)
+	}
+
+	rigDef, err := ParseSVG(data)
+	if err != nil {
+		t.Fatalf("ParseSVG returned error: %v", err)
+	}
+
+	if len(rigDef.Elements) < 8 {
+		t.Errorf("Expected at least 8 rigged elements in test_avatar_vectorcraft.svg, got %d", len(rigDef.Elements))
+	}
+
+	foundTypes := make(map[string]bool)
+	for _, el := range rigDef.Elements {
+		for _, d := range el.Directives {
+			foundTypes[d.Type] = true
+		}
+	}
+
+	expectedTypes := []string{"Idle", "Follow", "Hide", "Show", "Move", "Scale", "Dist"}
+	for _, exp := range expectedTypes {
+		if !foundTypes[exp] {
+			t.Errorf("Expected directive type %s to be parsed from test_avatar_vectorcraft.svg", exp)
+		}
+	}
+}

@@ -56,3 +56,41 @@ func TestAvatarWatcher_Debounce(t *testing.T) {
 		t.Errorf("Expected 1 debounced trigger, got %d", count)
 	}
 }
+
+func TestAvatarWatcher_SwitchFile(t *testing.T) {
+	tempDir := t.TempDir()
+	file1 := filepath.Join(tempDir, "avatar1.svg")
+	file2 := filepath.Join(tempDir, "avatar2.svg")
+
+	_ = os.WriteFile(file1, []byte(`<svg>1</svg>`), 0644)
+	_ = os.WriteFile(file2, []byte(`<svg>2</svg>`), 0644)
+
+	triggeredCh := make(chan struct{}, 10)
+	aw, err := New(file1, 50*time.Millisecond, func() {
+		select {
+		case triggeredCh <- struct{}{}:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatalf("New watcher failed: %v", err)
+	}
+	defer aw.Close()
+
+	// Switch to file2
+	if err := aw.SwitchFile(file2); err != nil {
+		t.Fatalf("SwitchFile failed: %v", err)
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	// Modify file2
+	_ = os.WriteFile(file2, []byte(`<svg>2-updated</svg>`), 0644)
+
+	select {
+	case <-triggeredCh:
+		// Success!
+	case <-time.After(600 * time.Millisecond):
+		t.Fatal("Timed out waiting for trigger after SwitchFile")
+	}
+}
+

@@ -84,7 +84,11 @@ func (aw *AvatarWatcher) loop() {
 		case <-aw.stopCh:
 			return
 		case <-pollTicker.C:
-			fi, err := os.Stat(aw.absPath)
+			aw.mu.Lock()
+			currentAbs := aw.absPath
+			aw.mu.Unlock()
+
+			fi, err := os.Stat(currentAbs)
 			if err == nil {
 				aw.mu.Lock()
 				modChanged := !fi.ModTime().Equal(aw.lastModTime)
@@ -102,13 +106,17 @@ func (aw *AvatarWatcher) loop() {
 			if !ok {
 				return
 			}
+			aw.mu.Lock()
+			currentAbs := aw.absPath
+			aw.mu.Unlock()
+
 			eventClean := filepath.Clean(event.Name)
-			if eventClean != aw.absPath {
+			if eventClean != currentAbs {
 				continue
 			}
 
 			// Update cached stat
-			if fi, err := os.Stat(aw.absPath); err == nil {
+			if fi, err := os.Stat(currentAbs); err == nil {
 				aw.mu.Lock()
 				aw.lastModTime = fi.ModTime()
 				aw.lastSize = fi.Size()
@@ -122,7 +130,7 @@ func (aw *AvatarWatcher) loop() {
 
 			// If file was renamed or recreated, ensure watch on file itself is restored
 			if event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
-				_ = aw.watcher.Add(aw.absPath)
+				_ = aw.watcher.Add(currentAbs)
 			}
 		case err, ok := <-aw.watcher.Errors:
 			if !ok {
@@ -132,6 +140,36 @@ func (aw *AvatarWatcher) loop() {
 			fmt.Printf("[Watcher] File watch error: %v\n", err)
 		}
 	}
+}
+
+// SwitchFile redirects the watcher to monitor a different avatar SVG file.
+func (aw *AvatarWatcher) SwitchFile(newFilePath string) error {
+	absPath, err := filepath.Abs(newFilePath)
+	if err != nil {
+		return fmt.Errorf("resolving absolute path for %q: %w", newFilePath, err)
+	}
+
+	aw.mu.Lock()
+	defer aw.mu.Unlock()
+
+	oldDir := filepath.Dir(aw.absPath)
+	newDir := filepath.Dir(absPath)
+	if oldDir != newDir {
+		_ = aw.watcher.Remove(oldDir)
+		_ = aw.watcher.Add(newDir)
+	}
+	_ = aw.watcher.Remove(aw.absPath)
+	_ = aw.watcher.Add(absPath)
+
+	aw.filePath = newFilePath
+	aw.absPath = absPath
+
+	if fi, err := os.Stat(absPath); err == nil {
+		aw.lastModTime = fi.ModTime()
+		aw.lastSize = fi.Size()
+	}
+
+	return nil
 }
 
 func (aw *AvatarWatcher) triggerDebounced() {

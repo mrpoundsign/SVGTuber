@@ -1,20 +1,20 @@
 # SVGTuber Artist & Rigging Guide
 
-This guide explains how to draw, structure, and rig vector avatars in **Inkscape** for use with **SVGTuber**.
+This guide explains how to draw, structure, and rig vector avatars in **Inkscape**, **Vectorcraft**, or **Adobe Illustrator** for use with **SVGTuber**.
 
-Unlike traditional PNGTubers that swap flat bitmap sprites or complex Live2D rigs that require proprietary software, SVGTuber turns standard Inkscape SVGs into responsive, GPU-accelerated vector puppets using declarative labels in your layer names.
+Unlike traditional PNGTubers that swap flat bitmap sprites or complex Live2D rigs that require proprietary software, SVGTuber turns standard SVGs into responsive, GPU-accelerated vector puppets using declarative labels in your layer names.
 
 ---
 
 ## 🎨 Quick Overview
 
-- **Standard SVG:** Draw your avatar in Inkscape using layers, groups, paths, gradients, and filters.
-- **Declarative Labels:** Rig elements by naming layers with directives inside brackets: `LayerName [Directive {k: v; ...}]`.
+- **Standard SVG:** Draw your avatar in Inkscape, Vectorcraft, or Illustrator using layers, groups, paths, gradients, and filters.
+- **Declarative Labels:** Rig elements by naming layers with directives inside brackets: `LayerName [Directive {k: v; ...}]`. SVGTuber automatically recognizes `inkscape:label`, `data-name` (Vectorcraft/Illustrator), and standard `aria-label` attributes.
 - **Multiple Directives:** You can chain multiple directives on a single layer:
   ```text
   Mouth Open [Show {when: isMouthOpen}; Scale {y: mouthOpen; from: 0.25; to: 1.2; pivot: top}]
   ```
-- **Instant Hot-Reload:** Press `Ctrl+S` in Inkscape, and SVGTuber live-updates your avatar on stream immediately without restarting OBS or the server.
+- **Instant Hot-Reload:** Press `Ctrl+S` in your editor, and SVGTuber live-updates your avatar on stream immediately without restarting OBS or the server.
 
 ---
 

@@ -59,7 +59,7 @@ func main() {
 		}
 		avatarPath = absPath
 		if cfgMgr != nil {
-			if err := cfgMgr.SetAvatarPath(absPath); err != nil {
+			if err := cfgMgr.SetAvatarLocation(absPath); err != nil {
 				log.Printf("[Warning] Failed to save avatar path to config: %v", err)
 			}
 		}
@@ -72,11 +72,11 @@ func main() {
 			}
 			avatarPath = abs
 			if cfgMgr != nil {
-				_ = cfgMgr.SetAvatarPath(abs)
+				_ = cfgMgr.SetAvatarLocation(abs)
 			}
 			log.Printf("[Config] Found 'avatar.svg' in current directory; saved to config: %s", abs)
-		} else if cfgMgr != nil && cfgMgr.GetAvatarPath() != "" {
-			saved := cfgMgr.GetAvatarPath()
+		} else if cfgMgr != nil && cfgMgr.GetActiveAvatarPath() != "" {
+			saved := cfgMgr.GetActiveAvatarPath()
 			if _, err := os.Stat(saved); err == nil {
 				avatarPath = saved
 				log.Printf("[Config] Using avatar from saved config: %s", saved)
@@ -110,7 +110,7 @@ func main() {
 
 	// Initialize file watcher for live reload
 	fw, err := watcher.New(avatarPath, 100*time.Millisecond, func() {
-		log.Printf("[Watcher] Avatar %s updated on disk. Broadcasting reload to overlays.", avatarPath)
+		log.Printf("[Watcher] Avatar updated on disk. Broadcasting reload to overlays.")
 		if _, err := srv.ReloadRig(); err != nil {
 			log.Printf("[Watcher] Error reloading rig: %v", err)
 		}
@@ -119,6 +119,7 @@ func main() {
 	if err != nil {
 		log.Printf("[Warning] File watcher failed to initialize: %v (hot reload disabled)", err)
 	} else {
+		srv.SetWatcher(fw)
 		defer fw.Close()
 	}
 
@@ -129,6 +130,7 @@ func main() {
 	fmt.Printf("  SVGTuber %s - Vector VTuber Engine\n", version)
 	fmt.Println("====================================================")
 	fmt.Printf("  Avatar:      %s\n", avatarPath)
+	fmt.Printf("  Avatar Dir:  %s\n", filepath.Dir(avatarPath))
 	fmt.Printf("  Studio:      %s\n", studioURL)
 	fmt.Printf("  OBS Overlay: %s\n", overlayURL)
 	if cfgMgr != nil {

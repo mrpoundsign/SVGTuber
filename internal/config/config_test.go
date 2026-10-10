@@ -98,3 +98,84 @@ func TestConfigManager_SaveAndLoad(t *testing.T) {
 		t.Errorf("Expected AvatarPath to be preserved after reset, got %q", reset.AvatarPath)
 	}
 }
+
+func TestConfig_AutoUpgrade(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+
+	// Write legacy v1 config JSON with only avatarPath
+	v1JSON := `{
+		"version": 1,
+		"avatarPath": "/home/user/stream/avatar.svg",
+		"tracking": { "mouthGain": 1.5 }
+	}`
+	if err := os.WriteFile(cfgPath, []byte(v1JSON), 0644); err != nil {
+		t.Fatalf("Failed to write v1 config: %v", err)
+	}
+
+	mgr, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager failed to load v1 config: %v", err)
+	}
+
+	settings := mgr.Get()
+	if settings.Version != 2 {
+		t.Errorf("Expected auto-upgraded Version 2, got %d", settings.Version)
+	}
+	if settings.AvatarDir != "/home/user/stream" {
+		t.Errorf("Expected AvatarDir '/home/user/stream', got %q", settings.AvatarDir)
+	}
+	if settings.CurrentAvatar != "avatar.svg" {
+		t.Errorf("Expected CurrentAvatar 'avatar.svg', got %q", settings.CurrentAvatar)
+	}
+
+	// Verify file on disk was upgraded
+	mgrReloaded, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Reloading upgraded config failed: %v", err)
+	}
+	if mgrReloaded.Get().Version != 2 {
+		t.Errorf("Expected disk file to have Version 2, got %d", mgrReloaded.Get().Version)
+	}
+}
+
+func TestScanAvatarDir(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create structure:
+	// tmpDir/
+	//   root.svg
+	//   notes.txt
+	//   outfits/
+	//     casual.svg
+	//     formal.SVG
+	//   .hidden/
+	//     secret.svg
+	_ = os.WriteFile(filepath.Join(tmpDir, "root.svg"), []byte("<svg/>"), 0644)
+	_ = os.WriteFile(filepath.Join(tmpDir, "notes.txt"), []byte("text"), 0644)
+
+	outfitsDir := filepath.Join(tmpDir, "outfits")
+	_ = os.MkdirAll(outfitsDir, 0755)
+	_ = os.WriteFile(filepath.Join(outfitsDir, "casual.svg"), []byte("<svg/>"), 0644)
+	_ = os.WriteFile(filepath.Join(outfitsDir, "formal.SVG"), []byte("<svg/>"), 0644)
+
+	hiddenDir := filepath.Join(tmpDir, ".hidden")
+	_ = os.MkdirAll(hiddenDir, 0755)
+	_ = os.WriteFile(filepath.Join(hiddenDir, "secret.svg"), []byte("<svg/>"), 0644)
+
+	results, err := ScanAvatarDir(tmpDir)
+	if err != nil {
+		t.Fatalf("ScanAvatarDir failed: %v", err)
+	}
+
+	expected := []string{"outfits/casual.svg", "outfits/formal.SVG", "root.svg"}
+	if len(results) != len(expected) {
+		t.Fatalf("Expected %d avatars, got %d: %v", len(expected), len(results), results)
+	}
+	for i, exp := range expected {
+		if results[i] != exp {
+			t.Errorf("Result [%d]: expected %q, got %q", i, exp, results[i])
+		}
+	}
+}
+

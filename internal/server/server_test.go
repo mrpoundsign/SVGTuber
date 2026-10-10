@@ -319,3 +319,124 @@ func TestServer_APIExpressions(t *testing.T) {
 	}
 }
 
+type mockRigParser struct {
+	customDef *rig.RigDefinition
+}
+
+func (m *mockRigParser) Parse(svgData []byte) (*rig.RigDefinition, error) {
+	return m.customDef, nil
+}
+
+func TestServer_SetRigParserDI(t *testing.T) {
+	tempDir := t.TempDir()
+	avatarPath := filepath.Join(tempDir, "avatar.svg")
+	if err := os.WriteFile(avatarPath, []byte(`<svg></svg>`), 0644); err != nil {
+		t.Fatalf("Failed to create dummy avatar: %v", err)
+	}
+
+	hub := NewHub()
+	srv := New(0, avatarPath, hub, tracking.NewEngine())
+
+	mockDef := &rig.RigDefinition{
+		Version: "2.0-mock",
+		Elements: []rig.RigElement{
+			{ID: "injected_elem", Label: "Injected [Idle]"},
+		},
+	}
+	srv.SetRigParser(&mockRigParser{customDef: mockDef})
+
+	rigDef, err := srv.ReloadRig()
+	if err != nil {
+		t.Fatalf("ReloadRig failed: %v", err)
+	}
+
+	if rigDef.Version != "2.0-mock" {
+		t.Errorf("Expected mock version 2.0-mock, got %s", rigDef.Version)
+	}
+	if len(rigDef.Elements) != 1 || rigDef.Elements[0].ID != "injected_elem" {
+		t.Errorf("Expected injected element, got %+v", rigDef.Elements)
+	}
+}
+
+func TestServer_AvatarManagement(t *testing.T) {
+	tempDir := t.TempDir()
+	avatar1Path := filepath.Join(tempDir, "avatar.svg")
+	_ = os.WriteFile(avatar1Path, []byte(`<svg id="root"><g id="h1" inkscape:label="Head [Follow]"></g></svg>`), 0644)
+
+	subDir := filepath.Join(tempDir, "alts")
+	_ = os.MkdirAll(subDir, 0755)
+	avatar2Path := filepath.Join(subDir, "casual.svg")
+	_ = os.WriteFile(avatar2Path, []byte(`<svg id="root"><g id="h2" inkscape:label="Head [Follow]"></g></svg>`), 0644)
+
+	cfgPath := filepath.Join(tempDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	hub := NewHub()
+	srv := New(0, avatar1Path, hub, tracking.NewEngine(), cfgMgr)
+
+	// 1. GET /api/avatars
+	recList := httptest.NewRecorder()
+	reqList := httptest.NewRequest(http.MethodGet, "/api/avatars", nil)
+	srv.handleAPIAvatars(recList, reqList)
+
+	if recList.Code != http.StatusOK {
+		t.Fatalf("Expected 200 on /api/avatars, got %d", recList.Code)
+	}
+
+	var listResp struct {
+		AvatarDir     string   `json:"avatarDir"`
+		CurrentAvatar string   `json:"currentAvatar"`
+		Avatars       []string `json:"avatars"`
+	}
+	if err := json.Unmarshal(recList.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("Failed to parse /api/avatars response: %v", err)
+	}
+
+	if len(listResp.Avatars) != 2 {
+		t.Fatalf("Expected 2 avatars in list, got %v", listResp.Avatars)
+	}
+	if listResp.Avatars[0] != "alts/casual.svg" || listResp.Avatars[1] != "avatar.svg" {
+		t.Errorf("Unexpected avatar list: %v", listResp.Avatars)
+	}
+
+	// 2. POST /api/avatars/select - Path Traversal Security Check
+	recBad := httptest.NewRecorder()
+	reqBad := httptest.NewRequest(http.MethodPost, "/api/avatars/select?avatar=../outside.svg", nil)
+	srv.handleAPIAvatarSelect(recBad, reqBad)
+	if recBad.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 on path traversal attempt, got %d", recBad.Code)
+	}
+
+	// 3. POST /api/avatars/select - Valid switch to subdirectory avatar
+	recSelect := httptest.NewRecorder()
+	reqSelect := httptest.NewRequest(http.MethodPost, "/api/avatars/select", strings.NewReader(`{"avatar":"alts/casual.svg"}`))
+	srv.handleAPIAvatarSelect(recSelect, reqSelect)
+
+	if recSelect.Code != http.StatusOK {
+		t.Fatalf("Expected 200 on avatar select, got %d (body: %s)", recSelect.Code, recSelect.Body.String())
+	}
+
+	srv.rigMu.RLock()
+	current := srv.currentAvatar
+	srv.rigMu.RUnlock()
+	if current != "alts/casual.svg" {
+		t.Errorf("Expected current avatar 'alts/casual.svg', got %q", current)
+	}
+
+	if cfgMgr.GetCurrentAvatar() != "alts/casual.svg" {
+		t.Errorf("Expected config CurrentAvatar 'alts/casual.svg', got %q", cfgMgr.GetCurrentAvatar())
+	}
+
+	// 4. Verify /avatar.svg now serves avatar2 content
+	recSVG := httptest.NewRecorder()
+	reqSVG := httptest.NewRequest(http.MethodGet, "/avatar.svg", nil)
+	srv.handleAvatarSVG(recSVG, reqSVG)
+	if !strings.Contains(recSVG.Body.String(), `id="h2"`) {
+		t.Errorf("Expected /avatar.svg to serve casual.svg content, got %s", recSVG.Body.String())
+	}
+}
+
+

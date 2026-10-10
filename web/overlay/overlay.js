@@ -84,9 +84,24 @@
     }
 
     rigDef.elements.forEach((elem) => {
-      const el = svg.querySelector(`#${CSS.escape(elem.id)}`);
+      let el = elem.id ? svg.querySelector(`#${CSS.escape(elem.id)}`) : null;
+      if (!el && elem.label) {
+        // Fallback search by data-name (Vectorcraft, Illustrator)
+        el = svg.querySelector(`[data-name="${CSS.escape(elem.label)}"]`);
+      }
+      if (!el && elem.label) {
+        // Fallback search by inkscape:label
+        el = svg.querySelector(`[inkscape\\:label="${CSS.escape(elem.label)}"]`);
+      }
+      if (!el && elem.label) {
+        // Fallback search by aria-label
+        el = svg.querySelector(`[aria-label="${CSS.escape(elem.label)}"]`);
+      }
       if (!el) {
         return;
+      }
+      if (!el.id && elem.id) {
+        el.id = elem.id;
       }
 
       const lowerId = (elem.id || '').toLowerCase();

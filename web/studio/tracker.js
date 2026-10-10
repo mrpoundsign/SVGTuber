@@ -151,25 +151,35 @@ function stopAudioKeepAlive() {
 // Enumerate audio input devices
 async function populateAudioDevices() {
   try {
+    const savedMic = localStorage.getItem("svgtuber_mic_id") || "";
+    const currentVal = (micSelect && micSelect.value) ? micSelect.value : savedMic;
     const devices = await navigator.mediaDevices.enumerateDevices();
     const audioDevices = devices.filter(d => d.kind === "audioinput");
-    if (micSelect) {
-      const currentVal = micSelect.value;
-      micSelect.innerHTML = "";
-      if (audioDevices.length === 0) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = "Default Microphone";
-        micSelect.appendChild(option);
-      } else {
-        audioDevices.forEach((device, i) => {
-          const option = document.createElement("option");
-          option.value = device.deviceId;
-          option.textContent = device.label || `Microphone ${i + 1}`;
-          micSelect.appendChild(option);
-        });
-        if (currentVal) micSelect.value = currentVal;
+    if (!micSelect) return;
+
+    if (audioDevices.length === 0) {
+      micSelect.innerHTML = '<option value="">Default Microphone</option>';
+      return;
+    }
+
+    const hasRealLabels = micSelect.options.length > 0 && micSelect.options[0].textContent && !micSelect.options[0].textContent.startsWith("Microphone 1");
+    if (micSelect.options.length === audioDevices.length && hasRealLabels) {
+      if (currentVal) micSelect.value = currentVal;
+      return;
+    }
+
+    micSelect.innerHTML = "";
+    audioDevices.forEach((device, i) => {
+      const option = document.createElement("option");
+      option.value = device.deviceId;
+      option.textContent = device.label || `Microphone ${i + 1}`;
+      if (currentVal && device.deviceId === currentVal) {
+        option.selected = true;
       }
+      micSelect.appendChild(option);
+    });
+    if (currentVal) {
+      micSelect.value = currentVal;
     }
   } catch (err) {
     console.warn("[Studio Tracker] Could not enumerate audio devices:", err);
@@ -187,13 +197,25 @@ async function toggleMic() {
 
 async function startMic() {
   const ctx = getOrCreateAudioContext();
-  const deviceId = micSelect ? micSelect.value : "";
-  const constraints = {
-    audio: deviceId ? { deviceId: { exact: deviceId } } : true
-  };
+  const savedMic = localStorage.getItem("svgtuber_mic_id") || "";
+  const deviceId = (micSelect && micSelect.value) ? micSelect.value : savedMic;
 
   try {
-    micStream = await navigator.mediaDevices.getUserMedia(constraints);
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: deviceId ? { deviceId: { exact: deviceId } } : true
+      });
+    } catch (e) {
+      if (deviceId) {
+        console.warn("[Studio Tracker] Exact mic failed, falling back to default:", e);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } else {
+        throw e;
+      }
+    }
+
+    micStream = stream;
     micSource = ctx.createMediaStreamSource(micStream);
     analyserNode = ctx.createAnalyser();
     analyserNode.fftSize = 512;
@@ -202,6 +224,10 @@ async function startMic() {
     audioDataArray = new Float32Array(analyserNode.fftSize);
 
     micRunning = true;
+    localStorage.setItem("svgtuber_mic_active", "true");
+    if (micSelect && micSelect.value) {
+      localStorage.setItem("svgtuber_mic_id", micSelect.value);
+    }
     if (btnToggleMic) {
       btnToggleMic.textContent = "Stop Mic";
       btnToggleMic.classList.add("btn-danger");
@@ -224,6 +250,7 @@ async function startMic() {
 
 function stopMic() {
   micRunning = false;
+  localStorage.setItem("svgtuber_mic_active", "false");
   if (micSource) {
     try { micSource.disconnect(); } catch (e) {}
     micSource = null;
@@ -358,6 +385,10 @@ function connectWebSocket() {
         updateExpressionButtonsUI();
       } else if (msg.type === "rig_update") {
         loadExpressions();
+      } else if (msg.type === "avatar_swapped") {
+        loadAvatars();
+        loadExpressions();
+        reloadAvatarFrame();
       }
     } catch (e) {}
   };
@@ -419,6 +450,16 @@ async function initMediaPipe() {
     initTickerWorker();
     await populateCameraDevices();
     await populateAudioDevices();
+
+    // Auto-restore camera on page reload if not explicitly stopped
+    const cameraActive = localStorage.getItem("svgtuber_camera_active");
+    if (cameraActive === "true" || cameraActive === null) {
+      console.log("[Studio Tracker] Auto-starting camera stream on load...");
+      startCamera().catch(e => {
+        console.warn("[Studio Tracker] Auto-start camera warning:", e);
+        updateStatus("Model Ready. Start Camera.", "status-ok");
+      });
+    }
   } catch (err) {
     console.error("[Studio Tracker] Failed to initialize MediaPipe:", err);
     updateStatus(`Error loading AI model: ${err.message}`, "status-error");
@@ -427,83 +468,177 @@ async function initMediaPipe() {
 
 async function populateCameraDevices() {
   try {
+    const savedCam = localStorage.getItem("svgtuber_camera_id") || "";
+    const currentVal = (cameraSelect && cameraSelect.value) ? cameraSelect.value : savedCam;
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videoDevices = devices.filter(d => d.kind === "videoinput");
+    if (!cameraSelect || videoDevices.length === 0) return;
+
+    const hasRealLabels = cameraSelect.options.length > 0 && cameraSelect.options[0].textContent && !cameraSelect.options[0].textContent.startsWith("Camera 1");
+    if (cameraSelect.options.length === videoDevices.length && hasRealLabels) {
+      if (currentVal) cameraSelect.value = currentVal;
+      return;
+    }
+
     cameraSelect.innerHTML = "";
     videoDevices.forEach((device, i) => {
       const option = document.createElement("option");
       option.value = device.deviceId;
       option.textContent = device.label || `Camera ${i + 1}`;
+      if (currentVal && device.deviceId === currentVal) {
+        option.selected = true;
+      }
       cameraSelect.appendChild(option);
     });
+    if (currentVal) {
+      cameraSelect.value = currentVal;
+    }
   } catch (err) {
     console.warn("[Studio Tracker] Could not enumerate camera devices:", err);
+  }
+}
+
+// Start camera stream with resilient fallback and device persistence
+async function startCamera(deviceId = null) {
+  if (video.srcObject) {
+    try {
+      video.srcObject.getTracks().forEach(t => t.stop());
+    } catch (e) {}
+    video.srcObject = null;
+  }
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+
+  const savedCam = localStorage.getItem("svgtuber_camera_id") || "";
+  const targetId = deviceId || (cameraSelect && cameraSelect.value) || savedCam;
+
+  let stream = null;
+  try {
+    const constraints = {
+      video: targetId ? {
+        deviceId: { exact: targetId },
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 60 }
+      } : {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 60 }
+      }
+    };
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (err) {
+    if (targetId) {
+      console.warn("[Studio Tracker] Exact camera failed, falling back to default:", err);
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } }
+      });
+    } else {
+      throw err;
+    }
+  }
+
+  video.srcObject = stream;
+  try {
+    await video.play();
+  } catch (e) {
+    console.warn("[Studio Tracker] video.play() warning:", e);
+  }
+
+  const onLoaded = () => {
+    webcamRunning = true;
+    localStorage.setItem("svgtuber_camera_active", "true");
+
+    const effectiveId = targetId || (cameraSelect && cameraSelect.value);
+    if (effectiveId) {
+      localStorage.setItem("svgtuber_camera_id", effectiveId);
+      if (cameraSelect) cameraSelect.value = effectiveId;
+    }
+
+    btnToggleCamera.textContent = "Stop Camera";
+    btnToggleCamera.classList.add("btn-danger");
+    updateStatus("Tracking Active", "status-ok");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+
+    populateCameraDevices();
+    populateAudioDevices();
+
+    getOrCreateAudioContext();
+    if (tickerWorker) {
+      tickerWorker.postMessage('start');
+    }
+
+    // Auto-restore mic if previously enabled
+    const micActive = localStorage.getItem("svgtuber_mic_active");
+    if (micActive === "true" && !micRunning) {
+      startMic().catch(e => console.warn("[Studio Tracker] Auto-restore mic:", e));
+    }
+
+    if (animFrameId) cancelAnimationFrame(animFrameId);
+    animFrameId = requestAnimationFrame(predictLoop);
+  };
+
+  if (video.readyState >= 2 && video.videoWidth > 0) {
+    onLoaded();
+  } else {
+    video.addEventListener("loadeddata", onLoaded, { once: true });
+  }
+}
+
+// Stop camera stream
+function stopCamera() {
+  webcamRunning = false;
+  localStorage.setItem("svgtuber_camera_active", "false");
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+  if (micRunning) {
+    startAudioOnlyLoop();
+  } else {
+    if (tickerWorker) {
+      tickerWorker.postMessage('stop');
+    }
+    stopAudioKeepAlive();
+  }
+
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+  btnToggleCamera.textContent = "Start Camera";
+  btnToggleCamera.classList.remove("btn-danger");
+  updateStatus(micRunning ? "Audio Lip-Sync Active" : "Camera Stopped", micRunning ? "status-ok" : "status-warn");
+  canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+  sendTrackingLoss();
+}
+
+// Seamlessly switch camera without full stop/start cycle
+async function switchCamera(deviceId) {
+  if (!webcamRunning) {
+    return;
+  }
+  updateStatus("Switching Camera...", "status-warn");
+  try {
+    await startCamera(deviceId);
+  } catch (err) {
+    console.error("[Studio Tracker] Error switching camera:", err);
+    stopCamera();
+    updateStatus(`Camera switch failed: ${err.message}`, "status-error");
   }
 }
 
 // Start / Stop Camera Stream
 async function toggleCamera() {
   if (webcamRunning) {
-    webcamRunning = false;
-    if (animFrameId) {
-      cancelAnimationFrame(animFrameId);
-      animFrameId = null;
-    }
-    if (micRunning) {
-      startAudioOnlyLoop();
-    } else {
-      if (tickerWorker) {
-        tickerWorker.postMessage('stop');
-      }
-      stopAudioKeepAlive();
-    }
-
-    if (video.srcObject) {
-      video.srcObject.getTracks().forEach(t => t.stop());
-      video.srcObject = null;
-    }
-    btnToggleCamera.textContent = "Start Camera";
-    btnToggleCamera.classList.remove("btn-danger");
-    updateStatus(micRunning ? "Audio Lip-Sync Active" : "Camera Stopped", micRunning ? "status-ok" : "status-warn");
-    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
-    sendTrackingLoss();
+    stopCamera();
     return;
   }
-
-  const deviceId = cameraSelect.value;
-  const constraints = {
-    video: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
-      width: { ideal: 640 },
-      height: { ideal: 480 },
-      frameRate: { ideal: 60 }
-    }
-  };
-
   try {
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    video.srcObject = stream;
-    video.addEventListener("loadeddata", () => {
-      webcamRunning = true;
-      btnToggleCamera.textContent = "Stop Camera";
-      btnToggleCamera.classList.add("btn-danger");
-      updateStatus("Tracking Active", "status-ok");
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      // Start background keep-alive mechanisms
-      getOrCreateAudioContext();
-      if (tickerWorker) {
-        tickerWorker.postMessage('start');
-      }
-
-      // Auto-start microphone if not running yet
-      if (!micRunning) {
-        startMic().catch(e => console.warn("[Studio Tracker] Auto-start mic:", e));
-      }
-
-      animFrameId = requestAnimationFrame(predictLoop);
-    }, { once: true });
+    await startCamera();
   } catch (err) {
     console.error("[Studio Tracker] Camera access error:", err);
     updateStatus(`Camera access denied: ${err.message}`, "status-error");
@@ -725,11 +860,24 @@ btnCalibrate.addEventListener("click", () => {
 });
 
 btnToggleCamera.addEventListener("click", toggleCamera);
+if (cameraSelect) {
+  cameraSelect.addEventListener("change", () => {
+    if (cameraSelect.value) {
+      localStorage.setItem("svgtuber_camera_id", cameraSelect.value);
+    }
+    if (webcamRunning) {
+      switchCamera(cameraSelect.value);
+    }
+  });
+}
 if (btnToggleMic) {
   btnToggleMic.addEventListener("click", toggleMic);
 }
 if (micSelect) {
   micSelect.addEventListener("change", () => {
+    if (micSelect.value) {
+      localStorage.setItem("svgtuber_mic_id", micSelect.value);
+    }
     if (micRunning) {
       // Reconnect with new device
       startMic();
@@ -1142,4 +1290,94 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// Avatar Switcher & Directory Management
+const avatarSelect = document.getElementById("avatar-select");
+const avatarDirLabel = document.getElementById("avatar-dir-label");
+const btnRefreshAvatars = document.getElementById("btn-refresh-avatars");
+
+function reloadAvatarFrame() {
+  const frame = document.getElementById("avatar-frame");
+  if (frame) {
+    frame.src = `/overlay?t=${Date.now()}`;
+  }
+}
+
+async function loadAvatars() {
+  if (!avatarSelect) return;
+  try {
+    const res = await fetch(`/api/avatars?t=${Date.now()}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const dir = data.avatarDir || "";
+    const current = data.currentAvatar || "";
+    const avatars = data.avatars || [];
+
+    if (avatarDirLabel) {
+      avatarDirLabel.textContent = `📁 ${dir}`;
+      avatarDirLabel.title = dir;
+    }
+
+    avatarSelect.innerHTML = "";
+    if (avatars.length === 0) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "No .svg files found in directory";
+      avatarSelect.appendChild(opt);
+      return;
+    }
+
+    avatars.forEach((av) => {
+      const opt = document.createElement("option");
+      opt.value = av;
+      opt.textContent = av;
+      if (av === current) {
+        opt.selected = true;
+      }
+      avatarSelect.appendChild(opt);
+    });
+  } catch (err) {
+    console.error("[Studio Tracker] Error loading avatars:", err);
+  }
+}
+
+if (avatarSelect) {
+  avatarSelect.addEventListener("change", async (e) => {
+    const selected = e.target.value;
+    if (!selected) return;
+    avatarSelect.disabled = true;
+    try {
+      const res = await fetch("/api/avatars/select", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avatar: selected })
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to switch avatar: ${res.statusText}`);
+      }
+      reloadAvatarFrame();
+      await loadExpressions();
+    } catch (err) {
+      console.error("[Studio Tracker] Error switching avatar:", err);
+      alert(`Could not switch avatar: ${err.message}`);
+    } finally {
+      avatarSelect.disabled = false;
+    }
+  });
+}
+
+if (btnRefreshAvatars) {
+  btnRefreshAvatars.addEventListener("click", async () => {
+    btnRefreshAvatars.disabled = true;
+    btnRefreshAvatars.textContent = "Scanning...";
+    try {
+      await loadAvatars();
+    } finally {
+      btnRefreshAvatars.disabled = false;
+      btnRefreshAvatars.textContent = "↻ Scan Folder";
+    }
+  });
+}
+
 loadExpressions();
+loadAvatars();
+

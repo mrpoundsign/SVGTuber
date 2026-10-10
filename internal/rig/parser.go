@@ -3,6 +3,7 @@ package rig
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -82,8 +83,31 @@ func normalizeDirectiveType(t string) string {
 	}
 }
 
-// ParseSVG scans an SVG XML stream for elements with IDs and Inkscape rigging directives.
-func ParseSVG(svgData []byte) (*RigDefinition, error) {
+// Parser defines the interface for parsing SVG data into a RigDefinition.
+type Parser interface {
+	Parse(svgData []byte) (*RigDefinition, error)
+}
+
+// SVGParser implements Parser using a pipeline of pluggable attribute extractors.
+type SVGParser struct {
+	extractors []Extractor
+}
+
+// NewSVGParser constructs an SVGParser with the given extractors. If none are provided, DefaultExtractors() is used.
+func NewSVGParser(extractors ...Extractor) *SVGParser {
+	if len(extractors) == 0 {
+		extractors = DefaultExtractors()
+	}
+	return &SVGParser{
+		extractors: extractors,
+	}
+}
+
+// DefaultParser is the standard pre-configured SVGParser instance.
+var DefaultParser = NewSVGParser()
+
+// Parse scans an SVG XML stream using the configured extractor pipeline.
+func (p *SVGParser) Parse(svgData []byte) (*RigDefinition, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(svgData))
 
 	var elements []RigElement
@@ -102,20 +126,41 @@ func ParseSVG(svgData []byte) (*RigDefinition, error) {
 			continue
 		}
 
-		var id, label string
+		var id string
 		for _, attr := range startElem.Attr {
-			switch attr.Name.Local {
-			case "id":
+			if attr.Name.Local == "id" {
 				id = attr.Value
-			case "label":
-				// Matches both inkscape:label and standard label
-				label = attr.Value
+				break
 			}
 		}
 
-		if id != "" && label != "" {
+		// Phase 1: Query extractors for any label containing rigging directives [ ... ]
+		var label string
+		for _, ext := range p.extractors {
+			if candidate, ok := ext.Extract(startElem.Attr); ok && candidate != "" {
+				if strings.Contains(candidate, "[") && strings.Contains(candidate, "]") {
+					label = candidate
+					break
+				}
+			}
+		}
+
+		// Phase 2: Fallback to the first non-empty label returned by an extractor
+		if label == "" {
+			for _, ext := range p.extractors {
+				if candidate, ok := ext.Extract(startElem.Attr); ok && candidate != "" {
+					label = candidate
+					break
+				}
+			}
+		}
+
+		if label != "" {
 			directives := ParseDirectives(label)
 			if len(directives) > 0 {
+				if id == "" {
+					id = fmt.Sprintf("rig_elem_%d", len(elements))
+				}
 				elements = append(elements, RigElement{
 					ID:         id,
 					Label:      label,
@@ -129,4 +174,9 @@ func ParseSVG(svgData []byte) (*RigDefinition, error) {
 		Version:  "1.0",
 		Elements: elements,
 	}, nil
+}
+
+// ParseSVG parses an SVG XML stream using DefaultParser.
+func ParseSVG(svgData []byte) (*RigDefinition, error) {
+	return DefaultParser.Parse(svgData)
 }

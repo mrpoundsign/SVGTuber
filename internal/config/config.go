@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -37,16 +39,18 @@ type AudioSettings struct {
 
 // Settings represents the complete user configuration.
 type Settings struct {
-	Version    int              `json:"version"`
-	AvatarPath string           `json:"avatarPath,omitempty"`
-	Tracking   TrackingSettings `json:"tracking"`
-	Audio      AudioSettings    `json:"audio"`
+	Version       int              `json:"version"`
+	AvatarDir     string           `json:"avatarDir,omitempty"`     // Directory containing avatar SVGs
+	CurrentAvatar string           `json:"currentAvatar,omitempty"` // Relative path/filename of active avatar within AvatarDir
+	AvatarPath    string           `json:"avatarPath,omitempty"`    // Full absolute path (for backwards compatibility)
+	Tracking      TrackingSettings `json:"tracking"`
+	Audio         AudioSettings    `json:"audio"`
 }
 
 // DefaultSettings returns a initialized Settings object with tuned defaults.
 func DefaultSettings() Settings {
 	return Settings{
-		Version: 1,
+		Version: 2,
 		Tracking: TrackingSettings{
 			MouthGain:        1.4,
 			MouthThreshold:   0.08,
@@ -130,18 +134,79 @@ func (m *Manager) GetAvatarPath() string {
 	return m.settings.AvatarPath
 }
 
-// SetAvatarPath updates the avatar path and persists it to disk.
+// GetAvatarDir returns the persisted avatar directory from settings.
+func (m *Manager) GetAvatarDir() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.settings.AvatarDir
+}
+
+// GetCurrentAvatar returns the active avatar relative path within AvatarDir.
+func (m *Manager) GetCurrentAvatar() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.settings.CurrentAvatar
+}
+
+// GetActiveAvatarPath returns the full resolved path to the active avatar SVG.
+func (m *Manager) GetActiveAvatarPath() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.settings.AvatarDir != "" && m.settings.CurrentAvatar != "" {
+		return filepath.Join(m.settings.AvatarDir, filepath.FromSlash(m.settings.CurrentAvatar))
+	}
+	return m.settings.AvatarPath
+}
+
+// SetAvatarPath updates the avatar path, extracts its directory and relative name, and persists it to disk.
 func (m *Manager) SetAvatarPath(p string) error {
 	m.mu.Lock()
-	m.settings.AvatarPath = p
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = p
+	}
+	m.settings.AvatarPath = abs
+	m.settings.AvatarDir = filepath.Dir(abs)
+	m.settings.CurrentAvatar = filepath.Base(abs)
 	m.mu.Unlock()
 	return m.Save()
+}
+
+// SetAvatarLocation sets the avatar path and directory (alias for SetAvatarPath).
+func (m *Manager) SetAvatarLocation(fullPath string) error {
+	return m.SetAvatarPath(fullPath)
+}
+
+// SetActiveAvatar updates the current active avatar relative to AvatarDir and persists to disk.
+func (m *Manager) SetActiveAvatar(relPath string) error {
+	m.mu.Lock()
+	cleanRel := filepath.ToSlash(relPath)
+	m.settings.CurrentAvatar = cleanRel
+	if m.settings.AvatarDir != "" {
+		m.settings.AvatarPath = filepath.Join(m.settings.AvatarDir, filepath.FromSlash(cleanRel))
+	}
+	m.mu.Unlock()
+	return m.Save()
+}
+
+// ScanAvailableAvatars scans the configured AvatarDir (including subdirectories) for .svg files.
+func (m *Manager) ScanAvailableAvatars() ([]string, error) {
+	m.mu.RLock()
+	dir := m.settings.AvatarDir
+	m.mu.RUnlock()
+	return ScanAvatarDir(dir)
 }
 
 // Update updates the active settings and persists them to disk.
 func (m *Manager) Update(newSettings Settings) error {
 	m.mu.Lock()
-	// Preserve configured AvatarPath if incoming payload leaves it empty
+	// Preserve configured AvatarDir, CurrentAvatar, and AvatarPath if incoming payload leaves them empty
+	if newSettings.AvatarDir == "" && m.settings.AvatarDir != "" {
+		newSettings.AvatarDir = m.settings.AvatarDir
+	}
+	if newSettings.CurrentAvatar == "" && m.settings.CurrentAvatar != "" {
+		newSettings.CurrentAvatar = m.settings.CurrentAvatar
+	}
 	if newSettings.AvatarPath == "" && m.settings.AvatarPath != "" {
 		newSettings.AvatarPath = m.settings.AvatarPath
 	}
@@ -151,10 +216,12 @@ func (m *Manager) Update(newSettings Settings) error {
 	return m.Save()
 }
 
-// Reset restores settings to default values and saves to disk while preserving avatarPath.
+// Reset restores settings to default values and saves to disk while preserving avatar directory and paths.
 func (m *Manager) Reset() (Settings, error) {
 	defaults := DefaultSettings()
 	m.mu.Lock()
+	defaults.AvatarDir = m.settings.AvatarDir
+	defaults.CurrentAvatar = m.settings.CurrentAvatar
 	defaults.AvatarPath = m.settings.AvatarPath
 	m.settings = defaults
 	m.mu.Unlock()
@@ -164,6 +231,7 @@ func (m *Manager) Reset() (Settings, error) {
 }
 
 // Load reads the settings file from disk. If the file does not exist, it initializes with defaults.
+// Automatically upgrades legacy configs (Version 1 -> Version 2) by deriving avatarDir and currentAvatar.
 func (m *Manager) Load() error {
 	path, err := m.ConfigPath()
 	if err != nil {
@@ -184,6 +252,29 @@ func (m *Manager) Load() error {
 	var s Settings
 	if err := json.Unmarshal(data, &s); err != nil {
 		return fmt.Errorf("parsing settings JSON: %w", err)
+	}
+
+	// Auto-upgrade version and split legacy AvatarPath into AvatarDir and CurrentAvatar
+	upgraded := false
+	if s.Version < 2 {
+		s.Version = 2
+		upgraded = true
+	}
+	if s.AvatarPath != "" {
+		if s.AvatarDir == "" {
+			s.AvatarDir = filepath.Dir(s.AvatarPath)
+			upgraded = true
+		}
+		if s.CurrentAvatar == "" {
+			if rel, err := filepath.Rel(s.AvatarDir, s.AvatarPath); err == nil && !strings.HasPrefix(rel, "..") {
+				s.CurrentAvatar = filepath.ToSlash(rel)
+			} else {
+				s.CurrentAvatar = filepath.Base(s.AvatarPath)
+			}
+			upgraded = true
+		}
+	} else if s.AvatarDir != "" && s.CurrentAvatar != "" {
+		s.AvatarPath = filepath.Join(s.AvatarDir, filepath.FromSlash(s.CurrentAvatar))
 	}
 
 	// Validate / fill missing defaults
@@ -247,7 +338,52 @@ func (m *Manager) Load() error {
 	m.settings = s
 	m.mu.Unlock()
 
+	// Persist automatically if upgraded from legacy format
+	if upgraded {
+		_ = m.Save()
+	}
+
 	return nil
+}
+
+// ScanAvatarDir recursively scans a directory for .svg files (including subdirectories)
+// and returns their relative paths formatted with forward slashes.
+func ScanAvatarDir(dir string) ([]string, error) {
+	if dir == "" {
+		return nil, nil
+	}
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(absDir); os.IsNotExist(err) {
+		return nil, nil
+	}
+
+	var results []string
+	err = filepath.WalkDir(absDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") && path != absDir {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ".svg") {
+			rel, relErr := filepath.Rel(absDir, path)
+			if relErr == nil && !strings.HasPrefix(rel, "..") {
+				results = append(results, filepath.ToSlash(rel))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(results)
+	return results, nil
 }
 
 // Save writes the current settings formatted as JSON to disk.

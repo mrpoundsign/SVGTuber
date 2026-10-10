@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,23 +19,28 @@ import (
 	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/rig"
 	"github.com/mrpoundsign/SVGTuber/internal/tracking"
+	"github.com/mrpoundsign/SVGTuber/internal/watcher"
 	"github.com/mrpoundsign/SVGTuber/web"
 )
 
 // Server coordinates the HTTP file server and WebSocket endpoints.
 type Server struct {
-	port       int
-	avatarPath string
-	hub        *Hub
-	engine     *tracking.Engine
-	configMgr    *config.Manager
-	rigMu        sync.RWMutex
-	rigDef       *rig.RigDefinition
-	expMgr       *ExpressionManager
-	trackerMu    sync.RWMutex
-	trackerConns map[*websocket.Conn]chan []byte
-	httpServer   *http.Server
-	listener     net.Listener
+	port          int
+	avatarPath    string
+	avatarDir     string
+	currentAvatar string
+	hub           *Hub
+	engine        *tracking.Engine
+	configMgr     *config.Manager
+	rigMu         sync.RWMutex
+	rigDef        *rig.RigDefinition
+	rigParser     rig.Parser
+	avatarWatcher *watcher.AvatarWatcher
+	expMgr        *ExpressionManager
+	trackerMu     sync.RWMutex
+	trackerConns  map[*websocket.Conn]chan []byte
+	httpServer    *http.Server
+	listener      net.Listener
 }
 
 // New constructs an unstarted Server instance.
@@ -44,13 +50,33 @@ func New(port int, avatarPath string, hub *Hub, engine *tracking.Engine, cfg ...
 		cm = cfg[0]
 	}
 
+	absAvatar, err := filepath.Abs(avatarPath)
+	if err != nil {
+		absAvatar = avatarPath
+	}
+
+	avatarDir := filepath.Dir(absAvatar)
+	currentAvatar := filepath.Base(absAvatar)
+	if cm != nil {
+		if cm.GetAvatarDir() != "" {
+			avatarDir = cm.GetAvatarDir()
+		}
+		if cm.GetCurrentAvatar() != "" {
+			currentAvatar = cm.GetCurrentAvatar()
+			absAvatar = filepath.Join(avatarDir, filepath.FromSlash(currentAvatar))
+		}
+	}
+
 	s := &Server{
-		port:         port,
-		avatarPath:   avatarPath,
-		hub:          hub,
-		engine:       engine,
-		configMgr:    cm,
-		trackerConns: make(map[*websocket.Conn]chan []byte),
+		port:          port,
+		avatarPath:    absAvatar,
+		avatarDir:     avatarDir,
+		currentAvatar: currentAvatar,
+		hub:           hub,
+		engine:        engine,
+		configMgr:     cm,
+		rigParser:     rig.DefaultParser,
+		trackerConns:  make(map[*websocket.Conn]chan []byte),
 	}
 
 	expMgr := NewExpressionManager(func(active map[string]bool) {
@@ -124,6 +150,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/expressions/trigger", s.handleAPIExpressionTrigger)
 	mux.HandleFunc("/api/expressions/reset", s.handleAPIExpressionReset)
 	mux.HandleFunc("/api/avatar/reload", s.handleAPIAvatarReload)
+	mux.HandleFunc("/api/avatars", s.handleAPIAvatars)
+	mux.HandleFunc("/api/avatars/select", s.handleAPIAvatarSelect)
 
 	// Initial parse of SVG rig definition
 	if _, err := s.ReloadRig(); err != nil {
@@ -162,7 +190,11 @@ func (s *Server) Addr() string {
 }
 
 func (s *Server) handleAvatarSVG(w http.ResponseWriter, r *http.Request) {
-	absPath, err := filepath.Abs(s.avatarPath)
+	s.rigMu.RLock()
+	currentPath := s.avatarPath
+	s.rigMu.RUnlock()
+
+	absPath, err := filepath.Abs(currentPath)
 	if err != nil {
 		http.Error(w, "Invalid avatar path", http.StatusBadRequest)
 		return
@@ -417,6 +449,75 @@ func (s *Server) handleAPISettingsReset(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// SetRigParser configures a custom rig parser implementation for dependency injection.
+func (s *Server) SetRigParser(p rig.Parser) {
+	s.rigMu.Lock()
+	defer s.rigMu.Unlock()
+	if p != nil {
+		s.rigParser = p
+	}
+}
+
+// SetWatcher configures the file watcher so it can be dynamically redirected when swapping avatars.
+func (s *Server) SetWatcher(w *watcher.AvatarWatcher) {
+	s.rigMu.Lock()
+	defer s.rigMu.Unlock()
+	s.avatarWatcher = w
+}
+
+// SwitchAvatar changes the active avatar SVG to a file relative to avatarDir.
+func (s *Server) SwitchAvatar(relPath string) error {
+	relPath = strings.TrimSpace(relPath)
+	if relPath == "" {
+		return fmt.Errorf("avatar path cannot be empty")
+	}
+
+	cleanRel := filepath.Clean(filepath.FromSlash(relPath))
+	if strings.HasPrefix(cleanRel, "..") || filepath.IsAbs(cleanRel) {
+		return fmt.Errorf("invalid avatar relative path: %s", relPath)
+	}
+
+	s.rigMu.RLock()
+	dir := s.avatarDir
+	s.rigMu.RUnlock()
+
+	targetPath := filepath.Join(dir, cleanRel)
+	if _, err := os.Stat(targetPath); err != nil {
+		return fmt.Errorf("avatar file not found: %w", err)
+	}
+
+	s.rigMu.Lock()
+	s.avatarPath = targetPath
+	s.currentAvatar = filepath.ToSlash(cleanRel)
+	fw := s.avatarWatcher
+	s.rigMu.Unlock()
+
+	if s.configMgr != nil {
+		_ = s.configMgr.SetActiveAvatar(s.currentAvatar)
+	}
+
+	if fw != nil {
+		if err := fw.SwitchFile(targetPath); err != nil {
+			log.Printf("[Server] Watcher switch warning: %v", err)
+		}
+	}
+
+	rigDef, err := s.ReloadRig()
+	if err != nil {
+		return fmt.Errorf("reloading rig for %s: %w", targetPath, err)
+	}
+
+	s.hub.BroadcastReload()
+	s.broadcastTracker(map[string]any{
+		"type":          "avatar_swapped",
+		"currentAvatar": s.currentAvatar,
+		"avatarDir":     s.avatarDir,
+	})
+
+	log.Printf("[Server] Swapped avatar to: %s (rig elements: %d)", s.currentAvatar, len(rigDef.Elements))
+	return nil
+}
+
 // ReloadRig re-reads the avatar SVG from disk, parses its rig directives, and broadcasts an update.
 func (s *Server) ReloadRig() (*rig.RigDefinition, error) {
 	absPath, err := filepath.Abs(s.avatarPath)
@@ -429,7 +530,14 @@ func (s *Server) ReloadRig() (*rig.RigDefinition, error) {
 		return nil, fmt.Errorf("reading avatar file: %w", err)
 	}
 
-	rigDef, err := rig.ParseSVG(data)
+	s.rigMu.RLock()
+	parser := s.rigParser
+	s.rigMu.RUnlock()
+	if parser == nil {
+		parser = rig.DefaultParser
+	}
+
+	rigDef, err := parser.Parse(data)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rig from SVG: %w", err)
 	}
@@ -483,6 +591,75 @@ func (s *Server) handleAPIAvatarReload(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"status": "reloaded",
 		"rig":    rigDef,
+	})
+}
+
+func (s *Server) handleAPIAvatars(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	s.rigMu.RLock()
+	dir := s.avatarDir
+	current := s.currentAvatar
+	s.rigMu.RUnlock()
+
+	avatars, err := config.ScanAvatarDir(dir)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to scan avatar directory: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"avatarDir":     dir,
+		"currentAvatar": current,
+		"avatars":       avatars,
+	})
+}
+
+func (s *Server) handleAPIAvatarSelect(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var targetAvatar string
+	targetAvatar = r.URL.Query().Get("avatar")
+	if targetAvatar == "" {
+		targetAvatar = r.URL.Query().Get("name")
+	}
+
+	if targetAvatar == "" && r.Body != nil {
+		var payload struct {
+			Avatar string `json:"avatar"`
+			Name   string `json:"name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			if payload.Avatar != "" {
+				targetAvatar = payload.Avatar
+			} else {
+				targetAvatar = payload.Name
+			}
+		}
+	}
+
+	if targetAvatar == "" {
+		http.Error(w, `{"error":"missing avatar parameter"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := s.SwitchAvatar(targetAvatar); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusBadRequest)
+		return
+	}
+
+	s.rigMu.RLock()
+	current := s.currentAvatar
+	dir := s.avatarDir
+	s.rigMu.RUnlock()
+
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":        "ok",
+		"avatarDir":     dir,
+		"currentAvatar": current,
 	})
 }
 

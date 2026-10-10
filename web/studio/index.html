@@ -511,6 +511,20 @@
           <a href="/overlay" target="_blank" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px; text-decoration: none;">OBS Overlay ↗</a>
         </div>
       </div>
+      <!-- Avatar Folder & Switcher Dropdown -->
+      <div style="margin-bottom: 12px; background: #181820; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Active Avatar</span>
+          <button id="btn-refresh-avatars" class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px;" title="Rescan avatar directory for new SVGs">↻ Scan Folder</button>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <select id="avatar-select" class="form-select" style="flex: 1; background: #121218; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 500;">
+            <option value="">Scanning avatars...</option>
+          </select>
+        </div>
+        <div id="avatar-dir-label" style="font-size: 10px; color: var(--text-muted); margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title=""></div>
+      </div>
+
       <div class="preview-box">
         <iframe id="avatar-frame" src="/overlay" title="Avatar Live Preview"></iframe>
       </div>
