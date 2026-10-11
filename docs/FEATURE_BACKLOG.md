@@ -38,6 +38,10 @@ The following features from the initial roadmap have been fully implemented and 
 - [x] **⌨️ Studio Hotkeys (`1`–`9`) & Stream Deck HTTP API**:
   - Instant expression toggling via number keys `1`–`9` in Studio.
   - Complete REST/Webhook API (`/api/expressions/toggle`, `/trigger`, `/set`, `/reset`, `/calibrate`, `/avatar/swap`).
+- [x] **📖 OBS Streamer Setup Guide (`docs/OBS_QUICKSTART.md`)**:
+  - Step-by-step OBS Browser Source setup, 60 FPS vector configuration, and transparency tips.
+  - Important checkbox gotchas ("Shutdown source when not visible" & "Refresh browser when scene becomes active").
+  - Hardware acceleration instructions, audio modes (Hybrid vs PNGTuber), and Stream Deck integration.
 
 ---
 
@@ -96,13 +100,3 @@ The following features from the initial roadmap have been fully implemented and 
   - While keys `1`–`9` are already mapped to expressions, allow streamers to customize their hotkeys (e.g. mapping `C` or `Space` to calibrate, or custom modifier keys `Ctrl+Shift+E`).
   - Saved in the user's OS `settings.json`.
 
----
-
-### 5. 📖 OBS Streamer Quickstart Guide (`docs/OBS_QUICKSTART.md`)
-- **Status:** Under Consideration
-- **Estimated Effort:** ~45 mins
-- **Concept:**
-  - Clear, visual step-by-step setup documentation for new users:
-    - Adding OBS Browser Source with transparent canvas.
-    - Optimal width/height sizing and FPS configuration.
-    - Setting up Stream Deck HTTP buttons using the built-in REST endpoints.

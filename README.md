@@ -55,12 +55,12 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 
 ### 3. Add to OBS Studio
 1. In OBS Studio, add a new **Browser Source** to your scene.
-2. Set the **URL** to:
-   ```text
-   http://localhost:7420/overlay
-   ```
-3. Set your canvas resolution (e.g. `1080 x 1080` or `1920 x 1080`).
-4. Ensure **Shutdown source when not visible** is unchecked for instantaneous scene transitions.
+2. Set the **URL** to `http://localhost:7420/overlay`.
+3. Set your canvas resolution (e.g. `1920 x 1080`).
+4. Set **Custom Frame Rate** to `60` FPS.
+5. ⚠️ **Important:** Uncheck **Shutdown source when not visible** and uncheck **Refresh browser when scene becomes active**.
+
+📖 **[Read the complete OBS Streaming Guide](docs/OBS_QUICKSTART.md)** for hardware acceleration settings, audio lip-sync tuning, and transparency tips.
 
 ---
 
