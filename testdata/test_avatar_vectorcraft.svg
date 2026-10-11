@@ -9,16 +9,16 @@
       .cls-5{fill:url(#radial-gradient-1);stroke:#e2b885;stroke-width:3}
       .cls-6{display:none}
       .cls-7{fill:#f43f5e;opacity:0.65}
-      .cls-8{fill:#38bdf8;stroke:#0284c7;stroke-width:1.5;opacity:0.9}
-      .cls-9{fill:#ffffff;stroke:#1e1b4b;stroke-width:3}
-      .cls-10{fill:#312e81}
-      .cls-11{fill:none;stroke:#1e1b4b;stroke-width:4;stroke-linecap:round}
-      .cls-12{fill:none;stroke:#be123c;stroke-width:3.5;stroke-linecap:round}
-      .cls-13{fill:none;stroke:#be123c;stroke-width:4;stroke-linecap:round}
-      .cls-14{fill:#be123c;stroke:#9f1239;stroke-width:3}
-      .cls-15{fill:#fb7185}
+      .cls-8{fill:#ffffff;stroke:#1e1b4b;stroke-width:3}
+      .cls-9{fill:#312e81}
+      .cls-10{fill:none;stroke:#1e1b4b;stroke-width:4;stroke-linecap:round}
+      .cls-11{fill:none;stroke:#be123c;stroke-width:3.5;stroke-linecap:round}
+      .cls-12{fill:none;stroke:#be123c;stroke-width:4;stroke-linecap:round}
+      .cls-13{fill:#be123c;stroke:#9f1239;stroke-width:3}
+      .cls-14{fill:#fb7185}
+      .cls-15{fill:#38bdf8;stroke:#0284c7;stroke-width:1.5;opacity:0.9}
       .cls-16{fill:url(#linear-gradient-3)}
-      .cls-17{fill:#3730a3}
+      .cls-17{fill:none;stroke:#000080;stroke-opacity:0.273;stroke-width:1.573;stroke-linecap:round;stroke-linejoin:round}
       .cls-18{fill:none;stroke:#280b0b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
     </style>
     <linearGradient id="linear-gradient-1" x1="107.974" y1="213.858" x2="107.974" y2="400" gradientUnits="userSpaceOnUse">
@@ -39,7 +39,7 @@
     </linearGradient>
   </defs>
   <title>test_avatar.svg</title>
-  <g id="Body__Idle__breathe__0.02__period__3.5s__pivot__bottom___Bounce__height__6__speed__16__squash__0.04__pivot__bottom__" data-name="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}] [Bounce {height: 6; speed: 16; squash: 0.04; pivot: bottom}]">
+  <g id="Body__Idle__breathe__0.02__period__3.5s__pivot__bottom____Bounce__height__6__speed__16__squash__0.04__pivot__bottom__" data-name="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}] [Bounce {height: 6; speed: 16; squash: 0.04; pivot: bottom}]">
     <path id="path4" d="M176 380 C229.333 366.667 282.667 366.667 336 380 L362.687 399.835 L370 512 L142 512 L151.047 404.642 Z" class="cls-1"/>
     <path id="path5" d="M230 380 L256 420 L282 380 Z" class="cls-2"/>
   </g>
@@ -49,50 +49,51 @@
       <path id="path7" d="M360.411 218.684 C409.813 222.586 412.909 340.392 372 400 C345.333 346.667 332 300 332 260 Z" class="cls-4"/>
     </g>
     <path id="ellipse7" d="M376 250 C376 321.797 322.274 380 256 380 C189.726 380 136 321.797 136 250 C136 178.203 189.726 120 256 120 C322.274 120 376 178.203 376 250 Z" class="cls-5"/>
-    <g id="Blush__Expression__name__blush___Fade__param__smile__from__0__to__0.85__duration__350ms__" data-name="Blush [Expression {name: blush}] [Fade {param: smile; from: 0.0; to: 0.85; duration: 350ms}]" class="cls-6">
+    <g id="Blush__Expression__name__blush____Fade__param__smile__from__0.0__to__0.85__duration__350ms__" data-name="Blush [Expression {name: blush}] [Fade {param: smile; from: 0.0; to: 0.85; duration: 350ms}]" class="cls-6">
       <path id="ellipse8" d="M202 280 C202 286.075 192.15 291 180 291 C167.85 291 158 286.075 158 280 C158 273.925 167.85 269 180 269 C192.15 269 202 273.925 202 280 Z" class="cls-7"/>
       <path id="ellipse9" d="M354 280 C354 286.075 344.15 291 332 291 C319.85 291 310 286.075 310 280 C310 273.925 319.85 269 332 269 C344.15 269 354 273.925 354 280 Z" class="cls-7"/>
     </g>
-    <g id="Sweat__Show__when__isSweat__" data-name="Sweat [Show {when: isSweat}]" class="cls-6">
-      <path id="path_sweat" d="M345 185 C345 185 338 198 338 206 C338 209.866 341.134 213 345 213 C348.866 213 352 209.866 352 206 C352 198 345 185 345 185 Z" class="cls-8"/>
-    </g>
     <g id="Eyes_Open" data-name="Eyes Open">
       <g id="Left_Eye_Open__Hide__when__isBlinkL__" data-name="Left Eye Open [Hide {when: isBlinkL}]">
-        <path id="circle9" d="M228 235 C228 247.15 218.15 257 206 257 C193.85 257 184 247.15 184 235 C184 222.85 193.85 213 206 213 C218.15 213 228 222.85 228 235 Z" class="cls-9"/>
+        <path id="circle9" d="M228 235 C228 247.15 218.15 257 206 257 C193.85 257 184 247.15 184 235 C184 222.85 193.85 213 206 213 C218.15 213 228 222.85 228 235 Z" class="cls-8"/>
         <g id="Pupil_Left__Move__x__eyeX__y__eyeY__range__6__" data-name="Pupil Left [Move {x: eyeX; y: eyeY; range: 6}]">
-          <path id="circle10" d="M220 235 C220 242.732 213.732 249 206 249 C198.268 249 192 242.732 192 235 C192 227.268 198.268 221 206 221 C213.732 221 220 227.268 220 235 Z" class="cls-10"/>
+          <path id="circle10" d="M220 235 C220 242.732 213.732 249 206 249 C198.268 249 192 242.732 192 235 C192 227.268 198.268 221 206 221 C213.732 221 220 227.268 220 235 Z" class="cls-9"/>
           <path id="circle11" d="M217 229 C217 231.761 214.761 234 212 234 C209.239 234 207 231.761 207 229 C207 226.239 209.239 224 212 224 C214.761 224 217 226.239 217 229 Z" class="cls-2"/>
         </g>
       </g>
       <g id="Right_Eye_Open__Hide__when__isBlinkR__" data-name="Right Eye Open [Hide {when: isBlinkR}]">
-        <path id="circle12" d="M328 235 C328 247.15 318.15 257 306 257 C293.85 257 284 247.15 284 235 C284 222.85 293.85 213 306 213 C318.15 213 328 222.85 328 235 Z" class="cls-9"/>
+        <path id="circle12" d="M328 235 C328 247.15 318.15 257 306 257 C293.85 257 284 247.15 284 235 C284 222.85 293.85 213 306 213 C318.15 213 328 222.85 328 235 Z" class="cls-8"/>
         <g id="Pupil_Right__Move__x__eyeX__y__eyeY__range__6__" data-name="Pupil Right [Move {x: eyeX; y: eyeY; range: 6}]">
-          <path id="circle13" d="M320 235 C320 242.732 313.732 249 306 249 C298.268 249 292 242.732 292 235 C292 227.268 298.268 221 306 221 C313.732 221 320 227.268 320 235 Z" class="cls-10"/>
+          <path id="circle13" d="M320 235 C320 242.732 313.732 249 306 249 C298.268 249 292 242.732 292 235 C292 227.268 298.268 221 306 221 C313.732 221 320 227.268 320 235 Z" class="cls-9"/>
           <path id="circle14" d="M317 229 C317 231.761 314.761 234 312 234 C309.239 234 307 231.761 307 229 C307 226.239 309.239 224 312 224 C314.761 224 317 226.239 317 229 Z" class="cls-2"/>
         </g>
       </g>
     </g>
     <g id="Eyes_Closed" data-name="Eyes Closed">
       <g id="Left_Eye_Closed__Show__when__isBlinkL__" data-name="Left Eye Closed [Show {when: isBlinkL}]" class="cls-6">
-        <path id="path14" d="M186 240 C199.333 246.667 212.667 246.667 226 240" class="cls-11"/>
+        <path id="path14" d="M186 240 C199.333 246.667 212.667 246.667 226 240" class="cls-10"/>
       </g>
       <g id="Right_Eye_Closed__Show__when__isBlinkR__" data-name="Right Eye Closed [Show {when: isBlinkR}]" class="cls-6">
-        <path id="path15" d="M286 240 C299.333 246.667 312.667 246.667 326 240" class="cls-11"/>
+        <path id="path15" d="M286 240 C299.333 246.667 312.667 246.667 326 240" class="cls-10"/>
       </g>
     </g>
     <g id="Mouth_Neutral__Hide__when__isMouthOpen____isSmiling__" data-name="Mouth Neutral [Hide {when: isMouthOpen || isSmiling}]">
-      <path id="path16" d="M244 310 C252 310.667 260 310.667 268 310" class="cls-12"/>
+      <path id="path16" d="M244 310 C252 310.667 260 310.667 268 310" class="cls-11"/>
     </g>
     <g id="Mouth_Smile__Show__when__isSmiling__" data-name="Mouth Smile [Show {when: isSmiling}]" class="cls-6">
-      <path id="path17" d="M238 304 C250 314 262 314 274 304" class="cls-13"/>
+      <path id="path17" d="M238 304 C250 314 262 314 274 304" class="cls-12"/>
     </g>
     <g id="Mouth_Open__Show__when__isMouthOpen___Scale__y__mouthOpen__from__0.25__to__1.2__pivot__top___Scale__x__mouthOpen__from__0.5__to__1.2__pivot__top__" data-name="Mouth Open [Show {when: isMouthOpen}; Scale {y: mouthOpen; from: 0.25; to: 1.2; pivot: top}; Scale {x: mouthOpen; from: 0.5; to: 1.2; pivot: top}]" class="cls-6">
-      <path id="ellipse17" d="M274 315 C274 322.732 265.941 329 256 329 C246.059 329 238 322.732 238 315 C238 307.268 246.059 301 256 301 C265.941 301 274 307.268 274 315 Z" class="cls-14"/>
-      <path id="path18" d="M244 322 C252 315.333 260 315.333 268 322 Z" class="cls-15"/>
+      <path id="ellipse17" d="M274 315 C274 322.732 265.941 329 256 329 C246.059 329 238 322.732 238 315 C238 307.268 246.059 301 256 301 C265.941 301 274 307.268 274 315 Z" class="cls-13"/>
+      <path id="path18" d="M244 322 C252 315.333 260 315.333 268 322 Z" class="cls-14"/>
+    </g>
+    <g id="Sweat__Show__when__isSweat__" data-name="Sweat [Show {when: isSweat}]">
+      <path id="path_sweat" d="M333.154 189.826 C333.154 189.826 326.154 202.826 326.154 210.826 C326.154 214.692 329.288 217.826 333.154 217.826 C337.02 217.826 340.154 214.692 340.154 210.826 C340.154 202.826 333.154 189.826 333.154 189.826 Z" class="cls-15"/>
     </g>
     <g id="Front_Hair" data-name="Front Hair">
-      <path id="path19" d="M120.206 213.51 C136.206 160.177 193.316 107.625 257.316 107.625 C321.316 107.625 375.356 161.493 391.356 214.826 C400.089 298.195 290.331 154.382 247.664 167.716 C204.997 154.382 122.879 278.891 120.206 213.51 Z" class="cls-16"/>
-      <path id="path20" d="M220.877 157.277 C234.211 190.61 239.544 210.61 236.877 217.277 C246.211 190.61 254.211 172.277 260.877 162.277 Z" class="cls-17"/>
+      <path id="path19" d="M120.206 213.51 C148.113 120.486 227.855 83.848 275.074 109.007 C350.481 82.571 376.859 166.505 391.356 214.826 C384.004 338.493 359.582 206.837 331.095 182.268 C311.906 165.717 269.363 174.372 252.938 179.504 C233.778 173.517 192.085 167.424 173.134 192.498 C149.02 224.405 109.394 329.38 120.206 213.51 Z" class="cls-16"/>
+      <path id="path20" d="M196.747 170.329 C210.081 203.662 244.37 208.306 236.877 228.135 C253.306 221.589 302.682 211.242 303.953 201.444 C305.474 189.715 303.312 175.512 297.292 163.483 Z" class="cls-9"/>
+      <path id="path2" d="M236.476 159.26 C236.476 159.26 254.464 115.606 271.904 110.231" class="cls-17"/>
     </g>
     <path id="path1" d="M255.781 258.413 C226.386 285.176 258.413 286.492 258.413 286.492" class="cls-18"/>
   </g>

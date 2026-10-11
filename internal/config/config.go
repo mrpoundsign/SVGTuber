@@ -43,7 +43,8 @@ type AudioSettings struct {
 	Mode        string  `json:"mode"`        // "hybrid", "camera", "audio" (default: "hybrid")
 	MicGain     float64 `json:"micGain"`     // Multiplier on raw mic volume (default: 1.5)
 	NoiseGate   float64 `json:"noiseGate"`   // Threshold below which input is silence (default: 0.04)
-	DecaySmooth float64 `json:"decaySmooth"` // Envelope release smoothing (default: 0.1)
+	DecaySmooth  float64 `json:"decaySmooth"`  // Envelope release smoothing (default: 0.1)
+	BounceAmount float64 `json:"bounceAmount"` // Multiplier on voice-reactive bounce height and squash (default: 1.0)
 }
 
 // Settings represents the complete user configuration.
@@ -86,10 +87,11 @@ func DefaultSettings() Settings {
 			AutoTiltAmount:       1.0,
 		},
 		Audio: AudioSettings{
-			Mode:        "hybrid",
-			MicGain:     1.5,
-			NoiseGate:   0.04,
-			DecaySmooth: 0.1,
+			Mode:         "hybrid",
+			MicGain:      1.5,
+			NoiseGate:    0.04,
+			DecaySmooth:  0.1,
+			BounceAmount: 1.0,
 		},
 	}
 }
@@ -368,6 +370,9 @@ func (m *Manager) Load() error {
 	}
 	if s.Audio.DecaySmooth <= 0 {
 		s.Audio.DecaySmooth = 0.1
+	}
+	if s.Audio.BounceAmount <= 0 && !strings.Contains(string(data), "bounceAmount") {
+		s.Audio.BounceAmount = 1.0
 	}
 
 	m.mu.Lock()

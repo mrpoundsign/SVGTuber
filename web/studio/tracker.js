@@ -950,9 +950,11 @@ const sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier")
 const sliderMicGain = document.getElementById("slider-mic-gain");
 const sliderNoiseGate = document.getElementById("slider-noise-gate");
 const sliderDecaySmooth = document.getElementById("slider-decay-smooth");
+const sliderBounceAmount = document.getElementById("slider-bounce-amount");
 const valMicGain = document.getElementById("val-mic-gain");
 const valNoiseGate = document.getElementById("val-noise-gate");
 const valDecaySmooth = document.getElementById("val-decay-smooth");
+const valBounceAmount = document.getElementById("val-bounce-amount");
 
 const valMouthGain = document.getElementById("val-mouth-gain");
 const valMouthThreshold = document.getElementById("val-mouth-threshold");
@@ -1020,6 +1022,7 @@ function syncSettingsToUI(s) {
     if (sliderMicGain) sliderMicGain.value = a.micGain || 1.5;
     if (sliderNoiseGate) sliderNoiseGate.value = a.noiseGate || 0.04;
     if (sliderDecaySmooth) sliderDecaySmooth.value = a.decaySmooth || 0.10;
+    if (sliderBounceAmount) sliderBounceAmount.value = a.bounceAmount !== undefined ? a.bounceAmount : 1.0;
   }
 
   updateSliderLabels();
@@ -1055,6 +1058,7 @@ function updateSliderLabels() {
   if (valMicGain && sliderMicGain) valMicGain.textContent = `${parseFloat(sliderMicGain.value).toFixed(1)}x`;
   if (valNoiseGate && sliderNoiseGate) valNoiseGate.textContent = parseFloat(sliderNoiseGate.value).toFixed(2);
   if (valDecaySmooth && sliderDecaySmooth) valDecaySmooth.textContent = parseFloat(sliderDecaySmooth.value).toFixed(2);
+  if (valBounceAmount && sliderBounceAmount) valBounceAmount.textContent = `${parseFloat(sliderBounceAmount.value).toFixed(1)}x`;
 
   // Update noise gate marker on VU meter
   if (noiseGateMarker && sliderNoiseGate) {
@@ -1095,7 +1099,8 @@ function collectSettingsFromUI() {
       mode: settingsModeSelect?.value || modeSelect?.value || "hybrid",
       micGain: parseFloat(sliderMicGain?.value || 1.5),
       noiseGate: parseFloat(sliderNoiseGate?.value || 0.04),
-      decaySmooth: parseFloat(sliderDecaySmooth?.value || 0.10)
+      decaySmooth: parseFloat(sliderDecaySmooth?.value || 0.10),
+      bounceAmount: parseFloat(sliderBounceAmount?.value !== undefined ? sliderBounceAmount.value : 1.0)
     }
   };
 }
@@ -1145,7 +1150,8 @@ function onSliderInput() {
   sliderPitchMultiplier,
   sliderMicGain,
   sliderNoiseGate,
-  sliderDecaySmooth
+  sliderDecaySmooth,
+  sliderBounceAmount
 ].forEach(slider => {
   if (slider) {
     slider.addEventListener("input", onSliderInput);

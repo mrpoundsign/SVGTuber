@@ -202,6 +202,10 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	if mode == "" {
 		mode = "hybrid"
 	}
+	bounceAmount := as.BounceAmount
+	if bounceAmount < 0 {
+		bounceAmount = 1.0
+	}
 
 	// Compute audio volume and speech state
 	var audioMouth float64
@@ -257,6 +261,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			WinkIsBlink:      ts.WinkIsBlink,
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
+			BounceAmount:     bounceAmount,
 			IsSpeaking:       isSpeaking,
 			IsBlinkL:         isAutoClosed,
 			IsBlinkR:         isAutoClosed,
@@ -308,6 +313,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			WinkIsBlink:      ts.WinkIsBlink,
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
+			BounceAmount:     bounceAmount,
 			IsSpeaking:       isSpeaking,
 			IsBlinkL:         isAutoClosed,
 			IsBlinkR:         isAutoClosed,
@@ -473,6 +479,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		WinkIsBlink:      ts.WinkIsBlink,
 		SmileThreshold:   ts.SmileThreshold,
 		AudioVolume:      audioVolume,
+		BounceAmount:     bounceAmount,
 		IsSpeaking:       isSpeaking,
 		IsBlinkL:         isBlinkL,
 		IsBlinkR:         isBlinkR,

@@ -23,14 +23,14 @@
      inkscape:deskcolor="#505050"
      showgrid="false"
      inkscape:zoom="2.2792969"
-     inkscape:cx="256.43873"
-     inkscape:cy="256"
+     inkscape:cx="192.60325"
+     inkscape:cy="232.74721"
      inkscape:window-width="2560"
      inkscape:window-height="1369"
      inkscape:window-x="1072"
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
-     inkscape:current-layer="mouth_open" />
+     inkscape:current-layer="hair_front" />
   <defs
      id="defs4">
     <radialGradient
@@ -66,12 +66,13 @@
        inkscape:collect="always"
        xlink:href="#hairGrad"
        id="linearGradient20"
-       x1="78.519637"
+       x1="78.519638"
        y1="225.1666"
        x2="82.572472"
        y2="322.69577"
        gradientTransform="matrix(1.7320508,0,0,0.57735027,0.43873179,-9.6520994)"
-       gradientUnits="userSpaceOnUse" />
+       gradientUnits="userSpaceOnUse"
+       spreadMethod="pad" />
   </defs>
   <!-- Body / Torso Layer with Idle Breathing -->
   <g
@@ -143,18 +144,6 @@
          id="ellipse9" />
     </g>
     <!-- Sweat Expression -->
-    <g
-       id="expr_sweat"
-       inkscape:label="Sweat [Show {when: isSweat}]"
-       style="display: none;">
-      <path
-         d="M 345,185 C 345,185 338,198 338,206 A 7,7 0 0 0 352,206 C 352,198 345,185 345,185 Z"
-         fill="#38bdf8"
-         stroke="#0284c7"
-         stroke-width="1.5"
-         opacity="0.9"
-         id="path_sweat" />
-    </g>
     <!-- Eyes (Open State) -->
     <g
        id="eyes_open"
@@ -293,21 +282,41 @@
          fill="#fb7185"
          id="path18" />
     </g>
+    <g
+       id="expr_sweat"
+       inkscape:label="Sweat [Show {when: isSweat}]"
+       style="display:inline">
+      <path
+         d="m 333.15424,189.82605 c 0,0 -7,13 -7,21 a 7,7 0 0 0 14,0 c 0,-8 -7,-21 -7,-21 z"
+         fill="#38bdf8"
+         stroke="#0284c7"
+         stroke-width="1.5"
+         opacity="0.9"
+         id="path_sweat" />
+    </g>
     <!-- Front Bangs / Hair with Parallax -->
     <g
        id="hair_front"
        inkscape:label="Front Hair"
-       transform="translate(0.87746358,-12.723222)">
+       transform="translate(0.87746358,-12.723222)"
+       style="display:inline">
       <path
-         d="m 119.32819,226.23308 c 16,-53.33334 73.11054,-105.88518 137.11054,-105.88518 64,0 118.03942,53.86804 134.03942,107.20137 C 399.21165,310.91859 289.4533,167.1054 246.78663,180.43873 204.11996,167.1054 122.00171,291.6144 119.32819,226.23308 Z"
+         d="m 119.32819,226.23308 c 27.90719,-93.02398 107.6491,-129.661928 154.86787,-104.50295 75.4071,-26.435801 101.7858,57.49819 116.28209,105.81914 -7.35173,123.66658 -31.77312,-7.98947 -60.26018,-32.55854 -19.18926,-16.55005 -61.73266,-7.89599 -78.15743,-2.76325 -19.16037,-5.98761 -60.85349,-12.08069 -79.80412,12.9939 -24.11419,31.90675 -63.7398,136.88134 -52.92823,21.0117 z"
          fill="url(#hairGrad)"
          id="path19"
          style="fill:url(#linearGradient20)"
-         sodipodi:nodetypes="csccc" />
+         sodipodi:nodetypes="cccscsc" />
       <path
-         d="m 220,170 q 20,50 16,60 14,-40 24,-55 z"
+         d="m 195.86975,183.05172 c 13.33334,33.33333 47.62297,37.97772 40.13025,57.80634 16.42818,-6.54569 65.80492,-16.89314 67.07548,-26.69057 1.52111,-11.72946 -0.64114,-25.9318 -6.66074,-37.96153 z"
          fill="#3730a3"
-         id="path20" />
+         id="path20"
+         sodipodi:nodetypes="ccscc"
+         style="fill:#312e81;fill-opacity:1" />
+      <path
+         style="fill:none;stroke:#000080;stroke-width:1.573;stroke-linecap:round;stroke-linejoin:round;paint-order:stroke fill markers;stroke-opacity:0.27338877"
+         d="m 235.59897,171.98286 c 0,0 17.98801,-43.65381 35.42759,-49.02828"
+         id="path2"
+         sodipodi:nodetypes="cc" />
     </g>
     <path
        style="fill:none;stroke:#280b0b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;paint-order:stroke fill markers"

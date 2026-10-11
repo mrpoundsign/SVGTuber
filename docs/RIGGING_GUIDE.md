@@ -234,6 +234,9 @@ Ahoge [Bounce {height: 14; squash: 0.0; speed: 24}]
 | `minVolume` | float | `0.04` | Noise gate threshold below which bounce is idle |
 | `speed` | float | `18` | Oscillation bounce frequency |
 
+> [!TIP]
+> You can also tune or mute the bounce intensity globally at any time using the **Voice Bounce** slider (`0.0x`–`3.0x`) in the Studio **Audio Calibration & Lip-Sync** card!
+
 ---
 
 ## 🎭 Creating Custom Expressions

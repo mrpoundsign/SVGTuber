@@ -464,6 +464,9 @@
             break;
           }
           case 'bounce': {
+            const bounceMult = parseFloat(p.bounceAmount !== undefined ? p.bounceAmount : 1.0);
+            if (bounceMult <= 0) break;
+
             const height = parseFloat(params.height || params.y || 7);
             const squash = parseFloat(params.squash || 0.04);
             const minVol = parseFloat(params.minvolume || params.gate || 0.03);
@@ -473,11 +476,11 @@
               const normVol = Math.min(1.0, Math.max(0.2, (vol - minVol) / (1.0 - minVol)));
               const speed = parseFloat(params.speed || 16);
               const hop = Math.abs(Math.sin(now * speed * 0.001));
-              const bounceOffset = -hop * height * normVol;
+              const bounceOffset = -hop * height * normVol * bounceMult;
               ty += bounceOffset;
               if (squash > 0) {
-                sy *= (1.0 + (hop * squash * normVol));
-                sx *= (1.0 - (hop * squash * 0.5 * normVol));
+                sy *= (1.0 + (hop * squash * normVol * bounceMult));
+                sx *= (1.0 - (hop * squash * 0.5 * normVol * bounceMult));
               }
             }
             break;
