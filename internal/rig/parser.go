@@ -74,6 +74,16 @@ func normalizeDirectiveType(t string) string {
 		return "Scale"
 	case "idle", "breathe":
 		return "Idle"
+	case "rotate":
+		return "Rotate"
+	case "fade", "opacity":
+		return "Fade"
+	case "bounce":
+		return "Bounce"
+	case "physics", "spring":
+		return "Physics"
+	case "sway":
+		return "Sway"
 	default:
 		// Capitalize first letter as fallback
 		if len(t) > 0 {

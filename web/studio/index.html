@@ -753,6 +753,21 @@
               <input type="range" id="slider-auto-tilt-amount" min="0.2" max="2.5" step="0.1" value="1.0">
               <span id="val-auto-tilt-amount" class="slider-val">1.0x</span>
             </div>
+
+            <!-- Secondary Physics & Hair Sway -->
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; margin-bottom: 4px;">
+              <label style="margin-bottom: 0; font-size: 12px;">Physics & Hair Sway</label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="checkbox-physics-enabled" checked style="width: 15px; height: 15px; accent-color: var(--accent);">
+                <span style="font-size: 11px; color: var(--text-muted);">Enable</span>
+              </label>
+              <span></span>
+            </div>
+            <div class="slider-item" style="margin-bottom: 4px;">
+              <label for="slider-physics-amount" style="font-size: 11px; color: var(--text-muted);">Physics Bounce / Sway</label>
+              <input type="range" id="slider-physics-amount" min="0.0" max="2.5" step="0.1" value="1.0">
+              <span id="val-physics-amount" class="slider-val">1.0x</span>
+            </div>
           </div>
         </div>
 

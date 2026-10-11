@@ -60,6 +60,34 @@ func TestParseDirectives(t *testing.T) {
 			},
 		},
 		{
+			name:  "Physics and Sway directives",
+			label: "Front Bangs [Dist {factor: 0.15}] [Sway {pivot: top; range: 8; stiffness: 0.12}] [Physics {stiffness: 0.16; damping: 0.82; mass: 0.5}]",
+			expected: []Directive{
+				{
+					Type: "Dist",
+					Params: map[string]string{
+						"factor": "0.15",
+					},
+				},
+				{
+					Type: "Sway",
+					Params: map[string]string{
+						"pivot":     "top",
+						"range":     "8",
+						"stiffness": "0.12",
+					},
+				},
+				{
+					Type: "Physics",
+					Params: map[string]string{
+						"stiffness": "0.16",
+						"damping":   "0.82",
+						"mass":      "0.5",
+					},
+				},
+			},
+		},
+		{
 			name:     "Label with no directives",
 			label:    "Plain Layer 1",
 			expected: nil,

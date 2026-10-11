@@ -48,6 +48,8 @@ type ParamFrame struct {
 	SmileThreshold   float64            `json:"smileThreshold"`
 	AudioVolume    float64            `json:"audioVolume,omitempty"`
 	BounceAmount   float64            `json:"bounceAmount"`
+	PhysicsEnabled bool               `json:"physicsEnabled"`
+	PhysicsAmount  float64            `json:"physicsAmount"`
 	IsSpeaking     bool               `json:"isSpeaking,omitempty"`
 	IsBlinkL       bool               `json:"isBlinkL"`
 	IsBlinkR       bool               `json:"isBlinkR"`

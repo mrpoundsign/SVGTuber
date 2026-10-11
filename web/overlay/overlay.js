@@ -136,20 +136,51 @@
         directives.forEach((d) => {
           const params = d.params || d.Params || {};
           const pivot = (params.pivot || '').toLowerCase().trim();
-          if (pivot === 'top') {
+          if (!pivot) return;
+
+          if (pivot === 'top' || pivot === 'top-center' || pivot === 'topcenter') {
             cy = bbox.y;
-          } else if (pivot === 'bottom') {
+            cx = bbox.x + bbox.width / 2;
+          } else if (pivot === 'bottom' || pivot === 'bottom-center' || pivot === 'bottomcenter') {
             cy = bbox.y + bbox.height;
-          } else if (pivot === 'left') {
+            cx = bbox.x + bbox.width / 2;
+          } else if (pivot === 'left' || pivot === 'center-left' || pivot === 'leftcenter') {
             cx = bbox.x;
-          } else if (pivot === 'right') {
+            cy = bbox.y + bbox.height / 2;
+          } else if (pivot === 'right' || pivot === 'center-right' || pivot === 'rightcenter') {
             cx = bbox.x + bbox.width;
+            cy = bbox.y + bbox.height / 2;
+          } else if (pivot === 'top-left' || pivot === 'topleft') {
+            cx = bbox.x;
+            cy = bbox.y;
+          } else if (pivot === 'top-right' || pivot === 'topright') {
+            cx = bbox.x + bbox.width;
+            cy = bbox.y;
+          } else if (pivot === 'bottom-left' || pivot === 'bottomleft') {
+            cx = bbox.x;
+            cy = bbox.y + bbox.height;
+          } else if (pivot === 'bottom-right' || pivot === 'bottomright') {
+            cx = bbox.x + bbox.width;
+            cy = bbox.y + bbox.height;
+          } else if (pivot === 'center' || pivot === 'middle') {
+            cx = bbox.x + bbox.width / 2;
+            cy = bbox.y + bbox.height / 2;
           } else if (pivot.startsWith('#')) {
             const targetEl = svg.querySelector(pivot);
             if (targetEl) {
               const tb = targetEl.getBBox();
               cx = tb.x + tb.width / 2;
               cy = tb.y + tb.height / 2;
+            }
+          } else if (pivot.includes(',') || pivot.includes(' ')) {
+            const parts = pivot.split(/[, ]+/).filter(Boolean);
+            if (parts.length >= 2) {
+              const px = parseFloat(parts[0]);
+              const py = parseFloat(parts[1]);
+              if (!isNaN(px) && !isNaN(py)) {
+                cx = px;
+                cy = py;
+              }
             }
           }
         });
@@ -325,6 +356,12 @@
     return parseFloat(str) || defaultMs;
   }
 
+  let prevHeadYaw = 0;
+  let prevHeadPitch = 0;
+  let prevHeadRoll = 0;
+  let prevAudioVol = 0;
+  let lastTransformTime = 0;
+
   // Main Animation Transform Calculation
   function applyRigTransforms(now) {
     if (!latestParams || activeRigBindings.length === 0) return;
@@ -333,11 +370,28 @@
     const headYaw = p.headYaw || 0;
     const headPitch = p.headPitch || 0;
     const headRoll = p.headRoll || 0;
+    const audioVol = parseFloat(p.audioVolume || p.volume || 0);
+
+    const dt = lastTransformTime ? Math.min(0.05, Math.max(0.001, (now - lastTransformTime) / 1000)) : (1 / 60);
+    lastTransformTime = now;
+
+    const deltaYaw = headYaw - prevHeadYaw;
+    const deltaPitch = headPitch - prevHeadPitch;
+    const deltaRoll = headRoll - prevHeadRoll;
+    const deltaVol = Math.max(0, audioVol - prevAudioVol);
+
+    prevHeadYaw = headYaw;
+    prevHeadPitch = headPitch;
+    prevHeadRoll = headRoll;
+    prevAudioVol = audioVol;
+
+    const globalPhysicsMult = (p.physicsEnabled === false) ? 0 : (p.physicsAmount !== undefined ? parseFloat(p.physicsAmount) : 1.0);
 
     for (let i = 0; i < activeRigBindings.length; i++) {
       const b = activeRigBindings[i];
       const el = b.el;
       let tx = 0, ty = 0, rot = 0, sx = 1, sy = 1;
+      let physicsDirective = null;
 
       for (let j = 0; j < b.directives.length; j++) {
         const d = b.directives[j];
@@ -485,7 +539,114 @@
             }
             break;
           }
+          case 'sway': {
+            if (globalPhysicsMult <= 0) break;
+            const srcParam = (params.param || params.source || 'headRoll').trim();
+            const pVal = getParam(srcParam, 0);
+            const range = parseFloat(params.range || params.deg || params.angle || 10) * globalPhysicsMult;
+            const gravity = parseFloat(params.gravity !== undefined ? params.gravity : 0.6);
+            const stiffness = parseFloat(params.stiffness || params.k || 0.15);
+            const damping = parseFloat(params.damping || params.c || 0.82);
+            const wind = parseFloat(params.wind || 0);
+            const mass = parseFloat(params.mass || params.inertia || 0.5);
+
+            let targetAngle = 0;
+            if (srcParam.toLowerCase() === 'headroll') {
+              // Gravitational alignment: pendulum tilts opposite to head roll
+              targetAngle = -pVal * (range / 15.0) * gravity;
+              // Lateral turning inertia
+              targetAngle += -deltaYaw * mass * (range / 10.0);
+            } else {
+              targetAngle = pVal * range;
+            }
+
+            // Optional ambient wind / idle breeze flutter
+            if (wind > 0) {
+              const phase = (b.cx * 0.05) + (b.cy * 0.02);
+              targetAngle += Math.sin(now * 0.0025 + phase) * wind * range;
+            }
+
+            if (d._angle === undefined) {
+              d._angle = targetAngle;
+              d._velocity = 0;
+            }
+
+            const stepRatio = dt * 60;
+            const force = -stiffness * (d._angle - targetAngle);
+            d._velocity = (d._velocity + force * stepRatio) * Math.pow(damping, stepRatio);
+            d._angle += d._velocity * stepRatio;
+
+            rot += d._angle;
+
+            const swayX = parseFloat(params.swayx || 0);
+            if (swayX !== 0) {
+              tx += d._angle * swayX;
+            }
+            break;
+          }
+          case 'physics':
+          case 'spring': {
+            physicsDirective = d;
+            break;
+          }
         }
+      }
+
+      // Apply secondary spring & inertia physics filter if enabled
+      if (physicsDirective && globalPhysicsMult > 0) {
+        const pParams = physicsDirective.params || physicsDirective.Params || {};
+        const k = parseFloat(pParams.stiffness || pParams.k || 0.16);
+        const damp = parseFloat(pParams.damping || pParams.c || 0.82);
+        const mass = parseFloat(pParams.mass || pParams.inertia || 0.5) * globalPhysicsMult;
+        const axis = (pParams.axis || 'all').toLowerCase();
+
+        if (!b._physicsState) {
+          b._physicsState = {
+            curTx: tx,
+            curTy: ty,
+            curRot: rot,
+            vx: 0,
+            vy: 0,
+            vRot: 0
+          };
+        }
+
+        const state = b._physicsState;
+        const stepRatio = dt * 60;
+
+        // Inertia opposing head acceleration and voice audio bounce
+        const inertiaX = -deltaYaw * mass * 0.9;
+        const inertiaY = -deltaPitch * mass * 0.8 - deltaVol * mass * 6.0;
+        const inertiaRot = -deltaRoll * mass * 0.6;
+
+        if (axis === 'all' || axis.includes('x')) {
+          const forceX = -k * (state.curTx - tx) + inertiaX;
+          state.vx = (state.vx + forceX * stepRatio) * Math.pow(damp, stepRatio);
+          state.curTx += state.vx * stepRatio;
+          tx = state.curTx;
+        }
+
+        if (axis === 'all' || axis.includes('y')) {
+          const forceY = -k * (state.curTy - ty) + inertiaY;
+          state.vy = (state.vy + forceY * stepRatio) * Math.pow(damp, stepRatio);
+          state.curTy += state.vy * stepRatio;
+          ty = state.curTy;
+        }
+
+        if (axis === 'all' || axis.includes('rot') || axis.includes('angle') || axis.includes('roll')) {
+          const forceRot = -k * (state.curRot - rot) + inertiaRot;
+          state.vRot = (state.vRot + forceRot * stepRatio) * Math.pow(damp, stepRatio);
+          state.curRot += state.vRot * stepRatio;
+          rot = state.curRot;
+        }
+      } else if (b._physicsState && globalPhysicsMult <= 0) {
+        // Reset state when physics is disabled
+        b._physicsState.curTx = tx;
+        b._physicsState.curTy = ty;
+        b._physicsState.curRot = rot;
+        b._physicsState.vx = 0;
+        b._physicsState.vy = 0;
+        b._physicsState.vRot = 0;
       }
 
       // Apply transforms using SVG transform attribute so existing element transforms (Inkscape/Illustrator)

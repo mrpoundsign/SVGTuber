@@ -27,6 +27,11 @@ The following features from the initial roadmap have been fully implemented and 
 - [x] **🧘 Autonomous Posture Tilt & Head Sway (Auto-Tilt)**:
   - Soothing low-frequency breathing posture sway combined with occasional natural micro-tilts.
   - Tunable amount multiplier and operating modes.
+- [x] **🍃 Spring & Sway Physics (`[Physics]` / `[Sway]`)**:
+  - Secondary motion and inertia damping on hair clumps, animal ears, antennas, ribbons, and accessories.
+  - Physical pendulum harmonic sway driven by head roll (tilt), turning inertia, and subtle breeze flutter.
+  - Damped harmonic oscillator filter with tunable `stiffness`, `damping`, `mass`, and `pivot`.
+  - Live Studio toggle and multiplier slider (`0.0x`–`2.5x`) under **Automations & Life**.
 - [x] **🛡️ Strict Camera-Off Face-Lost Handling**:
   - Continuous 60 FPS face-lost streaming when camera is off so background automations keep the avatar alive.
   - Instant gauge reset to neutral on tracking loss.
@@ -38,21 +43,18 @@ The following features from the initial roadmap have been fully implemented and 
 
 ## 📋 Active Backlog & Next Milestones
 
-### 1. 🍃 Spring & Sway Physics (Inertia Damping)
+### 1. 🔗 Multi-Segment Chain Rigging
 - **Status:** Next priority candidate
-- **Estimated Effort:** ~2 hours
+- **Estimated Effort:** ~3–4 hours
 - **Concept:**
-  - Adds secondary motion to hair clumps, animal ears, hats, ribbons, and clothing.
-  - Rather than rigidly tracking the head, elements lag slightly behind movement and settle with natural spring oscillation.
-- **Implementation Strategy:**
-  - In `web/overlay/overlay.js`, maintain previous position, target position, and velocity per element.
-  - Apply a damped harmonic oscillator step each frame:
-    $$\text{acc} = -k \cdot (x - x_{\text{target}}) - c \cdot v$$
-  - Expose parameters through a new rig directive:
-    ```ini
-    Front Hair [Dist {factor: 0.18}] [Physics {stiffness: 0.15; damping: 0.82; mass: 1.0}]
-    Left Ear [Follow {yaw: 8; pitch: 6}] [Physics {stiffness: 0.20; damping: 0.75}]
-    ```
+  - Allows segmented appendages (such as ponytails, braid chains, cat/fox tails, or scarves) to curve and whip naturally.
+  - Resolves parent-child hierarchies across SVG group IDs and propagates cumulative rotation and lag down the chain.
+- **Directive Idea:**
+  ```ini
+  Tail Segment 1 [Follow {yaw: 5; pitch: 4; pivot: top}]
+  Tail Segment 2 [Chain {parent: #segment_1; factor: 0.75; lag: 3}]
+  Tail Segment 3 [Chain {parent: #segment_2; factor: 0.90; lag: 5}]
+  ```
 
 ---
 

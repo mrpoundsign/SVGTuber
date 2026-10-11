@@ -938,6 +938,9 @@ const checkboxAutoTilt = document.getElementById("checkbox-auto-tilt");
 const selectAutoTiltMode = document.getElementById("select-auto-tilt-mode");
 const sliderAutoTiltAmount = document.getElementById("slider-auto-tilt-amount");
 const valAutoTiltAmount = document.getElementById("val-auto-tilt-amount");
+const checkboxPhysicsEnabled = document.getElementById("checkbox-physics-enabled");
+const sliderPhysicsAmount = document.getElementById("slider-physics-amount");
+const valPhysicsAmount = document.getElementById("val-physics-amount");
 const sliderSmileThreshold = document.getElementById("slider-smile-threshold");
 const sliderBlinkThresholdL = document.getElementById("slider-blink-threshold-l");
 const sliderBlinkThresholdR = document.getElementById("slider-blink-threshold-r");
@@ -1007,6 +1010,8 @@ function syncSettingsToUI(s) {
     if (checkboxAutoTilt) checkboxAutoTilt.checked = t.autoTilt !== false;
     if (selectAutoTiltMode) selectAutoTiltMode.value = t.autoTiltMode || "always";
     if (sliderAutoTiltAmount) sliderAutoTiltAmount.value = t.autoTiltAmount || 1.0;
+    if (checkboxPhysicsEnabled) checkboxPhysicsEnabled.checked = t.physicsEnabled !== false;
+    if (sliderPhysicsAmount) sliderPhysicsAmount.value = t.physicsAmount !== undefined ? t.physicsAmount : 1.0;
     if (sliderBlinkThresholdL) sliderBlinkThresholdL.value = t.blinkThresholdL || t.blinkThreshold || 0.45;
     if (sliderBlinkThresholdR) sliderBlinkThresholdR.value = t.blinkThresholdR || t.blinkThreshold || 0.45;
     if (sliderBlinkSyncDelay) sliderBlinkSyncDelay.value = (t.blinkSyncDelayMs !== undefined ? t.blinkSyncDelayMs : 50);
@@ -1038,6 +1043,7 @@ function updateSliderLabels() {
   if (valAutoBlinkInterval && sliderAutoBlinkInterval) valAutoBlinkInterval.textContent = `${parseFloat(sliderAutoBlinkInterval.value).toFixed(1)}s`;
   if (valAutoGazeRange && sliderAutoGazeRange) valAutoGazeRange.textContent = `${parseFloat(sliderAutoGazeRange.value).toFixed(1)}x`;
   if (valAutoTiltAmount && sliderAutoTiltAmount) valAutoTiltAmount.textContent = `${parseFloat(sliderAutoTiltAmount.value).toFixed(1)}x`;
+  if (valPhysicsAmount && sliderPhysicsAmount) valPhysicsAmount.textContent = `${parseFloat(sliderPhysicsAmount.value).toFixed(1)}x`;
   if (valEyeGain && sliderEyeGain) valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
   if (valYawMultiplier && sliderYawMultiplier) valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier) valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
@@ -1089,6 +1095,8 @@ function collectSettingsFromUI() {
       autoTilt: checkboxAutoTilt ? checkboxAutoTilt.checked : true,
       autoTiltMode: selectAutoTiltMode ? selectAutoTiltMode.value : "always",
       autoTiltAmount: parseFloat(sliderAutoTiltAmount?.value || 1.0),
+      physicsEnabled: checkboxPhysicsEnabled ? checkboxPhysicsEnabled.checked : true,
+      physicsAmount: parseFloat(sliderPhysicsAmount?.value !== undefined ? sliderPhysicsAmount.value : 1.0),
       eyeGazeGain: parseFloat(sliderEyeGain?.value || 1.0),
       yawMultiplier: parseFloat(sliderYawMultiplier?.value || 1.0),
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || 1.0),
@@ -1151,7 +1159,8 @@ function onSliderInput() {
   sliderMicGain,
   sliderNoiseGate,
   sliderDecaySmooth,
-  sliderBounceAmount
+  sliderBounceAmount,
+  sliderPhysicsAmount
 ].forEach(slider => {
   if (slider) {
     slider.addEventListener("input", onSliderInput);
@@ -1194,6 +1203,9 @@ if (checkboxAutoTilt) {
 }
 if (selectAutoTiltMode) {
   selectAutoTiltMode.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (checkboxPhysicsEnabled) {
+  checkboxPhysicsEnabled.addEventListener("change", () => sendSettingsUpdate(true));
 }
 
 if (btnSaveSettings) {

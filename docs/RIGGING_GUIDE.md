@@ -239,6 +239,49 @@ Ahoge [Bounce {height: 14; squash: 0.0; speed: 24}]
 
 ---
 
+### 10. `[Sway]` — Pendulum Harmonic Sway
+Creates lifelike pendulum oscillation for hair clumps, animal ears, antennas, ribbons, and earrings. Reacts smoothly to head roll (tilt), turning inertia, and optional ambient wind.
+
+```text
+Front Bangs [Sway {pivot: top; range: 8; stiffness: 0.15; damping: 0.82}]
+Earrings [Sway {pivot: top; range: 14; gravity: 0.8; mass: 0.6}]
+Ribbon [Sway {pivot: top-center; range: 10; wind: 0.04}]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `pivot` | string | `center` | Anchor root: `top`, `bottom`, `left`, `right`, `top-left`, `top-right`, `#element_id`, or `x,y` |
+| `range` | float | `10` | Maximum sway angle in degrees |
+| `param` | string | `headRoll` | Driving parameter (defaults to head tilt / roll) |
+| `stiffness` | float | `0.15` | Spring pull strength back toward equilibrium |
+| `damping` | float | `0.82` | Velocity friction/decay (`0.95` = jelly wobble, `0.6` = heavy/damped) |
+| `gravity` | float | `0.6` | Downward gravity alignment factor when head tilts |
+| `mass` | float | `0.5` | Resistance / lag against fast lateral turning |
+| `wind` | float | `0.0` | Subtle continuous breeze flutter intensity |
+
+---
+
+### 11. `[Physics]` / `[Spring]` — Secondary Motion & Elastic Lag
+Applies a damped harmonic oscillator filter to any element's transformations. Hair strands, ears, and clothing lag behind head movements and voice bounces, overshooting and settling with elastic softness.
+
+```text
+Front Hair [Dist {factor: 0.15}] [Physics {stiffness: 0.16; damping: 0.82; mass: 0.5}]
+Cat Ears [Follow {yaw: 8; pitch: 6}] [Physics {stiffness: 0.22; damping: 0.78}]
+Back Hair [Dist {factor: 0.10}] [Physics {stiffness: 0.12; damping: 0.85; mass: 0.4}]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `stiffness` | float | `0.16` | Spring restorative force |
+| `damping` | float | `0.82` | Velocity decay rate per frame |
+| `mass` | float | `0.5` | Inertia resistance to head acceleration and voice bounces |
+| `axis` | string | `all` | Constrain physics to: `all`, `x`, `y`, or `rot` |
+
+> [!TIP]
+> You can tune or disable physics globally at any time using the **Physics & Hair Sway** toggle and amount slider (`0.0x`–`2.5x`) under **Automations & Life** in Studio!
+
+---
+
 ## 🎭 Creating Custom Expressions
 
 SVGTuber automatically scans your avatar SVG for any layer using the `is[A-Z]*` naming convention in a `[Show]` or `[Hide]` directive. **No server configuration or code editing is required!**

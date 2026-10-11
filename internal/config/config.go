@@ -36,6 +36,8 @@ type TrackingSettings struct {
 	AutoTilt             bool    `json:"autoTilt"`             // Autonomous gentle head tilt and sway (default: true)
 	AutoTiltMode         string  `json:"autoTiltMode"`         // "always", "face_lost_only", "tracked_only" (default: "always")
 	AutoTiltAmount       float64 `json:"autoTiltAmount"`       // Scale multiplier on head sway/tilt (default: 1.0)
+	PhysicsEnabled       bool    `json:"physicsEnabled"`       // Enable secondary spring physics and sway (default: true)
+	PhysicsAmount        float64 `json:"physicsAmount"`        // Multiplier on physics spring/sway displacement (default: 1.0)
 }
 
 // AudioSettings contains microphone lip-sync and blending configuration.
@@ -85,6 +87,8 @@ func DefaultSettings() Settings {
 			AutoTilt:             true,
 			AutoTiltMode:         "always",
 			AutoTiltAmount:       1.0,
+			PhysicsEnabled:       true,
+			PhysicsAmount:        1.0,
 		},
 		Audio: AudioSettings{
 			Mode:         "hybrid",

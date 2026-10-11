@@ -16,10 +16,11 @@
       .cls-12{fill:none;stroke:#be123c;stroke-width:4;stroke-linecap:round}
       .cls-13{fill:#be123c;stroke:#9f1239;stroke-width:3}
       .cls-14{fill:#fb7185}
-      .cls-15{fill:#38bdf8;stroke:#0284c7;stroke-width:1.5;opacity:0.9}
-      .cls-16{fill:url(#linear-gradient-3)}
-      .cls-17{fill:none;stroke:#000080;stroke-opacity:0.273;stroke-width:1.573;stroke-linecap:round;stroke-linejoin:round}
-      .cls-18{fill:none;stroke:#280b0b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .cls-15{fill:#000000}
+      .cls-16{fill:#38bdf8;stroke:#0284c7;stroke-width:1.5;opacity:0.9}
+      .cls-17{fill:url(#linear-gradient-3)}
+      .cls-18{fill:none;stroke:#000080;stroke-opacity:0.273;stroke-width:1.573;stroke-linecap:round;stroke-linejoin:round}
+      .cls-19{fill:none;stroke:#280b0b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
     </style>
     <linearGradient id="linear-gradient-1" x1="107.974" y1="213.858" x2="107.974" y2="400" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#4f46e5"/>
@@ -44,7 +45,7 @@
     <path id="path5" d="M230 380 L256 420 L282 380 Z" class="cls-2"/>
   </g>
   <g id="Head__Follow__yaw__15__pitch__10__roll__8__pivot__center__" data-name="Head [Follow {yaw: 15; pitch: 10; roll: 8; pivot: center}]">
-    <g id="Back_Hair__Dist__factor__0.1__" data-name="Back Hair [Dist {factor: 0.1}]">
+    <g id="Back_Hair__Dist__factor__0.1____Physics__stiffness__0.12__damping__0.85__mass__0.4__" data-name="Back Hair [Dist {factor: 0.1}] [Physics {stiffness: 0.12; damping: 0.85; mass: 0.4}]">
       <path id="path6" d="M142.814 213.858 C87.716 250.862 106.667 360 140 400 C166.667 346.667 180 300 180 260 Z" class="cls-3"/>
       <path id="path7" d="M360.411 218.684 C409.813 222.586 412.909 340.392 372 400 C345.333 346.667 332 300 332 260 Z" class="cls-4"/>
     </g>
@@ -87,14 +88,18 @@
       <path id="ellipse17" d="M274 315 C274 322.732 265.941 329 256 329 C246.059 329 238 322.732 238 315 C238 307.268 246.059 301 256 301 C265.941 301 274 307.268 274 315 Z" class="cls-13"/>
       <path id="path18" d="M244 322 C252 315.333 260 315.333 268 322 Z" class="cls-14"/>
     </g>
+    <g id="Brows">
+      <path id="Right_Brow" data-name="Right Brow" d="M225.947 211.03 C225.947 211.03 193.32 208.565 179.222 207.301 C185.964 200.333 227.263 203.791 227.263 203.791 Z" class="cls-15"/>
+      <path id="Left_brow" data-name="Left brow" d="M286.538 211.03 C286.538 211.03 319.165 208.565 333.263 207.301 C326.521 200.333 285.222 203.791 285.222 203.791 Z" class="cls-15"/>
+    </g>
     <g id="Sweat__Show__when__isSweat__" data-name="Sweat [Show {when: isSweat}]">
-      <path id="path_sweat" d="M333.154 189.826 C333.154 189.826 326.154 202.826 326.154 210.826 C326.154 214.692 329.288 217.826 333.154 217.826 C337.02 217.826 340.154 214.692 340.154 210.826 C340.154 202.826 333.154 189.826 333.154 189.826 Z" class="cls-15"/>
+      <path id="path_sweat" d="M324.599 184.123 C324.599 184.123 317.599 197.123 317.599 205.123 C317.599 208.989 320.733 212.123 324.599 212.123 C328.465 212.123 331.599 208.989 331.599 205.123 C331.599 197.123 324.599 184.123 324.599 184.123 Z" class="cls-16"/>
     </g>
     <g id="Front_Hair" data-name="Front Hair">
-      <path id="path19" d="M120.206 213.51 C148.113 120.486 227.855 83.848 275.074 109.007 C350.481 82.571 376.859 166.505 391.356 214.826 C384.004 338.493 359.582 206.837 331.095 182.268 C311.906 165.717 269.363 174.372 252.938 179.504 C233.778 173.517 192.085 167.424 173.134 192.498 C149.02 224.405 109.394 329.38 120.206 213.51 Z" class="cls-16"/>
-      <path id="path20" d="M196.747 170.329 C210.081 203.662 244.37 208.306 236.877 228.135 C253.306 221.589 302.682 211.242 303.953 201.444 C305.474 189.715 303.312 175.512 297.292 163.483 Z" class="cls-9"/>
-      <path id="path2" d="M236.476 159.26 C236.476 159.26 254.464 115.606 271.904 110.231" class="cls-17"/>
+      <path id="path19" d="M120.206 213.51 C148.113 120.486 227.855 83.848 275.074 109.007 C350.481 82.571 376.859 166.505 391.356 214.826 C384.004 338.493 359.582 206.837 331.095 182.268 C311.906 165.717 269.363 174.372 252.938 179.504 C233.778 173.517 192.085 167.424 173.134 192.498 C149.02 224.405 109.394 329.38 120.206 213.51 Z" class="cls-17"/>
+      <path id="bangs__Dist__factor__0.15____Sway__pivot__top__range__7____Physics__stiffness__0.16__damping__0.82__mass__0.5__" data-name="bangs [Dist {factor: 0.15}] [Sway {pivot: top; range: 7}] [Physics {stiffness: 0.16; damping: 0.82; mass: 0.5}]" d="M196.747 170.329 C210.081 203.662 244.37 208.306 236.877 228.135 C253.306 221.589 302.682 211.242 303.953 201.444 C305.474 189.715 303.312 175.512 297.292 163.483 Z" class="cls-9"/>
+      <path id="path2" d="M236.476 159.26 C236.476 159.26 254.464 115.606 271.904 110.231" class="cls-18"/>
     </g>
-    <path id="path1" d="M255.781 258.413 C226.386 285.176 258.413 286.492 258.413 286.492" class="cls-18"/>
+    <path id="Nose" d="M255.781 258.413 C226.386 285.176 258.413 286.492 258.413 286.492" class="cls-19"/>
   </g>
 </svg>

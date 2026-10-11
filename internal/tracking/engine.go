@@ -206,6 +206,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	if bounceAmount < 0 {
 		bounceAmount = 1.0
 	}
+	physicsEnabled := ts.PhysicsEnabled
+	physicsAmount := ts.PhysicsAmount
+	if physicsAmount <= 0 && ts.PhysicsEnabled {
+		physicsAmount = 1.0
+	}
 
 	// Compute audio volume and speech state
 	var audioMouth float64
@@ -262,6 +267,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
 			BounceAmount:     bounceAmount,
+			PhysicsEnabled:   physicsEnabled,
+			PhysicsAmount:    physicsAmount,
 			IsSpeaking:       isSpeaking,
 			IsBlinkL:         isAutoClosed,
 			IsBlinkR:         isAutoClosed,
@@ -314,6 +321,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
 			BounceAmount:     bounceAmount,
+			PhysicsEnabled:   physicsEnabled,
+			PhysicsAmount:    physicsAmount,
 			IsSpeaking:       isSpeaking,
 			IsBlinkL:         isAutoClosed,
 			IsBlinkR:         isAutoClosed,
@@ -480,6 +489,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		SmileThreshold:   ts.SmileThreshold,
 		AudioVolume:      audioVolume,
 		BounceAmount:     bounceAmount,
+		PhysicsEnabled:   physicsEnabled,
+		PhysicsAmount:    physicsAmount,
 		IsSpeaking:       isSpeaking,
 		IsBlinkL:         isBlinkL,
 		IsBlinkR:         isBlinkR,
