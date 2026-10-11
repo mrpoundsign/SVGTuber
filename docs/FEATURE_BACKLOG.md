@@ -38,6 +38,10 @@ The following features from the initial roadmap have been fully implemented and 
 - [x] **⌨️ Studio Hotkeys (`1`–`9`) & Stream Deck HTTP API**:
   - Instant expression toggling via number keys `1`–`9` in Studio.
   - Complete REST/Webhook API (`/api/expressions/toggle`, `/trigger`, `/set`, `/reset`, `/calibrate`, `/avatar/swap`).
+- [x] **🔗 Multi-Segment Chain Rigging (`[Chain]`)**:
+  - Hierarchical parent-child rotation and whip propagation across SVG elements.
+  - Supports nested SVG groups (automatic parent discovery) and flat sibling layers (forward-kinematics orbit).
+  - Tunable `factor`, `lag` (delay frames), `stiffness`, `damping`, and `whip`.
 - [x] **📖 OBS Streamer Setup Guide (`docs/OBS_QUICKSTART.md`)**:
   - Step-by-step OBS Browser Source setup, 60 FPS vector configuration, and transparency tips.
   - Important checkbox gotchas ("Shutdown source when not visible" & "Refresh browser when scene becomes active").
@@ -47,37 +51,7 @@ The following features from the initial roadmap have been fully implemented and 
 
 ## 📋 Active Backlog & Next Milestones
 
-### 1. 🔗 Multi-Segment Chain Rigging
-- **Status:** Next priority candidate
-- **Estimated Effort:** ~3–4 hours
-- **Concept:**
-  - Allows segmented appendages (such as ponytails, braid chains, cat/fox tails, or scarves) to curve and whip naturally.
-  - Resolves parent-child hierarchies across SVG group IDs and propagates cumulative rotation and lag down the chain.
-- **Directive Idea:**
-  ```ini
-  Tail Segment 1 [Follow {yaw: 5; pitch: 4; pivot: top}]
-  Tail Segment 2 [Chain {parent: #segment_1; factor: 0.75; lag: 3}]
-  Tail Segment 3 [Chain {parent: #segment_2; factor: 0.90; lag: 5}]
-  ```
-
----
-
-### 2. 🔗 Multi-Segment Chain Rigging
-- **Status:** Planned
-- **Estimated Effort:** ~3–4 hours
-- **Concept:**
-  - Allows segmented appendages (such as ponytails, braid chains, cat/fox tails, or scarves) to curve and whip naturally.
-  - Resolves parent-child hierarchies across SVG group IDs and propagates cumulative rotation and lag down the chain.
-- **Directive Idea:**
-  ```ini
-  Tail Segment 1 [Follow {yaw: 5; pitch: 4; pivot: top}]
-  Tail Segment 2 [Chain {parent: #segment_1; factor: 0.75; lag: 3}]
-  Tail Segment 3 [Chain {parent: #segment_2; factor: 0.90; lag: 5}]
-  ```
-
----
-
-### 3. 🖱️ Global / Window Mouse Look-At
+### 1. 🖱️ Global / Window Mouse Look-At
 - **Status:** Planned
 - **Estimated Effort:** ~4–5 hours
 - **Concept:**
@@ -93,7 +67,7 @@ The following features from the initial roadmap have been fully implemented and 
 
 ---
 
-### 4. 🎛️ Custom Keybinding Manager in Studio
+### 2. 🎛️ Custom Keybinding Manager in Studio
 - **Status:** Under Consideration
 - **Estimated Effort:** ~1–2 hours
 - **Concept:**

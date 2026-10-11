@@ -88,6 +88,22 @@ func TestParseDirectives(t *testing.T) {
 			},
 		},
 		{
+			name:  "Chain directive on child segment",
+			label: "Tail Segment 2 [Chain {parent: #tail_1; factor: 0.85; lag: 3; stiffness: 0.18; damping: 0.80}]",
+			expected: []Directive{
+				{
+					Type: "Chain",
+					Params: map[string]string{
+						"parent":    "#tail_1",
+						"factor":    "0.85",
+						"lag":       "3",
+						"stiffness": "0.18",
+						"damping":   "0.80",
+					},
+				},
+			},
+		},
+		{
 			name:     "Label with no directives",
 			label:    "Plain Layer 1",
 			expected: nil,

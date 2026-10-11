@@ -378,6 +378,12 @@ func (m *Manager) Load() error {
 	if s.Audio.BounceAmount <= 0 && !strings.Contains(string(data), "bounceAmount") {
 		s.Audio.BounceAmount = 1.0
 	}
+	if !strings.Contains(string(data), "physicsEnabled") {
+		s.Tracking.PhysicsEnabled = true
+	}
+	if s.Tracking.PhysicsAmount <= 0 && !strings.Contains(string(data), "physicsAmount") {
+		s.Tracking.PhysicsAmount = 1.0
+	}
 
 	m.mu.Lock()
 	m.settings = s

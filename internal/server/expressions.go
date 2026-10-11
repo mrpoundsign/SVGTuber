@@ -1,6 +1,7 @@
 package server
 
 import (
+	"maps"
 	"regexp"
 	"strings"
 	"sync"
@@ -45,9 +46,7 @@ func (em *ExpressionManager) GetActive() map[string]bool {
 	defer em.mu.RUnlock()
 
 	out := make(map[string]bool, len(em.active))
-	for k, v := range em.active {
-		out[k] = v
-	}
+	maps.Copy(out, em.active)
 	return out
 }
 
@@ -190,9 +189,7 @@ func (em *ExpressionManager) Reset() map[string]bool {
 
 func (em *ExpressionManager) snapshotActiveLocked() map[string]bool {
 	out := make(map[string]bool, len(em.active))
-	for k, v := range em.active {
-		out[k] = v
-	}
+	maps.Copy(out, em.active)
 	return out
 }
 

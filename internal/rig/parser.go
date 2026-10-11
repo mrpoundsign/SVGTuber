@@ -30,8 +30,8 @@ func ParseDirectives(label string) []Directive {
 		rawBody := match[2]
 
 		params := make(map[string]string)
-		pairs := strings.Split(rawBody, ";")
-		for _, pair := range pairs {
+		pairs := strings.SplitSeq(rawBody, ";")
+		for pair := range pairs {
 			pair = strings.TrimSpace(pair)
 			if pair == "" {
 				continue
@@ -84,6 +84,8 @@ func normalizeDirectiveType(t string) string {
 		return "Physics"
 	case "sway":
 		return "Sway"
+	case "chain":
+		return "Chain"
 	default:
 		// Capitalize first letter as fallback
 		if len(t) > 0 {
@@ -139,9 +141,10 @@ func (p *SVGParser) Parse(svgData []byte) (*RigDefinition, error) {
 		var id string
 		var transform string
 		for _, attr := range startElem.Attr {
-			if attr.Name.Local == "id" {
+			switch attr.Name.Local {
+			case "id":
 				id = attr.Value
-			} else if attr.Name.Local == "transform" {
+			case "transform":
 				transform = attr.Value
 			}
 		}

@@ -1,0 +1,53 @@
+#!/bin/sh
+set -e
+
+# Resolve go if not in default PATH
+if ! command -v go >/dev/null 2>&1; then
+    if [ -f "/c/Program Files/Go/bin/go.exe" ]; then
+        export PATH="/c/Program Files/Go/bin:$PATH"
+    elif [ -f "C:/Program Files/Go/bin/go.exe" ]; then
+        export PATH="C:/Program Files/Go/bin:$PATH"
+    fi
+fi
+
+# Resolve golangci-lint-v2 if not in default PATH
+LINTER=""
+if command -v golangci-lint-v2 >/dev/null 2>&1; then
+    LINTER="golangci-lint-v2"
+elif command -v golangci-lint >/dev/null 2>&1; then
+    LINTER="golangci-lint"
+elif [ -f "$HOME/.asdf/shims/golangci-lint-v2" ]; then
+    export PATH="$HOME/.asdf/shims:$PATH"
+    LINTER="golangci-lint-v2"
+elif [ -f "$HOME/go/bin/golangci-lint-v2" ]; then
+    export PATH="$HOME/go/bin:$PATH"
+    LINTER="golangci-lint-v2"
+elif [ -f "$HOME/go/bin/golangci-lint" ]; then
+    export PATH="$HOME/go/bin:$PATH"
+    LINTER="golangci-lint"
+fi
+
+echo "==> 1. Verifying code modernization (go fix -diff)..."
+if ! go fix -diff ./...; then
+    echo "❌ Error: Unfixed code modernization diffs found. Run 'go fix ./...' to apply them."
+    exit 1
+fi
+echo "✓ Code modernizations verified!"
+
+echo "==> 2. Running go vet..."
+go vet ./...
+echo "✓ go vet passed!"
+
+echo "==> 3. Running linter..."
+if [ -n "$LINTER" ]; then
+    $LINTER run ./...
+    echo "✓ $LINTER passed!"
+else
+    echo "⚠️ Warning: golangci-lint-v2 not found in PATH; skipping linter."
+fi
+
+echo "==> 4. Running all test suites (including avatar integration tests)..."
+go test ./...
+echo "✓ All tests passed!"
+
+echo "==> All pre-commit checks passed successfully!"

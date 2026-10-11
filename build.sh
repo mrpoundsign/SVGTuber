@@ -14,6 +14,10 @@ case "$TARGET" in
     echo "==> Running unit tests..."
     go test -v -count=1 ./...
     ;;
+  race)
+    echo "==> Running tests with Go race detector..."
+    go test -race ./...
+    ;;
   vet)
     echo "==> Running go vet..."
     go vet ./...
@@ -28,8 +32,27 @@ case "$TARGET" in
     "$0" build
     "$0" windows
     ;;
+  lint)
+    echo "==> Running golangci-lint-v2..."
+    if command -v golangci-lint-v2 &>/dev/null; then
+        golangci-lint-v2 run ./...
+    elif command -v golangci-lint &>/dev/null; then
+        golangci-lint run ./...
+    else
+        echo "Error: golangci-lint-v2 not found in PATH"
+        exit 1
+    fi
+    echo "==> Lint complete"
+    ;;
+  fix)
+    echo "==> Running go fix..."
+    go fix ./...
+    echo "==> Fix complete"
+    ;;
   check)
+    "$0" fix
     "$0" vet
+    "$0" lint
     "$0" test
     "$0" all
     ;;
@@ -43,7 +66,7 @@ case "$TARGET" in
     echo "==> Clean complete"
     ;;
   *)
-    echo "Usage: $0 [build|windows|all|test|vet|check|run|clean]"
+    echo "Usage: $0 [build|windows|all|test|race|vet|lint|fix|check|run|clean]"
     exit 1
     ;;
 esac

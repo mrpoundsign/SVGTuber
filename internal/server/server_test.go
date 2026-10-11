@@ -102,7 +102,7 @@ func TestServer_WebSocketReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to dial WebSocket: %v", err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
 	// Give server a moment to register connection in hub
 	time.Sleep(50 * time.Millisecond)
@@ -157,7 +157,7 @@ func TestServer_TrackerStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to dial overlay WS: %v", err)
 	}
-	defer overlayConn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = overlayConn.Close(websocket.StatusNormalClosure, "") }()
 
 	// Connect tracker client
 	trackerURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws/tracker"
@@ -165,7 +165,7 @@ func TestServer_TrackerStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to dial tracker WS: %v", err)
 	}
-	defer trackerConn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = trackerConn.Close(websocket.StatusNormalClosure, "") }()
 
 	time.Sleep(50 * time.Millisecond)
 

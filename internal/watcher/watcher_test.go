@@ -17,11 +17,11 @@ func TestAvatarWatcher_Debounce(t *testing.T) {
 		t.Fatalf("Failed to write initial avatar file: %v", err)
 	}
 
-	var triggerCount int32
+	var triggerCount atomic.Int32
 	triggeredCh := make(chan struct{}, 10)
 
 	aw, err := New(avatarFile, 50*time.Millisecond, func() {
-		atomic.AddInt32(&triggerCount, 1)
+		triggerCount.Add(1)
 		select {
 		case triggeredCh <- struct{}{}:
 		default:
@@ -30,10 +30,10 @@ func TestAvatarWatcher_Debounce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New watcher failed: %v", err)
 	}
-	defer aw.Close()
+	defer func() { _ = aw.Close() }()
 
 	// Rapidly write 5 updates within 20ms (less than 50ms debounce)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		time.Sleep(5 * time.Millisecond)
 		content := []byte(`<svg width="100" height="100"><circle cx="50" cy="50" r="45"/></svg>`)
 		if err := os.WriteFile(avatarFile, content, 0644); err != nil {
@@ -51,7 +51,7 @@ func TestAvatarWatcher_Debounce(t *testing.T) {
 
 	// Wait slightly longer to confirm no trailing second trigger
 	time.Sleep(100 * time.Millisecond)
-	count := atomic.LoadInt32(&triggerCount)
+	count := triggerCount.Load()
 	if count != 1 {
 		t.Errorf("Expected 1 debounced trigger, got %d", count)
 	}
@@ -75,7 +75,7 @@ func TestAvatarWatcher_SwitchFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New watcher failed: %v", err)
 	}
-	defer aw.Close()
+	defer func() { _ = aw.Close() }()
 
 	// Switch to file2
 	if err := aw.SwitchFile(file2); err != nil {
@@ -93,4 +93,3 @@ func TestAvatarWatcher_SwitchFile(t *testing.T) {
 		t.Fatal("Timed out waiting for trigger after SwitchFile")
 	}
 }
-

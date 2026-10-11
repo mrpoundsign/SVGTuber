@@ -21,7 +21,7 @@ func TestOneEuroFilter_NoiseReduction(t *testing.T) {
 
 	rng := rand.New(rand.NewSource(42))
 
-	for i := 0; i < steps; i++ {
+	for i := range steps {
 		tSec := float64(i) * dt
 		noise := (rng.Float64() - 0.5) * 2.0 // +/- 1.0 noise
 		x := trueVal + noise
@@ -36,8 +36,10 @@ func TestOneEuroFilter_NoiseReduction(t *testing.T) {
 		filtSqSum += filtDiff * filtDiff
 	}
 
-	rawVar := (rawSqSum / steps) - math.Pow(rawSum/steps, 2)
-	filtVar := (filtSqSum / steps) - math.Pow(filtSum/steps, 2)
+	rawMean := rawSum / steps
+	rawVar := (rawSqSum / steps) - (rawMean * rawMean)
+	filtMean := filtSum / steps
+	filtVar := (filtSqSum / steps) - (filtMean * filtMean)
 
 	if filtVar >= rawVar {
 		t.Errorf("Expected filtered variance (%f) to be less than raw variance (%f)", filtVar, rawVar)
@@ -584,5 +586,3 @@ func TestEngine_AutomationsMode_FaceLostOnly(t *testing.T) {
 		t.Errorf("Expected AutoBlink to trigger when face is lost in face_lost_only mode")
 	}
 }
-
-

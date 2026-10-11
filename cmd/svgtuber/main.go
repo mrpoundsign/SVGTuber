@@ -120,7 +120,7 @@ func main() {
 		log.Printf("[Warning] File watcher failed to initialize: %v (hot reload disabled)", err)
 	} else {
 		srv.SetWatcher(fw)
-		defer fw.Close()
+		defer func() { _ = fw.Close() }()
 	}
 
 	studioURL := fmt.Sprintf("http://localhost:%d/studio", *port)

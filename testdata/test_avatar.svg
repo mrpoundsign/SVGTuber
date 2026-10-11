@@ -22,15 +22,15 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#505050"
      showgrid="false"
-     inkscape:zoom="4.5585938"
-     inkscape:cx="249.41902"
-     inkscape:cy="222.10797"
+     inkscape:zoom="3.2234126"
+     inkscape:cx="274.55375"
+     inkscape:cy="196.53085"
      inkscape:window-width="2560"
      inkscape:window-height="1369"
      inkscape:window-x="1072"
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
-     inkscape:current-layer="layer_head" />
+     inkscape:current-layer="braid_seg_1" />
   <defs
      id="defs4">
     <radialGradient
@@ -73,6 +73,66 @@
        gradientTransform="matrix(1.7320508,0,0,0.57735027,0.43873179,-9.6520994)"
        gradientUnits="userSpaceOnUse"
        spreadMethod="pad" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#hairGrad"
+       id="linearGradient14"
+       x1="158.25386"
+       y1="176.45782"
+       x2="158.25386"
+       y2="219.88455"
+       gradientTransform="scale(0.77139566,1.2963516)"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#hairGrad"
+       id="linearGradient15"
+       x1="154.22042"
+       y1="214.34928"
+       x2="154.22042"
+       y2="259.22202"
+       gradientTransform="scale(0.80364386,1.2443323)"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#hairGrad"
+       id="linearGradient16"
+       x1="165.67654"
+       y1="241.64633"
+       x2="165.67654"
+       y2="279.02324"
+       gradientTransform="scale(0.78796987,1.2690841)"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#hairGrad"
+       id="linearGradient17"
+       x1="158.25386"
+       y1="176.45782"
+       x2="158.25386"
+       y2="219.88455"
+       gradientTransform="scale(0.77139566,1.2963516)"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#hairGrad"
+       id="linearGradient18"
+       x1="154.22042"
+       y1="214.34928"
+       x2="154.22042"
+       y2="259.22202"
+       gradientTransform="scale(0.80364386,1.2443323)"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#hairGrad"
+       id="linearGradient19"
+       x1="165.67654"
+       y1="241.64633"
+       x2="165.67654"
+       y2="279.02324"
+       gradientTransform="scale(0.78796987,1.2690841)"
+       gradientUnits="userSpaceOnUse" />
   </defs>
   <!-- Body / Torso Layer with Idle Breathing -->
   <g
@@ -342,6 +402,115 @@
        d="m 255.78063,258.41302 c -29.39503,26.76264 2.63239,28.07883 2.63239,28.07883"
        id="path1"
        sodipodi:nodetypes="cc"
-       inkscape:label="Nose" />
+       inkscape:label=" Nose" />
+    <!-- Side Braid Chain Rig (3 Segments) -->
+    <g
+       id="braid_seg_1"
+       inkscape:label="Side Braid 4 [Sway {pivot: top; range: 18; yaw: 0.85; gravity: 0.75}]"
+       style="display:inline"
+       transform="matrix(-1,0,0,1,270.07634,0)">
+      <!-- Upper Braid Link -->
+      <path
+         d="m 132,230 c -10,12 -12,28 -4,42 12,18 24,14 26,0 3,-16 -6,-34 -22,-42 z"
+         fill="url(#hairGrad)"
+         stroke="#312e81"
+         stroke-width="2"
+         id="path_braid_1"
+         style="fill:url(#linearGradient17)" />
+      <g
+         id="braid_seg_2"
+         inkscape:label="Side Braid 5 [Chain {factor: 0.90; lag: 3; pivot: top; whip: 0.40}]">
+        <!-- Middle Braid Link -->
+        <path
+           d="m 135,268 c -12,14 -14,30 -2,44 14,16 26,10 26,-4 0,-18 -10,-32 -24,-40 z"
+           fill="url(#hairGrad)"
+           stroke="#312e81"
+           stroke-width="2"
+           id="path_braid_2"
+           style="fill:url(#linearGradient18)" />
+        <g
+           id="braid_seg_3"
+           inkscape:label="Side Braid 6 [Chain {factor: 0.95; lag: 4; pivot: top; whip: 0.50}]">
+          <!-- Lower Braid Link + Hair Tie & Tip -->
+          <path
+             d="m 139,308 c -10,12 -10,26 0,38 12,12 20,8 20,-6 0,-14 -8,-24 -20,-32 z"
+             fill="url(#hairGrad)"
+             stroke="#312e81"
+             stroke-width="2"
+             id="path_braid_3"
+             style="fill:url(#linearGradient19)" />
+          <!-- Hair Tie Ribbon / Band -->
+          <rect
+             x="137"
+             y="344"
+             width="16"
+             height="6"
+             rx="3"
+             fill="#f43f5e"
+             stroke="#be123c"
+             stroke-width="1.5"
+             id="rect_braid_band" />
+          <!-- Tapered Braid Tip -->
+          <path
+             d="m 140,350 c 0,16 5,28 5,30 2,-2 7,-14 7,-30 z"
+             fill="#312e81"
+             id="path_braid_tip" />
+        </g>
+      </g>
+    </g>
+    <g
+       id="g14"
+       inkscape:label="Side Braid 1 [Sway {pivot: top; range: 18; yaw: 0.85; gravity: 0.75}]"
+       style="display:inline"
+       transform="translate(242)">
+      <!-- Upper Braid Link -->
+      <path
+         d="m 132,230 c -10,12 -12,28 -4,42 12,18 24,14 26,0 3,-16 -6,-34 -22,-42 z"
+         fill="url(#hairGrad)"
+         stroke="#312e81"
+         stroke-width="2"
+         id="path9"
+         style="fill:url(#linearGradient14)" />
+      <g
+         id="g13"
+         inkscape:label="Side Braid 2 [Chain {factor: 0.90; lag: 3; pivot: top; whip: 0.40}]">
+        <!-- Middle Braid Link -->
+        <path
+           d="m 135,268 c -12,14 -14,30 -2,44 14,16 26,10 26,-4 0,-18 -10,-32 -24,-40 z"
+           fill="url(#hairGrad)"
+           stroke="#312e81"
+           stroke-width="2"
+           id="path10"
+           style="fill:url(#linearGradient15)" />
+        <g
+           id="g12"
+           inkscape:label="Side Braid 3 [Chain {factor: 0.95; lag: 4; pivot: top; whip: 0.50}]">
+          <!-- Lower Braid Link + Hair Tie & Tip -->
+          <path
+             d="m 139,308 c -10,12 -10,26 0,38 12,12 20,8 20,-6 0,-14 -8,-24 -20,-32 z"
+             fill="url(#hairGrad)"
+             stroke="#312e81"
+             stroke-width="2"
+             id="path11"
+             style="fill:url(#linearGradient16)" />
+          <!-- Hair Tie Ribbon / Band -->
+          <rect
+             x="137"
+             y="344"
+             width="16"
+             height="6"
+             rx="3"
+             fill="#f43f5e"
+             stroke="#be123c"
+             stroke-width="1.5"
+             id="rect11" />
+          <!-- Tapered Braid Tip -->
+          <path
+             d="m 140,350 c 0,16 5,28 5,30 2,-2 7,-14 7,-30 z"
+             fill="#312e81"
+             id="path12" />
+        </g>
+      </g>
+    </g>
   </g>
 </svg>

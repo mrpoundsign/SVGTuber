@@ -282,6 +282,31 @@ Back Hair [Dist {factor: 0.10}] [Physics {stiffness: 0.12; damping: 0.85; mass: 
 
 ---
 
+### 12. `[Chain]` — Multi-Segment Hierarchical Chains
+Allows multi-joint appendages (hair braids, ponytails, animal tails, ribbons, scarves) to curve and whip naturally by propagating parent rotation down an element hierarchy with latency and spring dynamics.
+
+```text
+Left Braid 1 [Sway {pivot: top; range: 8}]
+Left Braid 2 [Chain {factor: 0.85; lag: 3; pivot: top}]
+Left Braid 3 [Chain {factor: 0.90; lag: 4; pivot: top}]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `parent` | string | *(Auto)* | Parent element ID or selector (e.g. `#tail_1`). If omitted, automatically discovers the parent from DOM hierarchy or sequence |
+| `factor` | float | `0.85` | Rotation transfer ratio from parent (`0.5` = subtle curve, `1.2` = exaggerated whip) |
+| `lag` | int | `3` | Frame latency / delay before following parent rotation |
+| `stiffness` | float | `0.18` | Spring return strength |
+| `damping` | float | `0.80` | Motion decay friction |
+| `whip` | float | `0.25` | Directional whip impulse multiplier on sudden turns |
+| `pivot` | string | `top` | Segment pivot joint origin (`top`, `bottom`, `center`, etc.) |
+| `range` | float | — | Optional maximum angle clamp in degrees |
+
+> [!NOTE]
+> `[Chain]` supports both **nested SVG groups** (Inkscape / Illustrator group hierarchies) and **sibling flat layers** (automatic forward-kinematics joint orbit).
+
+---
+
 ## 🎭 Creating Custom Expressions
 
 SVGTuber automatically scans your avatar SVG for any layer using the `is[A-Z]*` naming convention in a `[Show]` or `[Hide]` directive. **No server configuration or code editing is required!**

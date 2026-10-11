@@ -208,7 +208,10 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	}
 	physicsEnabled := ts.PhysicsEnabled
 	physicsAmount := ts.PhysicsAmount
-	if physicsAmount <= 0 && ts.PhysicsEnabled {
+	if !physicsEnabled && physicsAmount <= 0 {
+		physicsEnabled = true
+		physicsAmount = 1.0
+	} else if physicsEnabled && physicsAmount <= 0 {
 		physicsAmount = 1.0
 	}
 
@@ -409,13 +412,14 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		fallthrough
 	default:
 		if hasActiveAudio {
-			if isSpeaking {
+			switch {
+			case isSpeaking:
 				// Voice detected: drive mouth with audio or wide optical expression
 				finalMouth = math.Max(audioMouth, opticalMouth)
-			} else if opticalMouth > ts.MouthThreshold {
+			case opticalMouth > ts.MouthThreshold:
 				// Deliberate wide mouth opening even if silent (gasp, yawn, silent expression)
 				finalMouth = opticalMouth
-			} else {
+			default:
 				// Silent and mouth is near neutral: suppress camera optical jitter
 				finalMouth = 0.0
 			}

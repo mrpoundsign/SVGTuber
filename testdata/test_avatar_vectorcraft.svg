@@ -21,6 +21,13 @@
       .cls-17{fill:url(#linear-gradient-3)}
       .cls-18{fill:none;stroke:#000080;stroke-opacity:0.273;stroke-width:1.573;stroke-linecap:round;stroke-linejoin:round}
       .cls-19{fill:none;stroke:#280b0b;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+      .cls-20{fill:url(#linear-gradient-4);stroke:#312e81;stroke-width:2}
+      .cls-21{fill:url(#linear-gradient-5);stroke:#312e81;stroke-width:2}
+      .cls-22{fill:url(#linear-gradient-6);stroke:#312e81;stroke-width:2}
+      .cls-23{fill:#f43f5e;stroke:#be123c;stroke-width:1.5}
+      .cls-24{fill:url(#linear-gradient-7);stroke:#312e81;stroke-width:2}
+      .cls-25{fill:url(#linear-gradient-8);stroke:#312e81;stroke-width:2}
+      .cls-26{fill:url(#linear-gradient-9);stroke:#312e81;stroke-width:2}
     </style>
     <linearGradient id="linear-gradient-1" x1="107.974" y1="213.858" x2="107.974" y2="400" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#4f46e5"/>
@@ -35,6 +42,30 @@
       <stop offset="1" stop-color="#ffd59e"/>
     </radialGradient>
     <linearGradient id="linear-gradient-3" x1="137.316" y1="107.625" x2="138.097" y2="164.02" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="148" y1="228.751" x2="148" y2="285.048" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="146.138" y1="266.722" x2="146.138" y2="322.558" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="139.528" y1="306.67" x2="139.528" y2="354.104" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-7" x1="364.076" y1="228.751" x2="364.076" y2="285.048" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-8" x1="365.938" y1="266.722" x2="365.938" y2="322.558" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-9" x1="372.548" y1="306.67" x2="372.548" y2="354.104" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#4f46e5"/>
       <stop offset="1" stop-color="#312e81"/>
     </linearGradient>
@@ -100,6 +131,28 @@
       <path id="bangs__Dist__factor__0.15____Sway__pivot__top__range__7____Physics__stiffness__0.16__damping__0.82__mass__0.5__" data-name="bangs [Dist {factor: 0.15}] [Sway {pivot: top; range: 7}] [Physics {stiffness: 0.16; damping: 0.82; mass: 0.5}]" d="M196.747 170.329 C210.081 203.662 244.37 208.306 236.877 228.135 C253.306 221.589 302.682 211.242 303.953 201.444 C305.474 189.715 303.312 175.512 297.292 163.483 Z" class="cls-9"/>
       <path id="path2" d="M236.476 159.26 C236.476 159.26 254.464 115.606 271.904 110.231" class="cls-18"/>
     </g>
-    <path id="Nose" d="M255.781 258.413 C226.386 285.176 258.413 286.492 258.413 286.492" class="cls-19"/>
+    <path id="Nose" data-name=" Nose" d="M255.781 258.413 C226.386 285.176 258.413 286.492 258.413 286.492" class="cls-19"/>
+    <g id="Side_Braid_4__Sway__pivot__top__range__18__yaw__0.85__gravity__0.75__" data-name="Side Braid 4 [Sway {pivot: top; range: 18; yaw: 0.85; gravity: 0.75}]">
+      <path id="path_braid_1" d="M138.076 230 C148.076 242 150.076 258 142.076 272 C130.076 290 118.076 286 116.076 272 C113.076 256 122.076 238 138.076 230 Z" class="cls-20"/>
+      <g id="Side_Braid_5__Chain__factor__0.90__lag__3__pivot__top__whip__0.40__" data-name="Side Braid 5 [Chain {factor: 0.90; lag: 3; pivot: top; whip: 0.40}]">
+        <path id="path_braid_2" d="M135.076 268 C147.076 282 149.076 298 137.076 312 C123.076 328 111.076 322 111.076 308 C111.076 290 121.076 276 135.076 268 Z" class="cls-21"/>
+        <g id="Side_Braid_6__Chain__factor__0.95__lag__4__pivot__top__whip__0.50__" data-name="Side Braid 6 [Chain {factor: 0.95; lag: 4; pivot: top; whip: 0.50}]">
+          <path id="path_braid_3" d="M131.076 308 C141.076 320 141.076 334 131.076 346 C119.076 358 111.076 354 111.076 340 C111.076 326 119.076 316 131.076 308 Z" class="cls-22"/>
+          <path id="rect_braid_band" d="M130.076 344 L120.076 344 C118.419 344 117.076 345.343 117.076 347 L117.076 347 C117.076 348.657 118.419 350 120.076 350 L130.076 350 C131.733 350 133.076 348.657 133.076 347 L133.076 347 C133.076 345.343 131.733 344 130.076 344 Z" class="cls-23"/>
+          <path id="path_braid_tip" d="M130.076 350 C130.076 366 125.076 378 125.076 380 C123.076 378 118.076 366 118.076 350 Z" class="cls-9"/>
+        </g>
+      </g>
+    </g>
+    <g id="Side_Braid_1__Sway__pivot__top__range__18__yaw__0.85__gravity__0.75__" data-name="Side Braid 1 [Sway {pivot: top; range: 18; yaw: 0.85; gravity: 0.75}]">
+      <path id="path9" d="M374 230 C364 242 362 258 370 272 C382 290 394 286 396 272 C399 256 390 238 374 230 Z" class="cls-24"/>
+      <g id="Side_Braid_2__Chain__factor__0.90__lag__3__pivot__top__whip__0.40__" data-name="Side Braid 2 [Chain {factor: 0.90; lag: 3; pivot: top; whip: 0.40}]">
+        <path id="path10" d="M377 268 C365 282 363 298 375 312 C389 328 401 322 401 308 C401 290 391 276 377 268 Z" class="cls-25"/>
+        <g id="Side_Braid_3__Chain__factor__0.95__lag__4__pivot__top__whip__0.50__" data-name="Side Braid 3 [Chain {factor: 0.95; lag: 4; pivot: top; whip: 0.50}]">
+          <path id="path11" d="M381 308 C371 320 371 334 381 346 C393 358 401 354 401 340 C401 326 393 316 381 308 Z" class="cls-26"/>
+          <path id="rect11" d="M382 344 L392 344 C393.657 344 395 345.343 395 347 L395 347 C395 348.657 393.657 350 392 350 L382 350 C380.343 350 379 348.657 379 347 L379 347 C379 345.343 380.343 344 382 344 Z" class="cls-23"/>
+          <path id="path12" d="M382 350 C382 366 387 378 387 380 C389 378 394 366 394 350 Z" class="cls-9"/>
+        </g>
+      </g>
+    </g>
   </g>
 </svg>

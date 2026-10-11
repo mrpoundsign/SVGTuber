@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -18,6 +19,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/rig"
+	"github.com/mrpoundsign/SVGTuber/internal/svg"
 	"github.com/mrpoundsign/SVGTuber/internal/tracking"
 	"github.com/mrpoundsign/SVGTuber/internal/watcher"
 	"github.com/mrpoundsign/SVGTuber/web"
@@ -25,17 +27,18 @@ import (
 
 // Server coordinates the HTTP file server and WebSocket endpoints.
 type Server struct {
-	port          int
-	avatarPath    string
-	avatarDir     string
-	currentAvatar string
-	hub           *Hub
-	engine        *tracking.Engine
-	configMgr     *config.Manager
-	rigMu         sync.RWMutex
-	rigDef        *rig.RigDefinition
-	rigParser     rig.Parser
-	avatarWatcher *watcher.AvatarWatcher
+	port               int
+	avatarPath         string
+	avatarDir          string
+	currentAvatar      string
+	hub                *Hub
+	engine             *tracking.Engine
+	configMgr          *config.Manager
+	rigMu              sync.RWMutex
+	rigDef             *rig.RigDefinition
+	rigParser          rig.Parser
+	preprocessedAvatar []byte
+	avatarWatcher      *watcher.AvatarWatcher
 	expMgr        *ExpressionManager
 	trackerMu     sync.RWMutex
 	trackerConns  map[*websocket.Conn]chan []byte
@@ -93,6 +96,10 @@ func New(port int, avatarPath string, hub *Hub, engine *tracking.Engine, cfg ...
 		engine.SetExpressionProvider(expMgr.GetActive)
 	}
 
+	if _, err := s.ReloadRig(); err != nil {
+		log.Printf("[Server] Initial rig load warning: %v", err)
+	}
+
 	return s
 }
 
@@ -126,8 +133,17 @@ func (s *Server) Start() error {
 		}
 	}
 
-	mux.Handle("/overlay/", http.StripPrefix("/overlay/", http.FileServer(http.FS(overlayFS))))
-	mux.Handle("/studio/", http.StripPrefix("/studio/", http.FileServer(http.FS(studioFS))))
+	noCacheFileServer := func(fsys fs.FS) http.Handler {
+		fsHandler := http.FileServer(http.FS(fsys))
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			fsHandler.ServeHTTP(w, r)
+		})
+	}
+	mux.Handle("/overlay/", http.StripPrefix("/overlay/", noCacheFileServer(overlayFS)))
+	mux.Handle("/studio/", http.StripPrefix("/studio/", noCacheFileServer(studioFS)))
 
 	// Direct endpoint for OBS browser source: /overlay (without trailing slash)
 	mux.HandleFunc("/overlay", func(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +215,18 @@ func (s *Server) Addr() string {
 func (s *Server) handleAvatarSVG(w http.ResponseWriter, r *http.Request) {
 	s.rigMu.RLock()
 	currentPath := s.avatarPath
+	preprocessed := s.preprocessedAvatar
 	s.rigMu.RUnlock()
+
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
+	if len(preprocessed) > 0 {
+		_, _ = w.Write(preprocessed)
+		return
+	}
 
 	absPath, err := filepath.Abs(currentPath)
 	if err != nil {
@@ -212,12 +239,7 @@ func (s *Server) handleAvatarSVG(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to open avatar SVG: %v", err), http.StatusNotFound)
 		return
 	}
-	defer f.Close()
-
-	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Expires", "0")
+	defer func() { _ = f.Close() }()
 
 	_, _ = io.Copy(w, f)
 }
@@ -231,7 +253,7 @@ func (s *Server) handleOverlayWS(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Server] WebSocket accept error: %v", err)
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
 	s.hub.Register(conn)
 	defer s.hub.Unregister(conn)
@@ -269,7 +291,7 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Server] Tracker WS accept error: %v", err)
 		return
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
+	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 	log.Println("[Server] Studio tracker connected.")
 
 	msgCh := make(chan []byte, 16)
@@ -476,7 +498,7 @@ func (s *Server) SetWatcher(w *watcher.AvatarWatcher) {
 func (s *Server) SwitchAvatar(relPath string) error {
 	relPath = strings.TrimSpace(relPath)
 	if relPath == "" {
-		return fmt.Errorf("avatar path cannot be empty")
+		return errors.New("avatar path cannot be empty")
 	}
 
 	cleanRel := filepath.Clean(filepath.FromSlash(relPath))
@@ -537,6 +559,13 @@ func (s *Server) ReloadRig() (*rig.RigDefinition, error) {
 		return nil, fmt.Errorf("reading avatar file: %w", err)
 	}
 
+	preprocessed, err := svg.PreprocessSVG(data)
+	if err == nil {
+		data = preprocessed
+	} else {
+		log.Printf("[Server] SVG preprocessing warning: %v", err)
+	}
+
 	s.rigMu.RLock()
 	parser := s.rigParser
 	s.rigMu.RUnlock()
@@ -551,6 +580,7 @@ func (s *Server) ReloadRig() (*rig.RigDefinition, error) {
 
 	s.rigMu.Lock()
 	s.rigDef = rigDef
+	s.preprocessedAvatar = data
 	s.rigMu.Unlock()
 
 	if s.expMgr != nil {

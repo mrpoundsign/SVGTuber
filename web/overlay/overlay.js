@@ -196,6 +196,8 @@
 
       activeRigBindings.push({
         el,
+        id: elem.id || el.id || '',
+        label: elem.label || '',
         cx,
         cy,
         baseTransform,
@@ -385,7 +387,7 @@
     prevHeadRoll = headRoll;
     prevAudioVol = audioVol;
 
-    const globalPhysicsMult = (p.physicsEnabled === false) ? 0 : (p.physicsAmount !== undefined ? parseFloat(p.physicsAmount) : 1.0);
+    const globalPhysicsMult = (p.physicsEnabled === false && (p.physicsAmount === 0 || p.physicsAmount === '0')) ? 0 : (p.physicsAmount !== undefined && parseFloat(p.physicsAmount) > 0 ? parseFloat(p.physicsAmount) : 1.0);
 
     for (let i = 0; i < activeRigBindings.length; i++) {
       const b = activeRigBindings[i];
@@ -551,11 +553,16 @@
             const mass = parseFloat(params.mass || params.inertia || 0.5);
 
             let targetAngle = 0;
-            if (srcParam.toLowerCase() === 'headroll') {
+            const rollFactor = parseFloat(params.roll !== undefined ? params.roll : gravity);
+            const yawFactor = parseFloat(params.yaw !== undefined ? params.yaw : 0.85);
+
+            if (srcParam.toLowerCase() === 'headroll' || srcParam.toLowerCase() === 'auto' || srcParam.toLowerCase() === 'head') {
               // Gravitational alignment: pendulum tilts opposite to head roll
-              targetAngle = -pVal * (range / 15.0) * gravity;
-              // Lateral turning inertia
-              targetAngle += -deltaYaw * mass * (range / 10.0);
+              targetAngle = -(headRoll / 15.0) * range * rollFactor;
+              // Lateral turning swing with head yaw (subtle static bias)
+              targetAngle += (headYaw / 25.0) * (range * 0.35) * yawFactor;
+            } else if (srcParam.toLowerCase() === 'headyaw') {
+              targetAngle = (pVal / 15.0) * range * yawFactor;
             } else {
               targetAngle = pVal * range;
             }
@@ -572,6 +579,12 @@
             }
 
             const stepRatio = dt * 60;
+            // Physical acceleration impulse from head movement (turn and tilt inertia)
+            const impulse = (-deltaYaw * (params.yaw !== undefined ? parseFloat(params.yaw) : 1.2) * 2.2
+                             - deltaRoll * (params.roll !== undefined ? parseFloat(params.roll) : 0.8) * 1.8)
+                             * mass * globalPhysicsMult;
+            d._velocity += impulse * stepRatio;
+
             const force = -stiffness * (d._angle - targetAngle);
             d._velocity = (d._velocity + force * stepRatio) * Math.pow(damping, stepRatio);
             d._angle += d._velocity * stepRatio;
@@ -587,6 +600,99 @@
           case 'physics':
           case 'spring': {
             physicsDirective = d;
+            break;
+          }
+          case 'chain': {
+            if (globalPhysicsMult <= 0) break;
+
+            if (d._parentBinding === undefined) {
+              let parentRef = (params.parent || '').trim();
+              if (parentRef.startsWith('#')) parentRef = parentRef.substring(1);
+
+              if (parentRef) {
+                d._parentBinding = activeRigBindings.find(pb =>
+                  pb !== b && (
+                    pb.id === parentRef ||
+                    (pb.el && pb.el.id === parentRef) ||
+                    (pb.label && pb.label.toLowerCase().includes(parentRef.toLowerCase()))
+                  )
+                ) || null;
+              }
+
+              if (!d._parentBinding) {
+                // Check DOM ancestry
+                let pNode = b.el.parentElement;
+                while (pNode && pNode.tagName && pNode.tagName.toLowerCase() !== 'svg') {
+                  const pb = activeRigBindings.find(cand => cand.el === pNode);
+                  if (pb) {
+                    d._parentBinding = pb;
+                    break;
+                  }
+                  pNode = pNode.parentElement;
+                }
+              }
+
+              if (!d._parentBinding) {
+                // Fallback: previous binding in activeRigBindings
+                const myIdx = activeRigBindings.indexOf(b);
+                if (myIdx > 0) {
+                  d._parentBinding = activeRigBindings[myIdx - 1];
+                }
+              }
+            }
+
+            const parentB = d._parentBinding;
+            if (!parentB) break;
+
+            const factor = parseFloat(params.factor || params.mult || 0.85);
+            const lag = Math.max(1, parseInt(params.lag || params.delay || 3, 10));
+            const stiffness = parseFloat(params.stiffness || params.k || 0.18);
+            const damping = parseFloat(params.damping || params.c || 0.80);
+            const whip = parseFloat(params.whip || 0.25) * globalPhysicsMult;
+
+            const history = parentB._rotHistory || [parentB._currentRot || 0];
+            const histIdx = Math.max(0, history.length - 1 - lag);
+            const delayedRot = history[histIdx] !== undefined ? history[histIdx] : (parentB._currentRot || 0);
+            const currentParentRot = parentB._currentRot || 0;
+            const parentVel = currentParentRot - (history[history.length - 2] !== undefined ? history[history.length - 2] : currentParentRot);
+
+            // Target relative curve angle: delayed parent rotation
+            let targetAngle = (delayedRot * factor) * globalPhysicsMult;
+
+            if (params.range || params.max) {
+              const maxAngle = parseFloat(params.range || params.max || 60);
+              targetAngle = Math.max(-maxAngle, Math.min(maxAngle, targetAngle));
+            }
+
+            if (d._chainAngle === undefined) {
+              d._chainAngle = targetAngle;
+              d._chainVel = 0;
+            }
+
+            const stepRatio = dt * 60;
+            // Dynamic secondary whip impulse from parent velocity and head turning
+            const childWhipImpulse = (-parentVel * whip * 4.0 - deltaYaw * whip * 2.5) * stepRatio;
+            d._chainVel += childWhipImpulse;
+
+            const force = -stiffness * (d._chainAngle - targetAngle);
+            d._chainVel = (d._chainVel + force * stepRatio) * Math.pow(damping, stepRatio);
+            d._chainAngle += d._chainVel * stepRatio;
+
+            rot += d._chainAngle;
+
+            // Sibling forward kinematics: if child is not nested inside parent DOM element,
+            // calculate the spatial orbit displacement around parent's pivot
+            const isDOMChild = parentB.el && parentB.el.contains(b.el);
+            if (!isDOMChild) {
+              const rad = (parentB._currentRot || 0) * (Math.PI / 180);
+              const dx0 = b.cx - parentB.cx;
+              const dy0 = b.cy - parentB.cy;
+              const rx = dx0 * Math.cos(rad) - dy0 * Math.sin(rad);
+              const ry = dx0 * Math.sin(rad) + dy0 * Math.cos(rad);
+              tx += (rx - dx0) + (parentB._currentTx || 0);
+              ty += (ry - dy0) + (parentB._currentTy || 0);
+              rot += (parentB._currentRot || 0);
+            }
             break;
           }
         }
@@ -647,6 +753,17 @@
         b._physicsState.vx = 0;
         b._physicsState.vy = 0;
         b._physicsState.vRot = 0;
+      }
+
+      b._currentTx = tx;
+      b._currentTy = ty;
+      b._currentRot = rot;
+      if (!b._rotHistory) {
+        b._rotHistory = [];
+      }
+      b._rotHistory.push(rot);
+      if (b._rotHistory.length > 40) {
+        b._rotHistory.shift();
       }
 
       // Apply transforms using SVG transform attribute so existing element transforms (Inkscape/Illustrator)
