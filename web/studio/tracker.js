@@ -391,11 +391,16 @@ function connectWebSocket() {
       } else if (msg.type === "expression_update") {
         activeExpressions = msg.expressions || {};
         updateExpressionButtonsUI();
+      } else if (msg.type === "accessory_update") {
+        configuredAccessories = msg.accessories || [];
+        renderAccessoriesUI();
       } else if (msg.type === "rig_update") {
         loadExpressions();
+        loadAccessories();
       } else if (msg.type === "avatar_swapped") {
         loadAvatars();
         loadExpressions();
+        loadAccessories();
         reloadAvatarFrame();
       }
     } catch (e) {}
@@ -1252,6 +1257,7 @@ async function loadExpressions() {
     activeExpressions = data.active || {};
     availableExpressions = data.available || [];
     renderExpressionButtons();
+    updateAllExpressionDropdowns();
   } catch (err) {
     console.warn("[Studio Tracker] Could not load /api/expressions:", err);
   }
@@ -1484,4 +1490,1094 @@ if (btnRefreshAvatars) {
 
 loadExpressions();
 loadAvatars();
+
+// ==========================================
+// Modular Accessories & Props Closet Manager
+// ==========================================
+let availableAccessoryFiles = [];
+let configuredAccessories = [];
+const openDrawers = new Set();
+const accessoryDebounceMap = new Map();
+
+const accessoryCountBadge = document.getElementById("accessory-count-badge");
+const accessoryListEl = document.getElementById("accessory-list");
+const availableAccessoriesChipsEl = document.getElementById("available-accessories-chips");
+const accessorySaveIndicator = document.getElementById("accessory-save-indicator");
+const btnRefreshAccessories = document.getElementById("btn-refresh-accessories");
+
+function flashAccessorySaved() {
+  if (accessorySaveIndicator) {
+    accessorySaveIndicator.style.opacity = "1";
+    setTimeout(() => {
+      accessorySaveIndicator.style.opacity = "0";
+    }, 1200);
+  }
+}
+
+async function loadAccessories() {
+  try {
+    const res = await fetch(`/api/accessories?t=${Date.now()}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    availableAccessoryFiles = data.availableFiles || [];
+    configuredAccessories = data.accessories || [];
+    renderAccessoriesUI();
+  } catch (err) {
+    console.error("[Studio Tracker] Error loading accessories:", err);
+  }
+}
+
+function debounceSaveAccessory(acc) {
+  if (accessoryDebounceMap.has(acc.id)) {
+    clearTimeout(accessoryDebounceMap.get(acc.id));
+  }
+  const timer = setTimeout(async () => {
+    accessoryDebounceMap.delete(acc.id);
+    try {
+      const res = await fetch("/api/accessories/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(acc)
+      });
+      if (res.ok) {
+        flashAccessorySaved();
+      }
+    } catch (e) {
+      console.error("[Studio Tracker] Error updating accessory:", e);
+    }
+  }, 50);
+  accessoryDebounceMap.set(acc.id, timer);
+}
+
+function renderAccessoriesUI() {
+  if (accessoryCountBadge) {
+    const activeCount = configuredAccessories.filter(a => a.enabled).length;
+    accessoryCountBadge.textContent = `${activeCount}/${configuredAccessories.length}`;
+  }
+
+  // 1. Render Discovered Files Chips (avoid rebuilding if unchanged)
+  if (availableAccessoriesChipsEl) {
+    const currentChipsKey = availableAccessoriesChipsEl.dataset.files || "";
+    const newChipsKey = availableAccessoryFiles.join(",");
+    if (currentChipsKey !== newChipsKey) {
+      availableAccessoriesChipsEl.dataset.files = newChipsKey;
+      availableAccessoriesChipsEl.innerHTML = "";
+      if (availableAccessoryFiles.length === 0) {
+        availableAccessoriesChipsEl.innerHTML = '<span style="font-size: 11px; color: var(--text-muted);">No .svg files in avatar accessories/ folder</span>';
+      } else {
+        availableAccessoryFiles.forEach(file => {
+          const chip = document.createElement("button");
+          chip.className = "acc-chip";
+          chip.title = `Add ${file} to avatar`;
+          chip.innerHTML = `<span>+</span> <span>${file}</span>`;
+          chip.addEventListener("click", () => {
+            equipNewAccessory(file);
+          });
+          availableAccessoriesChipsEl.appendChild(chip);
+        });
+      }
+    }
+  }
+
+  // 2. Render / Update Configured Accessories List
+  if (!accessoryListEl) return;
+
+  if (configuredAccessories.length === 0) {
+    accessoryListEl.innerHTML = `
+      <div style="text-align: center; padding: 18px 12px; background: #14141c; border-radius: 6px; border: 1px dashed var(--border-color);">
+        <div style="font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 4px;">No Accessories Added Yet</div>
+        <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4;">
+          Click any file below in the <strong>Discovered Accessory Files</strong> bar to equip glasses, ears, sweat drops, or custom SVG props!
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Clean empty placeholder if it was there
+  const firstChild = accessoryListEl.firstElementChild;
+  if (firstChild && !firstChild.classList.contains("accessory-card")) {
+    accessoryListEl.innerHTML = "";
+  }
+
+  const currentIds = new Set(configuredAccessories.map(a => a.id));
+
+  // Remove deleted cards
+  Array.from(accessoryListEl.children).forEach(child => {
+    if (child.dataset && child.dataset.accId && !currentIds.has(child.dataset.accId)) {
+      child.remove();
+    }
+  });
+
+  // Update existing or append new cards
+  configuredAccessories.forEach((acc) => {
+    let card = accessoryListEl.querySelector(`.accessory-card[data-acc-id="${CSS.escape(acc.id)}"]`);
+    if (card) {
+      // In-place update to prevent DOM recreation and focus loss!
+      const meta = card.querySelector('.accessory-meta');
+      if (meta) meta.textContent = `${acc.file} • ${acc.target || 'layer_head'}`;
+
+      const switchInput = card.querySelector('.switch input');
+      if (switchInput && document.activeElement !== switchInput) {
+        switchInput.checked = Boolean(acc.enabled);
+      }
+
+      // Do NOT overwrite slider / input values while user is interacting inside this card!
+      if (!card.contains(document.activeElement)) {
+        const xRange = card.querySelector('.ctrl-x input[type=range]');
+        const xNum = card.querySelector('.ctrl-x input[type=number]');
+        if (xRange) xRange.value = String(acc.x || 0);
+        if (xNum) xNum.value = String(acc.x || 0);
+
+        const yRange = card.querySelector('.ctrl-y input[type=range]');
+        const yNum = card.querySelector('.ctrl-y input[type=number]');
+        if (yRange) yRange.value = String(acc.y || 0);
+        if (yNum) yNum.value = String(acc.y || 0);
+
+        const sxRange = card.querySelector('.ctrl-sx input[type=range]');
+        const sxNum = card.querySelector('.ctrl-sx input[type=number]');
+        if (sxRange) sxRange.value = String(acc.scaleX !== undefined ? acc.scaleX : 1.0);
+        if (sxNum) sxNum.value = String(parseFloat(acc.scaleX !== undefined ? acc.scaleX : 1.0).toFixed(2));
+
+        const syRange = card.querySelector('.ctrl-sy input[type=range]');
+        const syNum = card.querySelector('.ctrl-sy input[type=number]');
+        if (syRange) syRange.value = String(acc.scaleY !== undefined ? acc.scaleY : 1.0);
+        if (syNum) syNum.value = String(parseFloat(acc.scaleY !== undefined ? acc.scaleY : 1.0).toFixed(2));
+
+        const rotRange = card.querySelector('.ctrl-rot input[type=range]');
+        const rotNum = card.querySelector('.ctrl-rot input[type=number]');
+        if (rotRange) rotRange.value = String(acc.rotation || 0);
+        if (rotNum) rotNum.value = String(acc.rotation || 0);
+
+        const exprSelect = card.querySelector('.acc-expr-select');
+        if (exprSelect && document.activeElement !== exprSelect) {
+          populateExpressionSelect(exprSelect, acc.expression || "");
+        }
+      }
+      return;
+    }
+
+    // Card doesn't exist yet; build it
+    card = document.createElement("div");
+    card.className = "accessory-card";
+    card.dataset.accId = acc.id;
+
+    const isOpen = openDrawers.has(acc.id);
+
+    // Header row
+    const header = document.createElement("div");
+    header.className = "accessory-header";
+
+    const info = document.createElement("div");
+    info.className = "accessory-info";
+
+    const title = document.createElement("div");
+    title.className = "accessory-title";
+    title.textContent = acc.name || acc.file;
+
+    const meta = document.createElement("div");
+    meta.className = "accessory-meta";
+    meta.textContent = `${acc.file} • ${acc.target || 'layer_head'}`;
+
+    info.appendChild(title);
+    info.appendChild(meta);
+
+    const controls = document.createElement("div");
+    controls.className = "accessory-controls";
+
+    // Equip Switch
+    const switchLabel = document.createElement("label");
+    switchLabel.className = "switch";
+    switchLabel.title = acc.enabled ? "Unequip Accessory" : "Equip Accessory";
+    const switchInput = document.createElement("input");
+    switchInput.type = "checkbox";
+    switchInput.checked = Boolean(acc.enabled);
+    switchInput.addEventListener("change", async (e) => {
+      e.stopPropagation();
+      acc.enabled = switchInput.checked;
+      try {
+        await fetch("/api/accessories/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: acc.id })
+        });
+        flashAccessorySaved();
+        if (accessoryCountBadge) {
+          const activeCount = configuredAccessories.filter(a => a.enabled).length;
+          accessoryCountBadge.textContent = `${activeCount}/${configuredAccessories.length}`;
+        }
+      } catch (err) {
+        console.error("[Studio Tracker] Toggle error:", err);
+      }
+    });
+    const switchSlider = document.createElement("span");
+    switchSlider.className = "switch-slider";
+    switchLabel.appendChild(switchInput);
+    switchLabel.appendChild(switchSlider);
+
+    // Open in Dressing Room button
+    const btnFit = document.createElement("button");
+    btnFit.className = "btn btn-secondary";
+    btnFit.style.fontSize = "10px";
+    btnFit.style.padding = "2px 7px";
+    btnFit.innerHTML = "🪞 Fit";
+    btnFit.title = "Open in Dressing Room for large preview & precision positioning";
+    btnFit.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openDressingRoom(acc.id);
+    });
+
+    // Remove button
+    const btnRemove = document.createElement("button");
+    btnRemove.className = "btn btn-secondary";
+    btnRemove.style.fontSize = "10px";
+    btnRemove.style.padding = "2px 6px";
+    btnRemove.textContent = "✕";
+    btnRemove.title = "Delete accessory";
+    btnRemove.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (confirm(`Remove "${acc.name || acc.file}"?`)) {
+        try {
+          await fetch("/api/accessories/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: acc.id })
+          });
+          openDrawers.delete(acc.id);
+          await loadAccessories();
+        } catch (err) {
+          console.error("[Studio Tracker] Remove error:", err);
+        }
+      }
+    });
+
+    // Expand arrow
+    const expandIcon = document.createElement("span");
+    expandIcon.style.fontSize = "11px";
+    expandIcon.style.color = "var(--text-muted)";
+    expandIcon.textContent = isOpen ? "▲" : "▼";
+
+    controls.appendChild(switchLabel);
+    controls.appendChild(btnFit);
+    controls.appendChild(btnRemove);
+    controls.appendChild(expandIcon);
+
+    header.appendChild(info);
+    header.appendChild(controls);
+
+    // Drawer for Position, Stretch, Rotation
+    const drawer = document.createElement("div");
+    drawer.className = `accessory-drawer ${isOpen ? "open" : ""}`;
+
+    // Target, Order, and Expression row
+    const targetRow = document.createElement("div");
+    targetRow.style.display = "grid";
+    targetRow.style.gridTemplateColumns = "1fr 1fr 1fr";
+    targetRow.style.gap = "8px";
+
+    const targetGroup = document.createElement("div");
+    targetGroup.innerHTML = `
+      <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Anchor Target</label>
+      <select class="form-select acc-target-select" style="width: 100%; background: #191924; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 8px; font-size: 12px;">
+        <option value="layer_head">layer_head (Head Anchor)</option>
+        <option value="head">head (Face Anchor)</option>
+        <option value="root_svg">root_svg (Root Space)</option>
+      </select>
+    `;
+    const targetSelect = targetGroup.querySelector("select");
+    if (acc.target) {
+      if (!["layer_head", "head", "root_svg"].includes(acc.target)) {
+        const customOpt = document.createElement("option");
+        customOpt.value = acc.target;
+        customOpt.textContent = acc.target;
+        targetSelect.appendChild(customOpt);
+      }
+      targetSelect.value = acc.target;
+    }
+    targetSelect.addEventListener("change", (e) => {
+      acc.target = e.target.value;
+      meta.textContent = `${acc.file} • ${acc.target}`;
+      debounceSaveAccessory(acc);
+    });
+
+    const orderGroup = document.createElement("div");
+    orderGroup.innerHTML = `
+      <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Layer Order</label>
+      <select class="form-select acc-order-select" style="width: 100%; background: #191924; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 8px; font-size: 12px;">
+        <option value="front">In Front (Foreground)</option>
+        <option value="back">Behind (Background)</option>
+      </select>
+    `;
+    const orderSelect = orderGroup.querySelector("select");
+    orderSelect.value = acc.order || "front";
+    orderSelect.addEventListener("change", (e) => {
+      acc.order = e.target.value;
+      debounceSaveAccessory(acc);
+    });
+
+    const exprGroup = document.createElement("div");
+    exprGroup.innerHTML = `
+      <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Expression Trigger</label>
+      <select class="form-select acc-expr-select" style="width: 100%; background: #191924; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 8px; font-size: 12px;">
+      </select>
+    `;
+    const exprSelect = exprGroup.querySelector("select");
+    populateExpressionSelect(exprSelect, acc.expression || "");
+    exprSelect.addEventListener("change", (e) => {
+      if (e.target.value === "__custom__") {
+        const customName = prompt("Enter custom expression trigger name (e.g. sweat, crying, angry):");
+        if (customName && customName.trim()) {
+          const clean = customName.trim().toLowerCase();
+          acc.expression = clean;
+          populateExpressionSelect(exprSelect, clean);
+          debounceSaveAccessory(acc);
+          flashAccessorySaved();
+        } else {
+          exprSelect.value = acc.expression || "";
+        }
+        return;
+      }
+      acc.expression = e.target.value;
+      debounceSaveAccessory(acc);
+      flashAccessorySaved();
+    });
+
+    targetRow.appendChild(targetGroup);
+    targetRow.appendChild(orderGroup);
+    targetRow.appendChild(exprGroup);
+    drawer.appendChild(targetRow);
+
+    // Helper to build a slider row with linked numeric input
+    function makeSliderRow(label, min, max, step, val, className, onChange) {
+      const row = document.createElement("div");
+      row.className = `slider-item ${className || ''}`;
+      row.style.gridTemplateColumns = "110px 1fr 62px";
+
+      const lbl = document.createElement("label");
+      lbl.textContent = label;
+      lbl.style.fontSize = "11px";
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.value = String(val);
+
+      const numInput = document.createElement("input");
+      numInput.type = "number";
+      numInput.className = "slider-num-input";
+      numInput.min = String(min);
+      numInput.max = String(max);
+      numInput.step = String(step);
+      numInput.value = String(parseFloat(val).toFixed(step < 1 ? 2 : 0));
+
+      input.addEventListener("input", (e) => {
+        const num = parseFloat(e.target.value);
+        numInput.value = num.toFixed(step < 1 ? 2 : 0);
+        onChange(num);
+      });
+
+      numInput.addEventListener("input", (e) => {
+        const num = parseFloat(e.target.value);
+        if (!isNaN(num)) {
+          input.value = String(num);
+          onChange(num);
+        }
+      });
+
+      row.appendChild(lbl);
+      row.appendChild(input);
+      row.appendChild(numInput);
+      return { row, input, numInput };
+    }
+
+    // X Position: -1000px to +1000px
+    const xCtrl = makeSliderRow("Position X (px)", -1000, 1000, 1, acc.x || 0, "ctrl-x", (val) => {
+      acc.x = val;
+      debounceSaveAccessory(acc);
+    });
+    drawer.appendChild(xCtrl.row);
+
+    // Y Position: -1000px to +1000px
+    const yCtrl = makeSliderRow("Position Y (px)", -1000, 1000, 1, acc.y || 0, "ctrl-y", (val) => {
+      acc.y = val;
+      debounceSaveAccessory(acc);
+    });
+    drawer.appendChild(yCtrl.row);
+
+    // Scale X (Stretch Width): 0.05 to 5.0
+    const scaleXCtrl = makeSliderRow("Scale X (Width)", 0.05, 5.0, 0.05, acc.scaleX !== undefined ? acc.scaleX : 1.0, "ctrl-sx", (val) => {
+      acc.scaleX = val;
+      debounceSaveAccessory(acc);
+    });
+    drawer.appendChild(scaleXCtrl.row);
+
+    // Scale Y (Stretch Height): 0.05 to 5.0
+    const scaleYCtrl = makeSliderRow("Scale Y (Height)", 0.05, 5.0, 0.05, acc.scaleY !== undefined ? acc.scaleY : 1.0, "ctrl-sy", (val) => {
+      acc.scaleY = val;
+      debounceSaveAccessory(acc);
+    });
+    drawer.appendChild(scaleYCtrl.row);
+
+    // Rotation: -180 to +180 deg
+    const rotCtrl = makeSliderRow("Rotation (°)", -180, 180, 1, acc.rotation || 0, "ctrl-rot", (val) => {
+      acc.rotation = val;
+      debounceSaveAccessory(acc);
+    });
+    drawer.appendChild(rotCtrl.row);
+
+    // Reset Button Row
+    const actionRow = document.createElement("div");
+    actionRow.style.display = "flex";
+    actionRow.style.justifyContent = "flex-end";
+    actionRow.style.gap = "8px";
+    actionRow.style.marginTop = "4px";
+
+    const btnReset = document.createElement("button");
+    btnReset.className = "btn btn-secondary";
+    btnReset.style.fontSize = "10px";
+    btnReset.style.padding = "3px 8px";
+    btnReset.textContent = "Reset Transforms";
+    btnReset.addEventListener("click", () => {
+      acc.x = 0;
+      acc.y = 0;
+      acc.scaleX = 1.0;
+      acc.scaleY = 1.0;
+      acc.rotation = 0;
+      xCtrl.input.value = "0";
+      xCtrl.numInput.value = "0";
+      yCtrl.input.value = "0";
+      yCtrl.numInput.value = "0";
+      scaleXCtrl.input.value = "1";
+      scaleXCtrl.numInput.value = "1.00";
+      scaleYCtrl.input.value = "1";
+      scaleYCtrl.numInput.value = "1.00";
+      rotCtrl.input.value = "0";
+      rotCtrl.numInput.value = "0";
+      debounceSaveAccessory(acc);
+    });
+    actionRow.appendChild(btnReset);
+    drawer.appendChild(actionRow);
+
+    // Toggle drawer on header click
+    header.addEventListener("click", () => {
+      if (openDrawers.has(acc.id)) {
+        openDrawers.delete(acc.id);
+        drawer.classList.remove("open");
+        expandIcon.textContent = "▼";
+      } else {
+        openDrawers.add(acc.id);
+        drawer.classList.add("open");
+        expandIcon.textContent = "▲";
+      }
+    });
+
+    card.appendChild(header);
+    card.appendChild(drawer);
+    accessoryListEl.appendChild(card);
+  });
+}
+
+async function equipNewAccessory(filename) {
+  const baseName = filename.replace(/\.svg$/i, "");
+  const cleanId = baseName.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+  const uniqueId = `${cleanId}_${Date.now().toString(36).slice(-4)}`;
+
+  const displayName = baseName
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase());
+
+  const newAcc = {
+    id: uniqueId,
+    file: filename,
+    name: displayName,
+    target: "layer_head",
+    x: 0,
+    y: 0,
+    scaleX: 1.0,
+    scaleY: 1.0,
+    rotation: 0,
+    order: "front",
+    enabled: true
+  };
+
+  openDrawers.add(uniqueId);
+  try {
+    const res = await fetch("/api/accessories/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newAcc)
+    });
+    if (res.ok) {
+      await loadAccessories();
+      flashAccessorySaved();
+    }
+  } catch (err) {
+    console.error("[Studio Tracker] Equip accessory error:", err);
+  }
+}
+
+if (btnRefreshAccessories) {
+  btnRefreshAccessories.addEventListener("click", async () => {
+    btnRefreshAccessories.disabled = true;
+    btnRefreshAccessories.textContent = "↻ ...";
+    try {
+      await loadAccessories();
+    } finally {
+      btnRefreshAccessories.disabled = false;
+      btnRefreshAccessories.textContent = "↻ Refresh";
+    }
+  });
+}
+
+loadAccessories();
+
+// ==========================================
+// Dressing Room Modal Interactive Controller
+// ==========================================
+let activeModalAccId = null;
+let currentNudgeStep = 1;
+
+const dressingRoomModal = document.getElementById("dressing-room-modal");
+const btnOpenDressingRoom = document.getElementById("btn-open-dressing-room");
+const btnCloseDressingRoom = document.getElementById("btn-close-dressing-room");
+const modalBtnDone = document.getElementById("modal-btn-done");
+const modalBtnReset = document.getElementById("modal-btn-reset");
+const modalSaveIndicator = document.getElementById("modal-save-indicator");
+
+const modalAccessorySelect = document.getElementById("modal-accessory-select");
+const modalAccessoryToggle = document.getElementById("modal-accessory-toggle");
+const modalTargetSelect = document.getElementById("modal-target-select");
+const modalOrderSelect = document.getElementById("modal-order-select");
+const modalExpressionSelect = document.getElementById("modal-expression-select");
+
+const modalSliderX = document.getElementById("modal-slider-x");
+const modalNumX = document.getElementById("modal-num-x");
+const modalSliderY = document.getElementById("modal-slider-y");
+const modalNumY = document.getElementById("modal-num-y");
+const modalSliderSX = document.getElementById("modal-slider-sx");
+const modalNumSX = document.getElementById("modal-num-sx");
+const modalSliderSY = document.getElementById("modal-slider-sy");
+const modalNumSY = document.getElementById("modal-num-sy");
+const modalSliderRot = document.getElementById("modal-slider-rot");
+const modalNumRot = document.getElementById("modal-num-rot");
+const modalLinkScale = document.getElementById("modal-link-scale");
+
+const fittingFrame = document.getElementById("fitting-frame");
+const fittingCrosshair = document.getElementById("fitting-crosshair");
+const checkShowCrosshair = document.getElementById("check-show-crosshair");
+const fittingZoomBadge = document.getElementById("fitting-zoom-badge");
+const btnZoomReset = document.getElementById("btn-zoom-reset");
+const btnZoomHead = document.getElementById("btn-zoom-head");
+const btnZoomTight = document.getElementById("btn-zoom-tight");
+const btnReloadFitting = document.getElementById("btn-reload-fitting");
+
+const nudgeUp = document.getElementById("nudge-up");
+const nudgeDown = document.getElementById("nudge-down");
+const nudgeLeft = document.getElementById("nudge-left");
+const nudgeRight = document.getElementById("nudge-right");
+const nudgeCenter = document.getElementById("nudge-center");
+const nudgeStepBtns = document.querySelectorAll(".nudge-step-btn");
+
+const btnRotLeft = document.getElementById("btn-rot-left");
+const btnRotZero = document.getElementById("btn-rot-zero");
+const btnRotRight = document.getElementById("btn-rot-right");
+
+function populateExpressionSelect(selectEl, selectedVal = "") {
+  if (!selectEl) return;
+  const currentVal = selectedVal || "";
+  selectEl.innerHTML = "";
+
+  const alwaysOpt = document.createElement("option");
+  alwaysOpt.value = "";
+  alwaysOpt.textContent = "Always Visible";
+  selectEl.appendChild(alwaysOpt);
+
+  const seen = new Set([""]);
+  if (Array.isArray(availableExpressions)) {
+    availableExpressions.forEach(expr => {
+      if (!seen.has(expr)) {
+        seen.add(expr);
+        const opt = document.createElement("option");
+        opt.value = expr;
+        opt.textContent = `${expr.charAt(0).toUpperCase() + expr.slice(1)} (Expression Trigger)`;
+        selectEl.appendChild(opt);
+      }
+    });
+  }
+
+  // If custom expression value is set and not in available list
+  if (currentVal && !seen.has(currentVal)) {
+    const customOpt = document.createElement("option");
+    customOpt.value = currentVal;
+    customOpt.textContent = `${customOpt.value} (Custom Expression)`;
+    selectEl.appendChild(customOpt);
+  }
+
+  const addCustomOpt = document.createElement("option");
+  addCustomOpt.value = "__custom__";
+  addCustomOpt.textContent = "+ Custom Expression...";
+  selectEl.appendChild(addCustomOpt);
+
+  selectEl.value = currentVal;
+}
+
+function updateAllExpressionDropdowns() {
+  if (modalExpressionSelect) {
+    const acc = getActiveModalAcc();
+    populateExpressionSelect(modalExpressionSelect, acc ? acc.expression : "");
+  }
+  const allCardSelects = document.querySelectorAll(".acc-expr-select");
+  allCardSelects.forEach(sel => {
+    const card = sel.closest(".accessory-card");
+    if (card && card.dataset.accId) {
+      const acc = configuredAccessories.find(a => a.id === card.dataset.accId);
+      if (acc && document.activeElement !== sel) {
+        populateExpressionSelect(sel, acc.expression || "");
+      }
+    }
+  });
+}
+
+function flashModalSaved() {
+  if (modalSaveIndicator) {
+    modalSaveIndicator.style.opacity = "1";
+    setTimeout(() => {
+      modalSaveIndicator.style.opacity = "0";
+    }, 1200);
+  }
+}
+
+function getActiveModalAcc() {
+  if (!activeModalAccId) return null;
+  return configuredAccessories.find(a => a.id === activeModalAccId) || null;
+}
+
+function syncModalControlsFromAcc(acc) {
+  if (!acc) {
+    if (modalAccessorySelect) modalAccessorySelect.value = "";
+    return;
+  }
+
+  if (modalAccessorySelect) modalAccessorySelect.value = acc.id;
+  if (modalAccessoryToggle) modalAccessoryToggle.checked = Boolean(acc.enabled);
+
+  if (modalTargetSelect) {
+    if (!["layer_head", "head", "root_svg"].includes(acc.target)) {
+      const customOpt = document.createElement("option");
+      customOpt.value = acc.target;
+      customOpt.textContent = acc.target;
+      modalTargetSelect.appendChild(customOpt);
+    }
+    modalTargetSelect.value = acc.target || "layer_head";
+  }
+
+  if (modalOrderSelect) {
+    modalOrderSelect.value = acc.order || "front";
+  }
+
+  if (modalExpressionSelect) {
+    populateExpressionSelect(modalExpressionSelect, acc.expression || "");
+  }
+
+  const xVal = acc.x || 0;
+  if (modalSliderX) modalSliderX.value = String(xVal);
+  if (modalNumX) modalNumX.value = String(xVal);
+
+  const yVal = acc.y || 0;
+  if (modalSliderY) modalSliderY.value = String(yVal);
+  if (modalNumY) modalNumY.value = String(yVal);
+
+  const sxVal = acc.scaleX !== undefined ? acc.scaleX : 1.0;
+  if (modalSliderSX) modalSliderSX.value = String(sxVal);
+  if (modalNumSX) modalNumSX.value = String(parseFloat(sxVal).toFixed(2));
+
+  const syVal = acc.scaleY !== undefined ? acc.scaleY : 1.0;
+  if (modalSliderSY) modalSliderSY.value = String(syVal);
+  if (modalNumSY) modalNumSY.value = String(parseFloat(syVal).toFixed(2));
+
+  const rotVal = acc.rotation || 0;
+  if (modalSliderRot) modalSliderRot.value = String(rotVal);
+  if (modalNumRot) modalNumRot.value = String(rotVal);
+}
+
+function openDressingRoom(accId = null) {
+  if (!dressingRoomModal) return;
+
+  // Populate accessory select options
+  if (modalAccessorySelect) {
+    modalAccessorySelect.innerHTML = "";
+    if (configuredAccessories.length === 0) {
+      modalAccessorySelect.innerHTML = '<option value="">No accessories available</option>';
+    } else {
+      configuredAccessories.forEach(acc => {
+        const opt = document.createElement("option");
+        opt.value = acc.id;
+        opt.textContent = `${acc.name || acc.file} (${acc.enabled ? "Equipped" : "Off"})`;
+        modalAccessorySelect.appendChild(opt);
+      });
+    }
+  }
+
+  // Determine active accessory ID
+  if (accId && configuredAccessories.some(a => a.id === accId)) {
+    activeModalAccId = accId;
+  } else if (configuredAccessories.length > 0) {
+    activeModalAccId = configuredAccessories[0].id;
+  } else {
+    activeModalAccId = null;
+  }
+
+  syncModalControlsFromAcc(getActiveModalAcc());
+
+  // Show modal
+  dressingRoomModal.style.display = "flex";
+
+  // Reload fitting mirror iframe
+  if (fittingFrame) {
+    fittingFrame.src = `/overlay?t=${Date.now()}`;
+  }
+}
+
+function closeDressingRoom() {
+  if (!dressingRoomModal) return;
+  dressingRoomModal.style.display = "none";
+  renderAccessoriesUI();
+  reloadAvatarFrame();
+}
+
+if (btnOpenDressingRoom) {
+  btnOpenDressingRoom.addEventListener("click", () => openDressingRoom());
+}
+
+if (btnCloseDressingRoom) {
+  btnCloseDressingRoom.addEventListener("click", closeDressingRoom);
+}
+
+if (modalBtnDone) {
+  modalBtnDone.addEventListener("click", closeDressingRoom);
+}
+
+// Close on backdrop click
+if (dressingRoomModal) {
+  dressingRoomModal.addEventListener("click", (e) => {
+    if (e.target === dressingRoomModal) {
+      closeDressingRoom();
+    }
+  });
+}
+
+// Close on Escape key & D-pad keyboard navigation
+window.addEventListener("keydown", (e) => {
+  if (!dressingRoomModal || dressingRoomModal.style.display === "none") return;
+
+  if (e.key === "Escape") {
+    closeDressingRoom();
+    return;
+  }
+
+  // If focused inside a number or text input, allow normal typing
+  if (e.target.tagName === "INPUT" && (e.target.type === "number" || e.target.type === "text")) {
+    return;
+  }
+
+  const acc = getActiveModalAcc();
+  if (!acc) return;
+
+  const step = e.shiftKey ? currentNudgeStep * 10 : currentNudgeStep;
+  if (e.key === "ArrowUp") {
+    e.preventDefault();
+    acc.y = (acc.y || 0) - step;
+    syncModalControlsFromAcc(acc);
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  } else if (e.key === "ArrowDown") {
+    e.preventDefault();
+    acc.y = (acc.y || 0) + step;
+    syncModalControlsFromAcc(acc);
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  } else if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    acc.x = (acc.x || 0) - step;
+    syncModalControlsFromAcc(acc);
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  } else if (e.key === "ArrowRight") {
+    e.preventDefault();
+    acc.x = (acc.x || 0) + step;
+    syncModalControlsFromAcc(acc);
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  }
+});
+
+// Accessory Switcher in Modal
+if (modalAccessorySelect) {
+  modalAccessorySelect.addEventListener("change", (e) => {
+    activeModalAccId = e.target.value;
+    syncModalControlsFromAcc(getActiveModalAcc());
+  });
+}
+
+if (modalAccessoryToggle) {
+  modalAccessoryToggle.addEventListener("change", async (e) => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.enabled = modalAccessoryToggle.checked;
+    try {
+      await fetch("/api/accessories/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: acc.id })
+      });
+      flashModalSaved();
+      flashAccessorySaved();
+      if (modalAccessorySelect) {
+        const opt = modalAccessorySelect.querySelector(`option[value="${acc.id}"]`);
+        if (opt) opt.textContent = `${acc.name || acc.file} (${acc.enabled ? "Equipped" : "Off"})`;
+      }
+    } catch (err) {
+      console.error("[Studio Tracker] Modal toggle error:", err);
+    }
+  });
+}
+
+if (modalTargetSelect) {
+  modalTargetSelect.addEventListener("change", (e) => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.target = e.target.value;
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+if (modalOrderSelect) {
+  modalOrderSelect.addEventListener("change", (e) => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.order = e.target.value;
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+if (modalExpressionSelect) {
+  modalExpressionSelect.addEventListener("change", (e) => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    if (e.target.value === "__custom__") {
+      const customName = prompt("Enter custom expression trigger name (e.g. sweat, crying, angry):");
+      if (customName && customName.trim()) {
+        const clean = customName.trim().toLowerCase();
+        acc.expression = clean;
+        populateExpressionSelect(modalExpressionSelect, clean);
+        debounceSaveAccessory(acc);
+        flashModalSaved();
+      } else {
+        modalExpressionSelect.value = acc.expression || "";
+      }
+      return;
+    }
+    acc.expression = e.target.value;
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+// Modal Slider & Input Binding Helper
+function bindModalSlider(sliderEl, numEl, onVal) {
+  if (sliderEl && numEl) {
+    sliderEl.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      numEl.value = val.toFixed(sliderEl.step < 1 ? 2 : 0);
+      onVal(val);
+    });
+    numEl.addEventListener("input", (e) => {
+      const val = parseFloat(e.target.value);
+      if (!isNaN(val)) {
+        sliderEl.value = String(val);
+        onVal(val);
+      }
+    });
+  }
+}
+
+bindModalSlider(modalSliderX, modalNumX, (val) => {
+  const acc = getActiveModalAcc();
+  if (!acc) return;
+  acc.x = val;
+  debounceSaveAccessory(acc);
+  flashModalSaved();
+});
+
+bindModalSlider(modalSliderY, modalNumY, (val) => {
+  const acc = getActiveModalAcc();
+  if (!acc) return;
+  acc.y = val;
+  debounceSaveAccessory(acc);
+  flashModalSaved();
+});
+
+bindModalSlider(modalSliderSX, modalNumSX, (val) => {
+  const acc = getActiveModalAcc();
+  if (!acc) return;
+  acc.scaleX = val;
+  if (modalLinkScale && modalLinkScale.checked) {
+    acc.scaleY = val;
+    if (modalSliderSY) modalSliderSY.value = String(val);
+    if (modalNumSY) modalNumSY.value = val.toFixed(2);
+  }
+  debounceSaveAccessory(acc);
+  flashModalSaved();
+});
+
+bindModalSlider(modalSliderSY, modalNumSY, (val) => {
+  const acc = getActiveModalAcc();
+  if (!acc) return;
+  acc.scaleY = val;
+  if (modalLinkScale && modalLinkScale.checked) {
+    acc.scaleX = val;
+    if (modalSliderSX) modalSliderSX.value = String(val);
+    if (modalNumSX) modalNumSX.value = val.toFixed(2);
+  }
+  debounceSaveAccessory(acc);
+  flashModalSaved();
+});
+
+bindModalSlider(modalSliderRot, modalNumRot, (val) => {
+  const acc = getActiveModalAcc();
+  if (!acc) return;
+  acc.rotation = val;
+  debounceSaveAccessory(acc);
+  flashModalSaved();
+});
+
+// Quick Rotation Buttons
+if (btnRotLeft) {
+  btnRotLeft.addEventListener("click", () => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.rotation = (acc.rotation || 0) - 15;
+    if (modalSliderRot) modalSliderRot.value = String(acc.rotation);
+    if (modalNumRot) modalNumRot.value = String(acc.rotation);
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+if (btnRotZero) {
+  btnRotZero.addEventListener("click", () => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.rotation = 0;
+    if (modalSliderRot) modalSliderRot.value = "0";
+    if (modalNumRot) modalNumRot.value = "0";
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+if (btnRotRight) {
+  btnRotRight.addEventListener("click", () => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.rotation = (acc.rotation || 0) + 15;
+    if (modalSliderRot) modalSliderRot.value = String(acc.rotation);
+    if (modalNumRot) modalNumRot.value = String(acc.rotation);
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+// Reset Transforms in Modal
+if (modalBtnReset) {
+  modalBtnReset.addEventListener("click", () => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.x = 0;
+    acc.y = 0;
+    acc.scaleX = 1.0;
+    acc.scaleY = 1.0;
+    acc.rotation = 0;
+    syncModalControlsFromAcc(acc);
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+// Nudge Step Selection
+nudgeStepBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    nudgeStepBtns.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentNudgeStep = parseInt(btn.dataset.step, 10) || 1;
+  });
+});
+
+// D-Pad Click Handlers
+function applyNudge(dx, dy) {
+  const acc = getActiveModalAcc();
+  if (!acc) return;
+  acc.x = (acc.x || 0) + dx;
+  acc.y = (acc.y || 0) + dy;
+  if (modalSliderX) modalSliderX.value = String(acc.x);
+  if (modalNumX) modalNumX.value = String(acc.x);
+  if (modalSliderY) modalSliderY.value = String(acc.y);
+  if (modalNumY) modalNumY.value = String(acc.y);
+  debounceSaveAccessory(acc);
+  flashModalSaved();
+}
+
+if (nudgeUp) nudgeUp.addEventListener("click", () => applyNudge(0, -currentNudgeStep));
+if (nudgeDown) nudgeDown.addEventListener("click", () => applyNudge(0, currentNudgeStep));
+if (nudgeLeft) nudgeLeft.addEventListener("click", () => applyNudge(-currentNudgeStep, 0));
+if (nudgeRight) nudgeRight.addEventListener("click", () => applyNudge(currentNudgeStep, 0));
+if (nudgeCenter) {
+  nudgeCenter.addEventListener("click", () => {
+    const acc = getActiveModalAcc();
+    if (!acc) return;
+    acc.x = 0;
+    acc.y = 0;
+    if (modalSliderX) modalSliderX.value = "0";
+    if (modalNumX) modalNumX.value = "0";
+    if (modalSliderY) modalSliderY.value = "0";
+    if (modalNumY) modalNumY.value = "0";
+    debounceSaveAccessory(acc);
+    flashModalSaved();
+  });
+}
+
+// Zoom & Mirror Controls
+if (btnZoomReset) {
+  btnZoomReset.addEventListener("click", () => {
+    if (fittingFrame) fittingFrame.style.transform = "scale(1)";
+    if (fittingZoomBadge) fittingZoomBadge.textContent = "1.0x Zoom";
+  });
+}
+if (btnZoomHead) {
+  btnZoomHead.addEventListener("click", () => {
+    if (fittingFrame) fittingFrame.style.transform = "scale(1.5) translateY(12%)";
+    if (fittingZoomBadge) fittingZoomBadge.textContent = "1.5x Head";
+  });
+}
+if (btnZoomTight) {
+  btnZoomTight.addEventListener("click", () => {
+    if (fittingFrame) fittingFrame.style.transform = "scale(2.0) translateY(18%)";
+    if (fittingZoomBadge) fittingZoomBadge.textContent = "2.0x Face";
+  });
+}
+if (btnReloadFitting) {
+  btnReloadFitting.addEventListener("click", () => {
+    if (fittingFrame) fittingFrame.src = `/overlay?t=${Date.now()}`;
+  });
+}
+if (checkShowCrosshair) {
+  checkShowCrosshair.addEventListener("change", (e) => {
+    if (fittingCrosshair) {
+      fittingCrosshair.style.display = e.target.checked ? "block" : "none";
+    }
+  });
+}
 

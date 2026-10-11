@@ -74,6 +74,8 @@ Avatar (Root SVG)
 
 > [!TIP]
 > Keep expression props (like `Sweat` or `Blush`) directly under the `Head` layer rather than inside `Eyes Open`. If an expression is placed inside `Eyes Open`, blinking will hide the entire group and temporarily hide the expression too!
+>
+> 💡 **Prefer Modular Accessories?** Instead of drawing all hats, sunglasses, props, and expression overlays directly inside your main avatar file, you can create them as standalone SVG files and attach them via SVGTuber's Dressing Room! See the [Modular Accessories & Dressing Room Guide](ACCESSORIES_GUIDE.md).
 
 ---
 

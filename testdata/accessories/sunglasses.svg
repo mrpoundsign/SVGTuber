@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 70" width="240" height="70">
+  <defs>
+    <linearGradient id="lensGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#18181b" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#27272a" stop-opacity="0.85"/>
+    </linearGradient>
+  </defs>
+  <!-- Frame & Temples -->
+  <path d="M 10 25 L 35 15 L 205 15 L 230 25 L 225 32 L 205 24 L 35 24 L 15 32 Z" fill="#09090b" stroke="#27272a" stroke-width="2"/>
+  <!-- Left Lens -->
+  <polygon points="25,22 105,22 98,58 35,58" fill="url(#lensGrad)" stroke="#09090b" stroke-width="3"/>
+  <!-- Right Lens -->
+  <polygon points="135,22 215,22 205,58 142,58" fill="url(#lensGrad)" stroke="#09090b" stroke-width="3"/>
+  <!-- Bridge -->
+  <rect x="103" y="24" width="34" height="6" rx="2" fill="#09090b"/>
+  <!-- White Glare Lines -->
+  <line x1="42" y1="28" x2="32" y2="52" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.65"/>
+  <line x1="50" y1="28" x2="42" y2="48" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.45"/>
+  <line x1="152" y1="28" x2="142" y2="52" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.65"/>
+  <line x1="160" y1="28" x2="152" y2="48" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" opacity="0.45"/>
+</svg>

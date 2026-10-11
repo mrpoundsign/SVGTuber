@@ -29,6 +29,7 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 - **Hybrid Microphone Lipsync:** Blend webcam facial expressions with microphone Web Audio RMS volume for natural, reliable conversational speech.
 - **Dynamic Expression Hotkeys:** Auto-discovers custom expression layers (like `isBlush`, `isSweat`, `isAngry`) from your SVG with in-tab hotkeys (`1`–`9`) and REST webhook endpoints for **Elgato Stream Deck** and **Touch Portal**.
 - **Instant Hot-Reloading:** Saving your avatar in Inkscape (`Ctrl+S`) immediately updates the puppet on stream without dropping frames or restarting OBS.
+- **Modular Accessories & Dressing Room:** Attach external SVG accessories (hats, glasses, pets, props) with real-time visual dragging, mouse wheel scaling, arrow key nudging, expression triggers, and per-avatar isolation.
 - **Background Resilient:** Web Worker clock and silent audio keep tracking active even when the Studio dashboard is running minimized or behind games.
 
 ---
@@ -64,20 +65,16 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 
 ---
 
-## 🎨 Artist & Rigging Guide
+## 🎨 Artist, Rigging & Accessories Guides
 
-Want to rig your own character in Inkscape? Check out our complete guide:
-
-📖 **[Read the Artist & Rigging Guide](docs/RIGGING_GUIDE.md)**
-- Layer hierarchy recommendations
-- Syntax for `[Follow]`, `[Dist]`, `[Show]`, `[Hide]`, `[Move]`, `[Scale]`, and `[Idle]`
-- Creating custom toggleable expressions and Stream Deck webhooks
+- 📖 **[Artist & Rigging Guide](docs/RIGGING_GUIDE.md)**: Layer hierarchies and syntax for `[Follow]`, `[Dist]`, `[Show]`, `[Hide]`, `[Move]`, `[Scale]`, `[Bounce]`, `[Sway]`, `[Chain]`, and `[Idle]`.
+- 📖 **[Modular Accessories & Dressing Room Guide](docs/ACCESSORIES_GUIDE.md)**: Attaching external SVG props, using the interactive Studio Dressing Room, setting expression triggers, and per-avatar anchor persistence.
 
 ---
 
 ## 🎮 Stream Deck & Touch Portal Integration
 
-SVGTuber exposes a REST API for remote expression triggers and scene automation:
+SVGTuber exposes a REST API for remote expression triggers, accessories, and scene automation:
 
 | Action | HTTP Request |
 |---|---|
@@ -85,6 +82,8 @@ SVGTuber exposes a REST API for remote expression triggers and scene automation:
 | **Set State** | `POST http://localhost:7420/api/expressions/set?name=<name>&active=true\|false` |
 | **Timed Trigger** | `POST http://localhost:7420/api/expressions/trigger?name=<name>&duration=3s` |
 | **Clear All Expressions** | `POST http://localhost:7420/api/expressions/reset` |
+| **List Accessories** | `GET http://localhost:7420/api/accessories?avatar=<name>` |
+| **Toggle Accessory** | `POST http://localhost:7420/api/accessories/toggle?avatar=<name>` |
 | **Reload Avatar Rig** | `POST http://localhost:7420/api/avatar/reload` |
 | **Neutral Pose Calibrate** | `POST http://localhost:7420/api/calibrate` |
 

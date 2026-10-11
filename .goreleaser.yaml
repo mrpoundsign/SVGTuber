@@ -37,9 +37,12 @@ archives:
     files:
       - src: testdata/test_avatar.svg
         dst: avatar.svg
+      - src: testdata/accessories/*
+        dst: accessories
       - LICENSE
       - README.md
       - docs/RIGGING_GUIDE.md
+      - docs/ACCESSORIES_GUIDE.md
 
 checksum:
   name_template: "checksums.txt"

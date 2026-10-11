@@ -30,7 +30,7 @@
      inkscape:window-x="1072"
      inkscape:window-y="-8"
      inkscape:window-maximized="1"
-     inkscape:current-layer="braid_seg_1" />
+     inkscape:current-layer="layer_head" />
   <defs
      id="defs4">
     <radialGradient
@@ -358,19 +358,6 @@
          id="path8"
          sodipodi:nodetypes="cccc"
          inkscape:label="Left brow" />
-    </g>
-    <g
-       id="expr_sweat"
-       inkscape:label="Sweat [Show {when: isSweat}]"
-       style="display:inline"
-       transform="translate(-8.5552698,-5.7035132)">
-      <path
-         d="m 333.15424,189.82605 c 0,0 -7,13 -7,21 a 7,7 0 0 0 14,0 c 0,-8 -7,-21 -7,-21 z"
-         fill="#38bdf8"
-         stroke="#0284c7"
-         stroke-width="1.5"
-         opacity="0.9"
-         id="path_sweat" />
     </g>
     <!-- Front Bangs / Hair with Parallax, Sway & Spring Physics -->
     <g

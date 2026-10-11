@@ -179,3 +179,151 @@ func TestScanAvatarDir(t *testing.T) {
 	}
 }
 
+func TestAccessoryManagement(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+
+	mgr, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	acc := AccessoryConfig{
+		ID:       "sunglasses",
+		File:     "sunglasses.svg",
+		Name:     "Cool Shades",
+		Target:   "layer_head",
+		X:        10,
+		Y:        20,
+		ScaleX:   1.2,
+		ScaleY:   1.2,
+		Rotation: 5,
+		Order:    "front",
+		Enabled:  false,
+	}
+
+	if err := mgr.SetAccessory(acc); err != nil {
+		t.Fatalf("SetAccessory failed: %v", err)
+	}
+
+	list := mgr.GetAccessories()
+	if len(list) != 1 {
+		t.Fatalf("Expected 1 accessory, got %d", len(list))
+	}
+	if list[0].ID != "sunglasses" || list[0].ScaleX != 1.2 {
+		t.Errorf("Unexpected accessory values: %+v", list[0])
+	}
+
+	// Toggle accessory
+	newState, err := mgr.ToggleAccessory("sunglasses")
+	if err != nil {
+		t.Fatalf("ToggleAccessory failed: %v", err)
+	}
+	if !newState {
+		t.Errorf("Expected enabled state to be true after toggle")
+	}
+
+	// Verify persistence
+	mgr2, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Reload failed: %v", err)
+	}
+	list2 := mgr2.GetAccessories()
+	if len(list2) != 1 || !list2[0].Enabled {
+		t.Errorf("Persisted accessory mismatch: %+v", list2)
+	}
+
+	// Remove accessory
+	if err := mgr.RemoveAccessory("sunglasses"); err != nil {
+		t.Fatalf("RemoveAccessory failed: %v", err)
+	}
+	if len(mgr.GetAccessories()) != 0 {
+		t.Errorf("Expected 0 accessories after removal")
+	}
+}
+
+func TestManager_PerAvatarAccessories(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+
+	mgr, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	avatar1 := "nana.svg"
+	avatar2 := "robots/bot.svg"
+
+	if err := mgr.SetActiveAvatar(avatar1); err != nil {
+		t.Fatalf("SetActiveAvatar failed: %v", err)
+	}
+
+	// Add accessory to avatar 1
+	acc1 := AccessoryConfig{
+		ID:         "cat_ears",
+		File:       "cat_ears.svg",
+		Name:       "Cat Ears",
+		Target:     "layer_head",
+		Expression: "blush",
+		Enabled:    true,
+	}
+	if err := mgr.SetAccessoryForAvatar(avatar1, acc1); err != nil {
+		t.Fatalf("SetAccessoryForAvatar failed: %v", err)
+	}
+
+	// Add different accessory to avatar 2
+	acc2 := AccessoryConfig{
+		ID:         "sweat",
+		File:       "sweat_drop.svg",
+		Name:       "Sweat Drop",
+		Target:     "Head",
+		Expression: "isSweat",
+		Enabled:    true,
+	}
+	if err := mgr.SetAccessoryForAvatar(avatar2, acc2); err != nil {
+		t.Fatalf("SetAccessoryForAvatar failed: %v", err)
+	}
+
+	// Verify avatar 1 has cat_ears
+	a1List := mgr.GetAccessoriesForAvatar(avatar1)
+	if len(a1List) != 1 || a1List[0].ID != "cat_ears" || a1List[0].Expression != "blush" {
+		t.Fatalf("Avatar 1 accessories mismatch: %+v", a1List)
+	}
+
+	// Verify avatar 2 has sweat
+	a2List := mgr.GetAccessoriesForAvatar(avatar2)
+	if len(a2List) != 1 || a2List[0].ID != "sweat" || a2List[0].Expression != "isSweat" {
+		t.Fatalf("Avatar 2 accessories mismatch: %+v", a2List)
+	}
+
+	// Verify GetAccessories() reflects active avatar (avatar1)
+	activeList := mgr.GetAccessories()
+	if len(activeList) != 1 || activeList[0].ID != "cat_ears" {
+		t.Fatalf("Active avatar accessories mismatch: %+v", activeList)
+	}
+
+	// Switch active avatar to avatar2
+	if err := mgr.SetActiveAvatar(avatar2); err != nil {
+		t.Fatalf("SetActiveAvatar failed: %v", err)
+	}
+	activeList2 := mgr.GetAccessories()
+	if len(activeList2) != 1 || activeList2[0].ID != "sweat" {
+		t.Fatalf("Switched active avatar accessories mismatch: %+v", activeList2)
+	}
+
+	// Reload from disk and verify persistence across avatars
+	mgrReloaded, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Reload failed: %v", err)
+	}
+	a1Reloaded := mgrReloaded.GetAccessoriesForAvatar(avatar1)
+	if len(a1Reloaded) != 1 || a1Reloaded[0].ID != "cat_ears" || a1Reloaded[0].Expression != "blush" {
+		t.Fatalf("Reloaded avatar 1 accessories mismatch: %+v", a1Reloaded)
+	}
+	a2Reloaded := mgrReloaded.GetAccessoriesForAvatar(avatar2)
+	if len(a2Reloaded) != 1 || a2Reloaded[0].ID != "sweat" || a2Reloaded[0].Expression != "isSweat" {
+		t.Fatalf("Reloaded avatar 2 accessories mismatch: %+v", a2Reloaded)
+	}
+}
+
+

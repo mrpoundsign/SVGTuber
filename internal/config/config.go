@@ -49,14 +49,32 @@ type AudioSettings struct {
 	BounceAmount float64 `json:"bounceAmount"` // Multiplier on voice-reactive bounce height and squash (default: 1.0)
 }
 
+// AccessoryConfig represents an external SVG accessory attachment.
+type AccessoryConfig struct {
+	ID       string  `json:"id"`               // Unique identifier, e.g. "sunglasses"
+	File     string  `json:"file"`             // Relative filename in accessories/ directory
+	Name     string  `json:"name,omitempty"`   // User-friendly display name
+	Target   string  `json:"target,omitempty"` // Anchor element ID in avatar SVG (e.g. "layer_head", "head")
+	X        float64 `json:"x"`                // Horizontal offset in pixels
+	Y        float64 `json:"y"`                // Vertical offset in pixels
+	ScaleX   float64 `json:"scaleX"`           // Horizontal scale/stretch (default: 1.0)
+	ScaleY   float64 `json:"scaleY"`           // Vertical scale/stretch (default: 1.0)
+	Rotation float64 `json:"rotation"`         // Rotation degrees
+	Order      string  `json:"order,omitempty"`  // Layer order: "front" (default) or "back"
+	Enabled    bool    `json:"enabled"`          // Whether accessory is equipped
+	Expression string  `json:"expression,omitempty"` // Optional trigger expression (e.g. "sweat", "blush", or empty for always)
+}
+
 // Settings represents the complete user configuration.
 type Settings struct {
-	Version       int              `json:"version"`
-	AvatarDir     string           `json:"avatarDir,omitempty"`     // Directory containing avatar SVGs
-	CurrentAvatar string           `json:"currentAvatar,omitempty"` // Relative path/filename of active avatar within AvatarDir
-	AvatarPath    string           `json:"avatarPath,omitempty"`    // Full absolute path (for backwards compatibility)
-	Tracking      TrackingSettings `json:"tracking"`
-	Audio         AudioSettings    `json:"audio"`
+	Version           int                          `json:"version"`
+	AvatarDir         string                       `json:"avatarDir,omitempty"`     // Directory containing avatar SVGs
+	CurrentAvatar     string                       `json:"currentAvatar,omitempty"` // Relative path/filename of active avatar within AvatarDir
+	AvatarPath        string                       `json:"avatarPath,omitempty"`    // Full absolute path (for backwards compatibility)
+	Tracking          TrackingSettings             `json:"tracking"`
+	Audio             AudioSettings                `json:"audio"`
+	Accessories       []AccessoryConfig            `json:"accessories,omitempty"`       // Active / default accessories fallback
+	AvatarAccessories map[string][]AccessoryConfig `json:"avatarAccessories,omitempty"` // Per-avatar accessory configurations
 }
 
 // DefaultSettings returns a initialized Settings object with tuned defaults.
@@ -182,6 +200,14 @@ func (m *Manager) GetActiveAvatarPath() string {
 	return m.settings.AvatarPath
 }
 
+func normalizeAvatarKey(key string) string {
+	k := filepath.ToSlash(filepath.Clean(strings.TrimSpace(key)))
+	if k == "." || k == "/" || k == "" {
+		return ""
+	}
+	return k
+}
+
 // SetAvatarPath updates the avatar path, extracts its directory and relative name, and persists it to disk.
 func (m *Manager) SetAvatarPath(p string) error {
 	m.mu.Lock()
@@ -192,6 +218,13 @@ func (m *Manager) SetAvatarPath(p string) error {
 	m.settings.AvatarPath = abs
 	m.settings.AvatarDir = filepath.Dir(abs)
 	m.settings.CurrentAvatar = filepath.Base(abs)
+	k := normalizeAvatarKey(m.settings.CurrentAvatar)
+	if m.settings.AvatarAccessories != nil && k != "" {
+		if list, exists := m.settings.AvatarAccessories[k]; exists {
+			m.settings.Accessories = make([]AccessoryConfig, len(list))
+			copy(m.settings.Accessories, list)
+		}
+	}
 	m.mu.Unlock()
 	return m.Save()
 }
@@ -209,6 +242,13 @@ func (m *Manager) SetActiveAvatar(relPath string) error {
 	if m.settings.AvatarDir != "" {
 		m.settings.AvatarPath = filepath.Join(m.settings.AvatarDir, filepath.FromSlash(cleanRel))
 	}
+	k := normalizeAvatarKey(cleanRel)
+	if m.settings.AvatarAccessories != nil && k != "" {
+		if list, exists := m.settings.AvatarAccessories[k]; exists {
+			m.settings.Accessories = make([]AccessoryConfig, len(list))
+			copy(m.settings.Accessories, list)
+		}
+	}
 	m.mu.Unlock()
 	return m.Save()
 }
@@ -219,6 +259,179 @@ func (m *Manager) ScanAvailableAvatars() ([]string, error) {
 	dir := m.settings.AvatarDir
 	m.mu.RUnlock()
 	return ScanAvatarDir(dir)
+}
+
+// GetAccessories returns a copy of all configured accessories for the active avatar.
+func (m *Manager) GetAccessories() []AccessoryConfig {
+	return m.GetAccessoriesForAvatar("")
+}
+
+// GetAccessoriesForAvatar returns accessories configured for a specific avatar (or active avatar if empty).
+func (m *Manager) GetAccessoriesForAvatar(avatarKey string) []AccessoryConfig {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	k := normalizeAvatarKey(avatarKey)
+	isActive := false
+	if k == "" {
+		k = normalizeAvatarKey(m.settings.CurrentAvatar)
+		isActive = true
+	} else if k == normalizeAvatarKey(m.settings.CurrentAvatar) {
+		isActive = true
+	}
+
+	var list []AccessoryConfig
+	if m.settings.AvatarAccessories != nil && k != "" {
+		if specific, exists := m.settings.AvatarAccessories[k]; exists {
+			list = specific
+		} else if len(m.settings.AvatarAccessories) > 0 {
+			list = []AccessoryConfig{}
+		}
+	}
+	if list == nil {
+		if isActive {
+			list = m.settings.Accessories
+		} else {
+			list = []AccessoryConfig{}
+		}
+	}
+
+	out := make([]AccessoryConfig, len(list))
+	copy(out, list)
+	return out
+}
+
+// SetAccessory adds or updates an accessory configuration for the active avatar and persists to disk.
+func (m *Manager) SetAccessory(acc AccessoryConfig) error {
+	return m.SetAccessoryForAvatar("", acc)
+}
+
+// SetAccessoryForAvatar adds or updates an accessory for a specific avatar.
+func (m *Manager) SetAccessoryForAvatar(avatarKey string, acc AccessoryConfig) error {
+	m.mu.Lock()
+	if m.settings.AvatarAccessories == nil {
+		m.settings.AvatarAccessories = make(map[string][]AccessoryConfig)
+	}
+
+	k := normalizeAvatarKey(avatarKey)
+	if k == "" {
+		k = normalizeAvatarKey(m.settings.CurrentAvatar)
+	}
+	if k == "" {
+		k = "default"
+	}
+
+	currentList := m.settings.AvatarAccessories[k]
+	if currentList == nil && len(m.settings.AvatarAccessories) == 0 && len(m.settings.Accessories) > 0 {
+		currentList = append([]AccessoryConfig(nil), m.settings.Accessories...)
+	}
+
+	found := false
+	for i, existing := range currentList {
+		if existing.ID == acc.ID {
+			currentList[i] = acc
+			found = true
+			break
+		}
+	}
+	if !found {
+		currentList = append(currentList, acc)
+	}
+
+	m.settings.AvatarAccessories[k] = currentList
+	if k == normalizeAvatarKey(m.settings.CurrentAvatar) || m.settings.CurrentAvatar == "" {
+		m.settings.Accessories = append([]AccessoryConfig(nil), currentList...)
+	}
+	m.mu.Unlock()
+	return m.Save()
+}
+
+// ToggleAccessory toggles the enabled state of an accessory for the active avatar.
+func (m *Manager) ToggleAccessory(id string) (bool, error) {
+	return m.ToggleAccessoryForAvatar("", id)
+}
+
+// ToggleAccessoryForAvatar toggles an accessory's enabled state for a specific avatar.
+func (m *Manager) ToggleAccessoryForAvatar(avatarKey string, id string) (bool, error) {
+	m.mu.Lock()
+	if m.settings.AvatarAccessories == nil {
+		m.settings.AvatarAccessories = make(map[string][]AccessoryConfig)
+	}
+
+	k := normalizeAvatarKey(avatarKey)
+	if k == "" {
+		k = normalizeAvatarKey(m.settings.CurrentAvatar)
+	}
+	if k == "" {
+		k = "default"
+	}
+
+	currentList := m.settings.AvatarAccessories[k]
+	if currentList == nil && len(m.settings.AvatarAccessories) == 0 && len(m.settings.Accessories) > 0 {
+		currentList = append([]AccessoryConfig(nil), m.settings.Accessories...)
+	}
+
+	var newState bool
+	found := false
+	for i, existing := range currentList {
+		if existing.ID == id {
+			currentList[i].Enabled = !currentList[i].Enabled
+			newState = currentList[i].Enabled
+			found = true
+			break
+		}
+	}
+	if !found {
+		m.mu.Unlock()
+		return false, fmt.Errorf("accessory with ID %q not found for avatar %q", id, k)
+	}
+
+	m.settings.AvatarAccessories[k] = currentList
+	if k == normalizeAvatarKey(m.settings.CurrentAvatar) || m.settings.CurrentAvatar == "" {
+		m.settings.Accessories = append([]AccessoryConfig(nil), currentList...)
+	}
+	m.mu.Unlock()
+	return newState, m.Save()
+}
+
+// RemoveAccessory removes an accessory for the active avatar.
+func (m *Manager) RemoveAccessory(id string) error {
+	return m.RemoveAccessoryForAvatar("", id)
+}
+
+// RemoveAccessoryForAvatar removes an accessory for a specific avatar.
+func (m *Manager) RemoveAccessoryForAvatar(avatarKey string, id string) error {
+	m.mu.Lock()
+	if m.settings.AvatarAccessories == nil {
+		m.settings.AvatarAccessories = make(map[string][]AccessoryConfig)
+	}
+
+	k := normalizeAvatarKey(avatarKey)
+	if k == "" {
+		k = normalizeAvatarKey(m.settings.CurrentAvatar)
+	}
+	if k == "" {
+		k = "default"
+	}
+
+	currentList := m.settings.AvatarAccessories[k]
+	if currentList == nil && len(m.settings.AvatarAccessories) == 0 && len(m.settings.Accessories) > 0 {
+		currentList = append([]AccessoryConfig(nil), m.settings.Accessories...)
+	}
+
+	filtered := make([]AccessoryConfig, 0, len(currentList))
+	for _, acc := range currentList {
+		if acc.ID != id {
+			filtered = append(filtered, acc)
+		}
+	}
+	m.settings.AvatarAccessories[k] = filtered
+
+	if k == normalizeAvatarKey(m.settings.CurrentAvatar) || m.settings.CurrentAvatar == "" {
+		m.settings.Accessories = append([]AccessoryConfig(nil), filtered...)
+	}
+	m.mu.Unlock()
+	return m.Save()
 }
 
 // Update updates the active settings and persists them to disk.

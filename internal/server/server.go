@@ -39,6 +39,7 @@ type Server struct {
 	rigParser          rig.Parser
 	preprocessedAvatar []byte
 	avatarWatcher      *watcher.AvatarWatcher
+	accessoriesDir     string
 	expMgr        *ExpressionManager
 	trackerMu     sync.RWMutex
 	trackerConns  map[*websocket.Conn]chan []byte
@@ -67,19 +68,24 @@ func New(port int, avatarPath string, hub *Hub, engine *tracking.Engine, cfg ...
 		if cm.GetCurrentAvatar() != "" {
 			currentAvatar = cm.GetCurrentAvatar()
 			absAvatar = filepath.Join(avatarDir, filepath.FromSlash(currentAvatar))
+		} else {
+			_ = cm.SetActiveAvatar(currentAvatar)
 		}
 	}
 
+	accessoriesDir := filepath.Join(avatarDir, "accessories")
+
 	s := &Server{
-		port:          port,
-		avatarPath:    absAvatar,
-		avatarDir:     avatarDir,
-		currentAvatar: currentAvatar,
-		hub:           hub,
-		engine:        engine,
-		configMgr:     cm,
-		rigParser:     rig.DefaultParser,
-		trackerConns:  make(map[*websocket.Conn]chan []byte),
+		port:           port,
+		avatarPath:     absAvatar,
+		avatarDir:      avatarDir,
+		accessoriesDir: accessoriesDir,
+		currentAvatar:  currentAvatar,
+		hub:            hub,
+		engine:         engine,
+		configMgr:      cm,
+		rigParser:      rig.DefaultParser,
+		trackerConns:   make(map[*websocket.Conn]chan []byte),
 	}
 
 	expMgr := NewExpressionManager(func(active map[string]bool) {
@@ -176,6 +182,13 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/avatars", s.handleAPIAvatars)
 	mux.HandleFunc("/api/avatars/select", s.handleAPIAvatarSelect)
 
+	// Accessories REST endpoints & static file server
+	mux.HandleFunc("/accessories/", s.handleAccessoryFile)
+	mux.HandleFunc("/api/accessories", s.handleAPIAccessories)
+	mux.HandleFunc("/api/accessories/toggle", s.handleAPIAccessoryToggle)
+	mux.HandleFunc("/api/accessories/update", s.handleAPIAccessoryUpdate)
+	mux.HandleFunc("/api/accessories/remove", s.handleAPIAccessoryRemove)
+
 	// Initial parse of SVG rig definition
 	if _, err := s.ReloadRig(); err != nil {
 		log.Printf("[Warning] Initial rig parse failed: %v", err)
@@ -258,13 +271,24 @@ func (s *Server) handleOverlayWS(w http.ResponseWriter, r *http.Request) {
 	s.hub.Register(conn)
 	defer s.hub.Unregister(conn)
 
-	// Send initial active expressions to new overlay connection
+	// Send initial active expressions and accessories to new overlay connection
 	if s.expMgr != nil {
 		active := s.expMgr.GetActive()
 		if len(active) > 0 {
 			if data, err := json.Marshal(map[string]any{
 				"type":        "expression_update",
 				"expressions": active,
+			}); err == nil {
+				_ = conn.Write(r.Context(), websocket.MessageText, data)
+			}
+		}
+	}
+	if s.configMgr != nil {
+		accs := s.configMgr.GetAccessories()
+		if len(accs) > 0 {
+			if data, err := json.Marshal(map[string]any{
+				"type":        "accessory_update",
+				"accessories": accs,
 			}); err == nil {
 				_ = conn.Write(r.Context(), websocket.MessageText, data)
 			}
@@ -537,6 +561,7 @@ func (s *Server) SwitchAvatar(relPath string) error {
 	}
 
 	s.hub.BroadcastReload()
+	s.broadcastAccessoryUpdate()
 	s.broadcastTracker(map[string]any{
 		"type":          "avatar_swapped",
 		"currentAvatar": s.currentAvatar,
@@ -584,9 +609,8 @@ func (s *Server) ReloadRig() (*rig.RigDefinition, error) {
 	s.rigMu.Unlock()
 
 	if s.expMgr != nil {
-		available := ExtractExpressionsFromRig(rigDef)
-		s.expMgr.SetAvailable(available)
-		log.Printf("[Server] Discovered %d expressions from avatar: %v", len(available), available)
+		available := s.refreshAvailableExpressions(rigDef)
+		log.Printf("[Server] Discovered %d expressions (avatar + accessories): %v", len(available), available)
 	}
 
 	log.Printf("[Server] Loaded rig with %d rigged elements.", len(rigDef.Elements))
@@ -858,4 +882,295 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		return s.httpServer.Shutdown(ctx)
 	}
 	return nil
+}
+
+func (s *Server) handleAccessoryFile(w http.ResponseWriter, r *http.Request) {
+	relPath := strings.TrimPrefix(r.URL.Path, "/accessories/")
+	cleanRel := filepath.Clean(filepath.FromSlash(relPath))
+	if strings.HasPrefix(cleanRel, "..") {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	s.rigMu.RLock()
+	accDir := s.accessoriesDir
+	s.rigMu.RUnlock()
+
+	fullPath := filepath.Join(accDir, filepath.FromSlash(cleanRel))
+	f, err := os.Open(fullPath)
+	if err != nil {
+		fallbackPath := filepath.Join("testdata", "accessories", filepath.FromSlash(cleanRel))
+		if fallbackF, fallbackErr := os.Open(fallbackPath); fallbackErr == nil {
+			f = fallbackF
+			err = nil
+		}
+	}
+	if err != nil {
+		http.Error(w, "accessory not found", http.StatusNotFound)
+		return
+	}
+	defer func() { _ = f.Close() }()
+
+	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	_, _ = io.Copy(w, f)
+}
+
+func (s *Server) refreshAvailableExpressions(rigDef *rig.RigDefinition) []string {
+	if s.expMgr == nil {
+		return nil
+	}
+	available := ExtractExpressionsFromRig(rigDef)
+	seen := make(map[string]bool)
+	for _, e := range available {
+		seen[e] = true
+	}
+
+	// 1. Add any expressions declared on active accessories
+	if s.configMgr != nil {
+		for _, acc := range s.configMgr.GetAccessories() {
+			if acc.Expression != "" {
+				clean := normalizeExpressionName(acc.Expression)
+				if clean != "" && !seen[clean] {
+					seen[clean] = true
+					available = append(available, clean)
+				}
+			}
+		}
+	}
+
+	// 2. Also scan accessory SVG files in accessories directory for any directives like [Show {when: is...}] or [Expression {name: ...}]
+	s.rigMu.RLock()
+	accDir := s.accessoriesDir
+	s.rigMu.RUnlock()
+	if accDir != "" {
+		if entries, err := os.ReadDir(accDir); err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".svg") {
+					path := filepath.Join(accDir, entry.Name())
+					if data, err := os.ReadFile(path); err == nil {
+						if accRig, err := rig.DefaultParser.Parse(data); err == nil {
+							accExprs := ExtractExpressionsFromRig(accRig)
+							for _, e := range accExprs {
+								if !seen[e] {
+									seen[e] = true
+									available = append(available, e)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	s.expMgr.SetAvailable(available)
+	return available
+}
+
+func (s *Server) handleAPIAccessories(w http.ResponseWriter, r *http.Request) {
+	targetAvatar := r.URL.Query().Get("avatar")
+	s.rigMu.RLock()
+	currentAvatar := s.currentAvatar
+	accDir := s.accessoriesDir
+	s.rigMu.RUnlock()
+	if targetAvatar == "" {
+		targetAvatar = currentAvatar
+	}
+
+	availableFiles, _ := config.ScanAvatarDir(accDir)
+	if len(availableFiles) == 0 {
+		if fallbackFiles, err := config.ScanAvatarDir(filepath.Join("testdata", "accessories")); err == nil && len(fallbackFiles) > 0 {
+			availableFiles = fallbackFiles
+		}
+	}
+
+	var configured []config.AccessoryConfig
+	if s.configMgr != nil {
+		configured = s.configMgr.GetAccessoriesForAvatar(targetAvatar)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"currentAvatar":  currentAvatar,
+		"targetAvatar":   targetAvatar,
+		"availableFiles": availableFiles,
+		"accessories":    configured,
+	})
+}
+
+func (s *Server) handleAPIAccessoryToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	avatarKey := r.URL.Query().Get("avatar")
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		var req struct {
+			ID     string `json:"id"`
+			Avatar string `json:"avatar,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			id = req.ID
+			if req.Avatar != "" {
+				avatarKey = req.Avatar
+			}
+		}
+	}
+	if id == "" {
+		http.Error(w, `{"error":"missing accessory id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if s.configMgr == nil {
+		http.Error(w, `{"error":"config manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if avatarKey == "" {
+		s.rigMu.RLock()
+		avatarKey = s.currentAvatar
+		s.rigMu.RUnlock()
+	}
+
+	newState, err := s.configMgr.ToggleAccessoryForAvatar(avatarKey, id)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusNotFound)
+		return
+	}
+
+	s.broadcastAccessoryUpdate()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":      "ok",
+		"id":          id,
+		"enabled":     newState,
+		"accessories": s.configMgr.GetAccessoriesForAvatar(avatarKey),
+	})
+}
+
+func (s *Server) handleAPIAccessoryUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Avatar string `json:"avatar,omitempty"`
+		config.AccessoryConfig
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid json body"}`, http.StatusBadRequest)
+		return
+	}
+
+	acc := req.AccessoryConfig
+	if acc.ID == "" {
+		http.Error(w, `{"error":"missing accessory id"}`, http.StatusBadRequest)
+		return
+	}
+	if acc.File == "" {
+		http.Error(w, `{"error":"missing accessory file"}`, http.StatusBadRequest)
+		return
+	}
+
+	if s.configMgr == nil {
+		http.Error(w, `{"error":"config manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	avatarKey := req.Avatar
+	if avatarKey == "" {
+		avatarKey = r.URL.Query().Get("avatar")
+	}
+	if avatarKey == "" {
+		s.rigMu.RLock()
+		avatarKey = s.currentAvatar
+		s.rigMu.RUnlock()
+	}
+
+	if err := s.configMgr.SetAccessoryForAvatar(avatarKey, acc); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	s.broadcastAccessoryUpdate()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":      "ok",
+		"accessory":   acc,
+		"accessories": s.configMgr.GetAccessoriesForAvatar(avatarKey),
+	})
+}
+
+func (s *Server) handleAPIAccessoryRemove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	avatarKey := r.URL.Query().Get("avatar")
+	id := r.URL.Query().Get("id")
+	if r.Body != nil {
+		var req struct {
+			ID     string `json:"id"`
+			Avatar string `json:"avatar,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
+			if id == "" {
+				id = req.ID
+			}
+			if avatarKey == "" && req.Avatar != "" {
+				avatarKey = req.Avatar
+			}
+		}
+	}
+	if id == "" {
+		http.Error(w, `{"error":"missing accessory id"}`, http.StatusBadRequest)
+		return
+	}
+
+	if s.configMgr == nil {
+		http.Error(w, `{"error":"config manager not initialized"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if avatarKey == "" {
+		s.rigMu.RLock()
+		avatarKey = s.currentAvatar
+		s.rigMu.RUnlock()
+	}
+
+	if err := s.configMgr.RemoveAccessoryForAvatar(avatarKey, id); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	s.broadcastAccessoryUpdate()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":      "ok",
+		"id":          id,
+		"accessories": s.configMgr.GetAccessoriesForAvatar(avatarKey),
+	})
+}
+
+func (s *Server) broadcastAccessoryUpdate() {
+	if s.configMgr == nil {
+		return
+	}
+	_ = s.refreshAvailableExpressions(s.rigDef)
+	update := map[string]any{
+		"type":        "accessory_update",
+		"accessories": s.configMgr.GetAccessories(),
+	}
+	s.hub.BroadcastJSON(update)
+	s.broadcastTracker(update)
 }

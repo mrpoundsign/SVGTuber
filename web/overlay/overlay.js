@@ -15,6 +15,8 @@
   let boundEyeOpenR = null;
   let boundEyeClosedR = null;
   let activeExpressions = {};
+  let activeAccessories = [];
+  const accessorySVGCache = new Map();
   // Initialize with neutral defaults so Idle breathing and initial positioning work immediately
   let latestParams = {
     present: false,
@@ -64,6 +66,7 @@
   }
 
   function bindRig(rigDef) {
+    const accessoryBindings = activeRigBindings.filter(b => b.isAccessoryBinding);
     activeRigBindings = [];
     boundMouthNeutral = null;
     boundMouthSmile = null;
@@ -75,11 +78,13 @@
     boundEyeOpenR = null;
     boundEyeClosedR = null;
     if (!rigDef || !rigDef.elements || rigDef.elements.length === 0) {
+      activeRigBindings = accessoryBindings;
       return;
     }
 
     const svg = container.querySelector('svg');
     if (!svg) {
+      activeRigBindings = accessoryBindings;
       return;
     }
 
@@ -205,6 +210,13 @@
       });
     });
 
+    // Restore preserved accessory bindings
+    activeRigBindings.push(...accessoryBindings);
+
+    // Re-scan any accessory DOM elements currently present in the SVG to ensure fresh pivots
+    const domAccs = svg.querySelectorAll('.svgtuber-accessory');
+    domAccs.forEach(accGroup => scanAndBindAccessoryDirectives(accGroup));
+
     console.log(`[SVGTuber] Bound ${activeRigBindings.length} elements to rig directives.`);
 
     if (!animLoopStarted) {
@@ -243,9 +255,413 @@
 
       // Load and bind rig definition
       await loadRig();
+      await syncAccessories();
     } catch (err) {
       console.error('[SVGTuber] Failed to load avatar:', err);
       setStatus(`Avatar load error: ${err.message}`, true);
+    }
+  }
+
+
+  function parseDirectiveString(str) {
+    if (!str) return [];
+    const regex = /([A-Za-z]+)\s*\{([^}]+)\}/g;
+    const directives = [];
+    let match;
+    while ((match = regex.exec(str)) !== null) {
+      const name = match[1];
+      const paramStr = match[2] || '';
+      const params = {};
+      if (paramStr.trim()) {
+        paramStr.split(';').forEach((pair) => {
+          const idx = pair.indexOf(':');
+          if (idx !== -1) {
+            const k = pair.substring(0, idx).trim().toLowerCase();
+            const v = pair.substring(idx + 1).trim();
+            if (k) params[k] = v;
+          } else if (pair.trim()) {
+            const k = pair.trim().toLowerCase();
+            params[k] = 'true';
+          }
+        });
+      }
+      directives.push({
+        type: name,
+        Type: name,
+        name: name,
+        params: params
+      });
+    }
+    return directives;
+  }
+
+  function scanAndBindAccessoryDirectives(accNode) {
+    if (!accNode) return;
+    const accId = accNode.dataset.accessoryId;
+    if (accId) {
+      activeRigBindings = activeRigBindings.filter(b => b.accId !== accId);
+    }
+
+    const allElements = [accNode, ...accNode.querySelectorAll('*')];
+    allElements.forEach((el) => {
+      let label = el.getAttribute('inkscape:label')
+        || el.getAttributeNS('http://www.inkscape.org/namespaces/inkscape', 'label')
+        || el.getAttribute('data-name')
+        || el.getAttribute('aria-label')
+        || el.getAttribute('label')
+        || '';
+
+      if (!label && el.attributes) {
+        for (let i = 0; i < el.attributes.length; i++) {
+          const attr = el.attributes[i];
+          if (attr.name.toLowerCase().endsWith('label') || attr.localName === 'label') {
+            label = attr.value;
+            break;
+          }
+        }
+      }
+      if (!label && el.id && el.id.includes('{')) {
+        label = el.id;
+      }
+      if (!label) return;
+
+      const directives = parseDirectiveString(label);
+      if (directives.length === 0) return;
+
+      // Track original pre-animation transform to prevent compounding rotations
+      if (el.dataset.originalTransform === undefined) {
+        el.dataset.originalTransform = el.getAttribute('transform') || '';
+      }
+      const baseTransform = el.dataset.originalTransform;
+
+      let cx = 0, cy = 0;
+      const prevDisplay = el.style.display;
+      const isHidden = (getComputedStyle(el).display === 'none') || (prevDisplay === 'none');
+      if (isHidden) el.style.display = 'inline';
+
+      // Temporarily restore original transform for accurate BBox computation
+      const curTransform = el.getAttribute('transform');
+      if (curTransform !== baseTransform) {
+        if (baseTransform) {
+          el.setAttribute('transform', baseTransform);
+        } else {
+          el.removeAttribute('transform');
+        }
+      }
+
+      try {
+        const bbox = el.getBBox();
+        cx = bbox.x + bbox.width / 2;
+        cy = bbox.y + bbox.height / 2;
+        directives.forEach((d) => {
+          const pivot = (d.params.pivot || '').toLowerCase().trim();
+          if (pivot === 'top' || pivot === 'top-center' || pivot === 'topcenter') {
+            cx = bbox.x + bbox.width / 2;
+            cy = bbox.y;
+          } else if (pivot === 'bottom' || pivot === 'bottom-center' || pivot === 'bottomcenter') {
+            cx = bbox.x + bbox.width / 2;
+            cy = bbox.y + bbox.height;
+          } else if (pivot === 'left' || pivot === 'center-left' || pivot === 'leftcenter') {
+            cx = bbox.x;
+            cy = bbox.y + bbox.height / 2;
+          } else if (pivot === 'right' || pivot === 'center-right' || pivot === 'rightcenter') {
+            cx = bbox.x + bbox.width;
+            cy = bbox.y + bbox.height / 2;
+          } else if (pivot === 'center' || pivot === 'middle') {
+            cx = bbox.x + bbox.width / 2;
+            cy = bbox.y + bbox.height / 2;
+          }
+        });
+      } catch (e) {
+        console.warn('[SVGTuber] Accessory getBBox error:', e);
+      } finally {
+        if (curTransform !== null && curTransform !== undefined) {
+          el.setAttribute('transform', curTransform);
+        }
+        if (isHidden) el.style.display = prevDisplay;
+      }
+
+      activeRigBindings.push({
+        el,
+        id: el.id || '',
+        label,
+        cx,
+        cy,
+        baseTransform,
+        directives,
+        isAccessoryBinding: true,
+        accId: accId || accNode.dataset.accessoryId
+      });
+    });
+  }
+
+  const inFlightAccessoryLoads = new Set();
+  let syncQueue = Promise.resolve();
+
+  function syncAccessories(list) {
+    syncQueue = syncQueue.then(() => _doSyncAccessories(list)).catch(err => {
+      console.warn('[SVGTuber] syncAccessories error:', err);
+    });
+    return syncQueue;
+  }
+
+  function findAnchorTarget(svg, targetName) {
+    if (!targetName || targetName === 'root_svg') return svg;
+
+    // 1. Direct ID match
+    let target = svg.querySelector(`#${CSS.escape(targetName)}`);
+    if (target) return target;
+
+    // 2. Direct data-name or label match
+    target = svg.querySelector(`[data-name="${CSS.escape(targetName)}"]`)
+      || svg.querySelector(`[inkscape\\:label="${CSS.escape(targetName)}"]`)
+      || svg.querySelector(`[aria-label="${CSS.escape(targetName)}"]`);
+    if (target) return target;
+
+    // 3. Substring match on ID, data-name, or label
+    target = svg.querySelector(`[id*="${CSS.escape(targetName)}"]`)
+      || svg.querySelector(`[data-name*="${CSS.escape(targetName)}"]`)
+      || svg.querySelector(`[inkscape\\:label*="${CSS.escape(targetName)}"]`);
+    if (target) return target;
+
+    // 4. Head fallbacks (handling Inkscape, Illustrator, Vectorcraft, standard conventions)
+    const isHeadTarget = targetName.toLowerCase().includes('head');
+    if (isHeadTarget) {
+      for (const b of activeRigBindings) {
+        if (b.isAccessoryBinding) continue;
+        const lowerId = (b.id || '').toLowerCase();
+        const lowerLabel = (b.label || '').toLowerCase();
+        if (lowerId.includes('head') || lowerLabel.includes('head')) {
+          return b.el;
+        }
+      }
+      target = svg.querySelector('#layer_head')
+        || svg.querySelector('#head')
+        || svg.querySelector('[data-name*="Head" i]')
+        || svg.querySelector('[inkscape\\:label*="Head" i]')
+        || svg.querySelector('[id*="Head" i]')
+        || svg.querySelector('[id*="head" i]');
+      if (target) return target;
+    }
+
+    return svg;
+  }
+
+  async function _doSyncAccessories(list) {
+    if (Array.isArray(list)) {
+      activeAccessories = list;
+    } else {
+      try {
+        const res = await fetch(`/api/accessories?t=${Date.now()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.accessories)) {
+            activeAccessories = data.accessories;
+          }
+        }
+      } catch (e) {}
+    }
+    const svg = container.querySelector('svg');
+    if (!svg) return;
+
+    const currentAccIds = new Set(activeAccessories.filter(a => a.enabled).map(a => a.id));
+
+    // 1. Remove disabled, deleted, or duplicate accessory DOM nodes
+    const seenAccIds = new Set();
+    const existingDomAccs = svg.querySelectorAll('.svgtuber-accessory');
+    existingDomAccs.forEach(node => {
+      const accId = node.dataset.accessoryId;
+      if (!currentAccIds.has(accId) || seenAccIds.has(accId)) {
+        node.remove();
+        activeRigBindings = activeRigBindings.filter(b => b.accId !== accId);
+      } else {
+        seenAccIds.add(accId);
+      }
+    });
+
+    // 2. Render / update each enabled accessory
+    for (const acc of activeAccessories) {
+      if (!acc.enabled) continue;
+
+      let accGroup = svg.querySelector(`.svgtuber-accessory[data-accessory-id="${CSS.escape(acc.id)}"]`);
+      if (!accGroup) {
+        if (inFlightAccessoryLoads.has(acc.id)) continue;
+        inFlightAccessoryLoads.add(acc.id);
+
+        let rawSvg = accessorySVGCache.get(acc.file);
+        if (!rawSvg) {
+          try {
+            const res = await fetch(`/accessories/${encodeURIComponent(acc.file)}?t=${Date.now()}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            rawSvg = await res.text();
+            accessorySVGCache.set(acc.file, rawSvg);
+          } catch (err) {
+            inFlightAccessoryLoads.delete(acc.id);
+            console.warn(`[SVGTuber] Failed to load accessory ${acc.file}:`, err);
+            continue;
+          }
+        }
+
+        // Re-check DOM in case another path inserted it during fetch
+        const alreadyInserted = svg.querySelector(`.svgtuber-accessory[data-accessory-id="${CSS.escape(acc.id)}"]`);
+        if (alreadyInserted) {
+          inFlightAccessoryLoads.delete(acc.id);
+          accGroup = alreadyInserted;
+        } else {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(rawSvg, 'image/svg+xml');
+          const accSvgEl = doc.documentElement;
+          if (!accSvgEl || accSvgEl.nodeName.toLowerCase() !== 'svg') {
+            inFlightAccessoryLoads.delete(acc.id);
+            continue;
+          }
+
+          let vbX = 0, vbY = 0, vbW = 100, vbH = 100;
+          if (accSvgEl.hasAttribute('viewBox')) {
+            const parts = accSvgEl.getAttribute('viewBox').split(/[\s,]+/).map(Number);
+            if (parts.length === 4) {
+              vbX = parts[0]; vbY = parts[1]; vbW = parts[2]; vbH = parts[3];
+            }
+          } else {
+            vbW = parseFloat(accSvgEl.getAttribute('width')) || 100;
+            vbH = parseFloat(accSvgEl.getAttribute('height')) || 100;
+          }
+          const centerX = vbX + vbW / 2;
+          const centerY = vbY + vbH / 2;
+
+          accGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          accGroup.classList.add('svgtuber-accessory');
+          accGroup.dataset.accessoryId = acc.id;
+          accGroup.dataset.accessoryFile = acc.file;
+          accGroup.dataset.centerX = String(centerX);
+          accGroup.dataset.centerY = String(centerY);
+
+          const innerWrapper = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          innerWrapper.setAttribute('transform', `translate(${-centerX}, ${-centerY})`);
+
+          while (accSvgEl.firstChild) {
+            innerWrapper.appendChild(accSvgEl.firstChild);
+          }
+          accGroup.appendChild(innerWrapper);
+
+          let targetNode = findAnchorTarget(svg, acc.target || 'layer_head');
+
+          // Calculate target anchor center before appending accGroup
+          let anchorX = 0, anchorY = 0;
+          if (targetNode !== svg) {
+            try {
+              const prevDisplay = targetNode.style.display;
+              const isHidden = (getComputedStyle(targetNode).display === 'none') || (prevDisplay === 'none');
+              if (isHidden) targetNode.style.display = 'inline';
+              const tb = targetNode.getBBox();
+              if (isHidden) targetNode.style.display = prevDisplay;
+              if (tb && (tb.width > 0 || tb.height > 0)) {
+                anchorX = tb.x + tb.width / 2;
+                anchorY = tb.y + tb.height / 2;
+              }
+            } catch (e) {}
+          }
+          if (anchorX === 0 && anchorY === 0) {
+            if (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width > 0) {
+              anchorX = svg.viewBox.baseVal.x + svg.viewBox.baseVal.width / 2;
+              anchorY = svg.viewBox.baseVal.y + svg.viewBox.baseVal.height / 2;
+            } else {
+              const w = parseFloat(svg.getAttribute('width')) || 512;
+              const h = parseFloat(svg.getAttribute('height')) || 512;
+              anchorX = w / 2;
+              anchorY = h / 2;
+            }
+          }
+
+          accGroup.dataset.anchorX = String(anchorX);
+          accGroup.dataset.anchorY = String(anchorY);
+          accGroup.dataset.currentTarget = acc.target || 'layer_head';
+
+          if (acc.order === 'back') {
+            targetNode.insertBefore(accGroup, targetNode.firstChild);
+          } else {
+            targetNode.appendChild(accGroup);
+          }
+
+          scanAndBindAccessoryDirectives(accGroup);
+          inFlightAccessoryLoads.delete(acc.id);
+        }
+      } else {
+        // Verify target and order placement
+        let desiredTarget = findAnchorTarget(svg, acc.target || 'layer_head');
+
+        const targetChanged = accGroup.dataset.currentTarget !== (acc.target || 'layer_head');
+        if (accGroup.parentElement !== desiredTarget || targetChanged) {
+          accGroup.dataset.currentTarget = acc.target || 'layer_head';
+          if (acc.order === 'back') {
+            desiredTarget.insertBefore(accGroup, desiredTarget.firstChild);
+          } else {
+            desiredTarget.appendChild(accGroup);
+          }
+
+          // Recompute anchor center for new target
+          let anchorX = 0, anchorY = 0;
+          if (desiredTarget !== svg) {
+            try {
+              const prevDisplay = desiredTarget.style.display;
+              const isHidden = (getComputedStyle(desiredTarget).display === 'none') || (prevDisplay === 'none');
+              if (isHidden) desiredTarget.style.display = 'inline';
+              accGroup.style.display = 'none';
+              const tb = desiredTarget.getBBox();
+              accGroup.style.display = '';
+              if (isHidden) desiredTarget.style.display = prevDisplay;
+              if (tb && (tb.width > 0 || tb.height > 0)) {
+                anchorX = tb.x + tb.width / 2;
+                anchorY = tb.y + tb.height / 2;
+              }
+            } catch (e) {}
+          }
+          if (anchorX === 0 && anchorY === 0) {
+            if (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width > 0) {
+              anchorX = svg.viewBox.baseVal.x + svg.viewBox.baseVal.width / 2;
+              anchorY = svg.viewBox.baseVal.y + svg.viewBox.baseVal.height / 2;
+            } else {
+              const w = parseFloat(svg.getAttribute('width')) || 512;
+              const h = parseFloat(svg.getAttribute('height')) || 512;
+              anchorX = w / 2;
+              anchorY = h / 2;
+            }
+          }
+          accGroup.dataset.anchorX = String(anchorX);
+          accGroup.dataset.anchorY = String(anchorY);
+        } else {
+          if (acc.order === 'back' && accGroup !== desiredTarget.firstChild) {
+            desiredTarget.insertBefore(accGroup, desiredTarget.firstChild);
+          } else if (acc.order === 'front' && accGroup !== desiredTarget.lastChild) {
+            desiredTarget.appendChild(accGroup);
+          }
+        }
+      }
+
+      // Apply transform relative to target anchor center
+      const anchorX = parseFloat(accGroup.dataset.anchorX) || 0;
+      const anchorY = parseFloat(accGroup.dataset.anchorY) || 0;
+      const finalX = anchorX + (acc.x || 0);
+      const finalY = anchorY + (acc.y || 0);
+      const rot = acc.rotation || 0;
+      const sx = acc.scaleX !== undefined ? acc.scaleX : 1.0;
+      const sy = acc.scaleY !== undefined ? acc.scaleY : 1.0;
+      accGroup.setAttribute('transform', `translate(${finalX}, ${finalY}) rotate(${rot}) scale(${sx}, ${sy})`);
+
+      // Expression-driven visibility trigger
+      if (acc.expression) {
+        const exprName = acc.expression.toLowerCase().trim();
+        const isExprActive = Boolean(activeExpressions && (
+          activeExpressions[exprName] === true ||
+          activeExpressions[`is${exprName}`] === true ||
+          activeExpressions[`is${exprName.charAt(0).toUpperCase()}${exprName.slice(1)}`] === true
+        ));
+        accGroup.style.display = isExprActive ? '' : 'none';
+      } else {
+        accGroup.style.display = '';
+      }
+
+      scanAndBindAccessoryDirectives(accGroup);
     }
   }
 
@@ -366,6 +782,27 @@
 
   // Main Animation Transform Calculation
   function applyRigTransforms(now) {
+    // Real-time expression-based accessory display
+    if (activeAccessories && activeAccessories.length > 0) {
+      const svg = container.querySelector('svg');
+      if (svg) {
+        for (let i = 0; i < activeAccessories.length; i++) {
+          const acc = activeAccessories[i];
+          if (!acc.enabled || !acc.expression) continue;
+          const accNode = svg.querySelector(`.svgtuber-accessory[data-accessory-id="${CSS.escape(acc.id)}"]`);
+          if (accNode) {
+            const exprName = acc.expression.toLowerCase().trim();
+            const isExprActive = Boolean(activeExpressions && (
+              activeExpressions[exprName] === true ||
+              activeExpressions[`is${exprName}`] === true ||
+              activeExpressions[`is${exprName.charAt(0).toUpperCase()}${exprName.slice(1)}`] === true
+            ));
+            accNode.style.display = isExprActive ? '' : 'none';
+          }
+        }
+      }
+    }
+
     if (!latestParams || activeRigBindings.length === 0) return;
 
     const p = latestParams;
@@ -387,7 +824,13 @@
     prevHeadRoll = headRoll;
     prevAudioVol = audioVol;
 
-    const globalPhysicsMult = (p.physicsEnabled === false && (p.physicsAmount === 0 || p.physicsAmount === '0')) ? 0 : (p.physicsAmount !== undefined && parseFloat(p.physicsAmount) > 0 ? parseFloat(p.physicsAmount) : 1.0);
+    let globalPhysicsMult = 1.0;
+    if (p.physicsEnabled === false) {
+      globalPhysicsMult = 0;
+    } else if (p.physicsAmount !== undefined) {
+      const val = parseFloat(p.physicsAmount);
+      globalPhysicsMult = isNaN(val) ? 1.0 : Math.max(0, val);
+    }
 
     for (let i = 0; i < activeRigBindings.length; i++) {
       const b = activeRigBindings[i];
@@ -397,7 +840,7 @@
 
       for (let j = 0; j < b.directives.length; j++) {
         const d = b.directives[j];
-        const type = (d.type || d.Type || '').toLowerCase().trim();
+        const type = (d.type || d.Type || d.name || '').toLowerCase().trim();
         const params = d.params || d.Params || {};
 
         switch (type) {
@@ -580,8 +1023,9 @@
 
             const stepRatio = dt * 60;
             // Physical acceleration impulse from head movement (turn and tilt inertia)
+            const rollSign = (range < 0) ? -1 : 1;
             const impulse = (-deltaYaw * (params.yaw !== undefined ? parseFloat(params.yaw) : 1.2) * 2.2
-                             - deltaRoll * (params.roll !== undefined ? parseFloat(params.roll) : 0.8) * 1.8)
+                             - deltaRoll * (params.roll !== undefined ? parseFloat(params.roll) : (0.8 * rollSign)) * 1.8)
                              * mass * globalPhysicsMult;
             d._velocity += impulse * stepRatio;
 
@@ -875,7 +1319,10 @@
           bindRig(msg.rig);
         } else if (msg.type === 'expression_update') {
           activeExpressions = msg.expressions || {};
+          syncAccessories();
           applyRigTransforms(performance.now());
+        } else if (msg.type === 'accessory_update') {
+          syncAccessories(msg.accessories);
         } else if (msg.type === 'param_frame') {
           latestParams = msg;
           window.latestParams = msg;

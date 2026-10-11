@@ -369,6 +369,324 @@
       text-align: right;
       color: var(--text-main);
     }
+
+    /* Accessory Closet & Drawer Styles */
+    .accessory-card {
+      background: #14141c;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .accessory-card:hover {
+      border-color: #3f3f54;
+    }
+    .accessory-header {
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      background: #191924;
+    }
+    .accessory-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+    }
+    .accessory-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .accessory-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .accessory-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    /* Switch toggle */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 34px;
+      height: 18px;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .switch-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #2e2e3d;
+      transition: .2s;
+      border-radius: 18px;
+    }
+    .switch-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: .2s;
+      border-radius: 50%;
+    }
+    input:checked + .switch-slider {
+      background-color: var(--accent);
+    }
+    input:checked + .switch-slider:before {
+      transform: translateX(16px);
+    }
+    .accessory-drawer {
+      padding: 12px 14px;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      background: #121218;
+      border-top: 1px solid var(--border-color);
+    }
+    .accessory-drawer.open {
+      display: flex;
+    }
+    .acc-chip {
+      background: #20202e;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      color: var(--text-main);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .acc-chip:hover {
+      background: var(--accent);
+      border-color: var(--accent-hover);
+      color: #fff;
+    }
+    .slider-num-input {
+      width: 58px;
+      background: #191924;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--text-main);
+      font-family: monospace;
+      font-size: 11px;
+      padding: 3px 5px;
+      text-align: right;
+      transition: border-color 0.15s;
+    }
+    .slider-num-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: #1f1f2e;
+    }
+
+    /* Dressing Room Modal Styles */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 8, 12, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      animation: modalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes modalFadeIn {
+      from { opacity: 0; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .modal-dialog {
+      background: #14141c;
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      width: 100%;
+      max-width: 1180px;
+      height: 88vh;
+      max-height: 860px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8), 0 0 1px rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+    }
+    .modal-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #191924;
+    }
+    .modal-close-btn {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 14px;
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .modal-close-btn:hover {
+      background: rgba(239, 68, 68, 0.15);
+      border-color: #ef4444;
+      color: #f87171;
+    }
+    .modal-body {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 20px;
+      padding: 20px;
+      flex: 1;
+      overflow: hidden;
+    }
+    .fitting-viewport-container {
+      display: flex;
+      flex-direction: column;
+      background: #0e0e14;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      height: 100%;
+    }
+    .fitting-toolbar, .fitting-footer {
+      padding: 8px 12px;
+      background: #181822;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .fitting-footer {
+      border-bottom: none;
+      border-top: 1px solid var(--border-color);
+    }
+    .fitting-stage {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, #1b1b26 0%, #0d0d12 100%);
+    }
+    .fitting-stage iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: transparent;
+      transform-origin: center center;
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .fitting-crosshair {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image: linear-gradient(to right, rgba(99, 102, 241, 0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(99, 102, 241, 0.15) 1px, transparent 1px);
+      background-size: 32px 32px;
+      background-position: center center;
+    }
+    .fitting-crosshair:after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 24px;
+      height: 24px;
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      border-radius: 50%;
+    }
+    .fitting-controls-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .fitting-card {
+      background: #181822;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .fitting-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+    .dpad-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 28px);
+      grid-template-rows: repeat(3, 28px);
+      gap: 3px;
+      align-items: center;
+      justify-items: center;
+    }
+    .dpad-btn {
+      width: 28px;
+      height: 28px;
+      background: #222230;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--text-main);
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .dpad-btn:hover {
+      background: var(--accent);
+      border-color: var(--accent-hover);
+      color: #fff;
+    }
+    .nudge-step-btn {
+      background: #222230;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 2px 7px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .nudge-step-btn.active {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: var(--accent);
+      color: #fff;
+    }
     footer {
       border-top: 1px solid var(--border-color);
       padding: 12px 24px;
@@ -561,6 +879,34 @@
         <div style="margin-top: 10px; font-size: 11px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center;">
           <span>Keys <strong>1-9</strong> toggle expressions. <a href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/RIGGING_GUIDE.md" target="_blank" rel="noopener" style="color: var(--accent); text-decoration: none; font-weight: 500;">📖 Rigging Guide</a></span>
           <span id="expression-status" style="color: var(--accent); font-weight: 500;"></span>
+        </div>
+      </div>
+
+      <!-- Modular Accessories & Props Closet -->
+      <div class="accessory-closet-container" style="margin-top: 14px; background: #181820; border: 1px solid var(--border-color); border-radius: 8px; padding: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div style="font-size: 13px; font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+            <span>Accessories & Props Closet</span>
+            <span id="accessory-count-badge" class="badge" style="font-size: 10px; padding: 1px 6px;">0</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button id="btn-open-dressing-room" class="btn" style="font-size: 11px; padding: 4px 10px; background: var(--accent); color: white;" title="Open live interactive Dressing Room modal">🪞 Dressing Room</button>
+            <button id="btn-refresh-accessories" class="btn btn-secondary" style="font-size: 11px; padding: 4px 8px;" title="Rescan accessories directory for SVG files">↻ Refresh</button>
+          </div>
+        </div>
+
+        <div id="accessory-list" style="display: flex; flex-direction: column; gap: 10px;">
+          <span style="font-size: 12px; color: var(--text-muted);">Loading accessories...</span>
+        </div>
+
+        <div id="discovered-accessories-bar" style="margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-color); display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 500;">Discovered Accessory Files:</span>
+            <span id="accessory-save-indicator" style="font-size: 11px; color: var(--success); opacity: 0; transition: opacity 0.3s; font-weight: 600;">Saved!</span>
+          </div>
+          <div id="available-accessories-chips" style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <span style="font-size: 11px; color: var(--text-muted);">Scanning folder...</span>
+          </div>
         </div>
       </div>
 
@@ -800,6 +1146,191 @@
       }
     }
   </script>
+
+  <!-- ===================================== -->
+  <!-- Accessory Dressing Room Modal Overlay -->
+  <!-- ===================================== -->
+  <div id="dressing-room-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-dialog">
+      <!-- Modal Header -->
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 20px;">🪞</span>
+          <div>
+            <h2 style="font-size: 16px; font-weight: 700; color: var(--text-main); margin: 0;">Accessory Dressing Room</h2>
+            <div style="font-size: 11px; color: var(--text-muted);">Live fitting &amp; precision positioning directly on your avatar</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div id="modal-save-indicator" style="font-size: 11px; color: var(--success); opacity: 0; transition: opacity 0.3s; font-weight: 600;">Saved!</div>
+          <button id="btn-close-dressing-room" class="modal-close-btn" title="Close Dressing Room (Esc)">✕</button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Split: Big Live Avatar Preview + Precision Controls) -->
+      <div class="modal-body">
+        <!-- Left: Large Live Fitting Mirror Viewport -->
+        <div class="fitting-viewport-container">
+          <div class="fitting-toolbar">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Fitting Mirror</span>
+              <span id="fitting-zoom-badge" class="badge" style="font-size: 10px;">1.0x Zoom</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button id="btn-zoom-reset" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;">1x</button>
+              <button id="btn-zoom-head" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;">Head 1.5x</button>
+              <button id="btn-zoom-tight" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;">Face 2.0x</button>
+              <button id="btn-reload-fitting" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;">↻ Reload</button>
+            </div>
+          </div>
+          <div class="fitting-stage" id="fitting-stage">
+            <iframe id="fitting-frame" src="/overlay" title="Fitting Room Live Mirror"></iframe>
+            <div id="fitting-crosshair" class="fitting-crosshair" style="display: none;"></div>
+          </div>
+          <div class="fitting-footer">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer;">
+              <input type="checkbox" id="check-show-crosshair" style="accent-color: var(--accent);">
+              Show Alignment Guides
+            </label>
+            <div style="font-size: 11px; color: var(--text-muted);">Changes sync live to OBS and Studio</div>
+          </div>
+        </div>
+
+        <!-- Right: Dedicated Precision Controls Panel -->
+        <div class="fitting-controls-panel">
+          <!-- Active Accessory Dropdown / Switcher -->
+          <div style="background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
+            <label style="display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">Active Accessory</label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select id="modal-accessory-select" class="form-select" style="flex: 1; background: #111118; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-weight: 600;">
+                <option value="">No accessories equipped</option>
+              </select>
+              <label class="switch" title="Equip / Unequip">
+                <input type="checkbox" id="modal-accessory-toggle" checked>
+                <span class="switch-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Anchor Target, Z-Order & Expression Trigger -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+            <div style="background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
+              <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Anchor Target</label>
+              <select id="modal-target-select" class="form-select" style="width: 100%; background: #111118; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; font-size: 12px;">
+                <option value="layer_head">layer_head (Head Anchor)</option>
+                <option value="head">head (Face Anchor)</option>
+                <option value="root_svg">root_svg (Root Space)</option>
+              </select>
+            </div>
+            <div style="background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
+              <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Layer Order</label>
+              <select id="modal-order-select" class="form-select" style="width: 100%; background: #111118; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; font-size: 12px;">
+                <option value="front">In Front (Foreground)</option>
+                <option value="back">Behind (Background)</option>
+              </select>
+            </div>
+            <div style="background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
+              <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Expression Trigger</label>
+              <select id="modal-expression-select" class="form-select" style="width: 100%; background: #111118; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; font-size: 12px;">
+                <option value="">Always Visible</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Position & Nudge D-Pad -->
+          <div class="fitting-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span class="fitting-section-title">Position Placement (X / Y)</span>
+              <div style="display: flex; gap: 4px;">
+                <button class="nudge-step-btn active" data-step="1">±1px</button>
+                <button class="nudge-step-btn" data-step="10">±10px</button>
+                <button class="nudge-step-btn" data-step="50">±50px</button>
+              </div>
+            </div>
+
+            <!-- Position X -->
+            <div class="slider-item" style="grid-template-columns: 80px 1fr 65px; margin-bottom: 8px;">
+              <label for="modal-slider-x" style="font-size: 12px;">X Offset</label>
+              <input type="range" id="modal-slider-x" min="-1000" max="1000" step="1" value="0">
+              <input type="number" id="modal-num-x" class="slider-num-input" min="-1000" max="1000" step="1" value="0">
+            </div>
+
+            <!-- Position Y -->
+            <div class="slider-item" style="grid-template-columns: 80px 1fr 65px; margin-bottom: 12px;">
+              <label for="modal-slider-y" style="font-size: 12px;">Y Offset</label>
+              <input type="range" id="modal-slider-y" min="-1000" max="1000" step="1" value="0">
+              <input type="number" id="modal-num-y" class="slider-num-input" min="-1000" max="1000" step="1" value="0">
+            </div>
+
+            <!-- Directional Nudge D-Pad -->
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #13131a; border-radius: 8px; padding: 8px 12px; border: 1px solid var(--border-color);">
+              <span style="font-size: 11px; color: var(--text-muted);">Pixel Nudge:</span>
+              <div class="dpad-grid">
+                <div></div>
+                <button id="nudge-up" class="dpad-btn" title="Nudge Up (ArrowUp)">▲</button>
+                <div></div>
+                <button id="nudge-left" class="dpad-btn" title="Nudge Left (ArrowLeft)">◄</button>
+                <button id="nudge-center" class="dpad-btn" title="Center (X:0, Y:0)">●</button>
+                <button id="nudge-right" class="dpad-btn" title="Nudge Right (ArrowRight)">►</button>
+                <div></div>
+                <button id="nudge-down" class="dpad-btn" title="Nudge Down (ArrowDown)">▼</button>
+                <div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Scale & Stretch -->
+          <div class="fitting-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span class="fitting-section-title">Scale &amp; Stretch</span>
+              <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer;">
+                <input type="checkbox" id="modal-link-scale" checked style="accent-color: var(--accent);">
+                <span>Lock Aspect Ratio</span>
+              </label>
+            </div>
+
+            <!-- Scale X -->
+            <div class="slider-item" style="grid-template-columns: 80px 1fr 65px; margin-bottom: 8px;">
+              <label for="modal-slider-sx" style="font-size: 12px;">Width (X)</label>
+              <input type="range" id="modal-slider-sx" min="0.05" max="5.0" step="0.05" value="1.0">
+              <input type="number" id="modal-num-sx" class="slider-num-input" min="0.05" max="5.0" step="0.05" value="1.00">
+            </div>
+
+            <!-- Scale Y -->
+            <div class="slider-item" style="grid-template-columns: 80px 1fr 65px;">
+              <label for="modal-slider-sy" style="font-size: 12px;">Height (Y)</label>
+              <input type="range" id="modal-slider-sy" min="0.05" max="5.0" step="0.05" value="1.0">
+              <input type="number" id="modal-num-sy" class="slider-num-input" min="0.05" max="5.0" step="0.05" value="1.00">
+            </div>
+          </div>
+
+          <!-- Rotation & Presets -->
+          <div class="fitting-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <span class="fitting-section-title">Rotation (Angle)</span>
+              <div style="display: flex; gap: 4px;">
+                <button id="btn-rot-left" class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px;">⟲ -15°</button>
+                <button id="btn-rot-zero" class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px;">0°</button>
+                <button id="btn-rot-right" class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px;">⟳ +15°</button>
+              </div>
+            </div>
+
+            <div class="slider-item" style="grid-template-columns: 80px 1fr 65px;">
+              <label for="modal-slider-rot" style="font-size: 12px;">Rotation</label>
+              <input type="range" id="modal-slider-rot" min="-180" max="180" step="1" value="0">
+              <input type="number" id="modal-num-rot" class="slider-num-input" min="-180" max="180" step="1" value="0">
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <button id="modal-btn-reset" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">Reset Transforms</button>
+            <button id="modal-btn-done" class="btn" style="font-size: 12px; padding: 6px 18px; background: var(--accent); color: white;">Done Fitting</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Load MediaPipe Tracker Module -->
   <script type="module" src="/studio/tracker.js"></script>

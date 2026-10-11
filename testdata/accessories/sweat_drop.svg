@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 90" width="60" height="90">
+  <defs>
+    <linearGradient id="dropGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7dd3fc"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+  <!-- Animated Sweat Drop with Expression & Voice Bounce -->
+  <g id="acc_sweat" data-name="Sweat [Expression {name: sweat}] [Show {when: isSweat}] [Bounce {height: 4; squash: 0.05}]">
+    <path d="M 30 5 C 30 5 8 40 8 60 A 22 22 0 1 0 52 60 C 52 40 30 5 30 5 Z" fill="url(#dropGrad)" stroke="#0369a1" stroke-width="2.5" opacity="0.9"/>
+    <!-- Highlight Reflection -->
+    <ellipse cx="22" cy="55" rx="5" ry="10" fill="#ffffff" opacity="0.75" transform="rotate(-25 22 55)"/>
+    <circle cx="34" cy="72" r="3" fill="#ffffff" opacity="0.6"/>
+  </g>
+</svg>

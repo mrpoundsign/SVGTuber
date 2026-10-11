@@ -153,7 +153,6 @@ func TestExtractExpressionsFromRig_TestAvatar(t *testing.T) {
 	discovered := ExtractExpressionsFromRig(rigDef)
 	expected := map[string]bool{
 		"blush": true,
-		"sweat": true,
 	}
 
 	if len(discovered) != len(expected) {
@@ -179,7 +178,6 @@ func TestExtractExpressionsFromRig_Vectorcraft(t *testing.T) {
 	discovered := ExtractExpressionsFromRig(rigDef)
 	expected := map[string]bool{
 		"blush": true,
-		"sweat": true,
 	}
 
 	if len(discovered) != len(expected) {
@@ -189,6 +187,22 @@ func TestExtractExpressionsFromRig_Vectorcraft(t *testing.T) {
 		if !expected[name] {
 			t.Errorf("Unexpected expression in vectorcraft test avatar: %s", name)
 		}
+	}
+}
+
+func TestExtractExpressionsFromRig_SweatAccessory(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/accessories/sweat_drop.svg")
+	if err != nil {
+		t.Fatalf("Failed to read sweat_drop.svg: %v", err)
+	}
+	rigDef, err := rig.ParseSVG(data)
+	if err != nil {
+		t.Fatalf("Failed to parse sweat_drop.svg: %v", err)
+	}
+
+	discovered := ExtractExpressionsFromRig(rigDef)
+	if len(discovered) != 1 || discovered[0] != "sweat" {
+		t.Fatalf("Expected [sweat] expression in sweat accessory, got %v", discovered)
 	}
 }
 

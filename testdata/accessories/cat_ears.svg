@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" viewBox="0 0 280 120" width="280" height="120">
+  <!-- Left Ear with Sway Physics -->
+  <g id="acc_cat_ear_left" inkscape:label="Left Ear [Sway {pivot: bottom; range: 12; yaw: 0.6; wind: 0.08}]" data-name="Left Ear [Sway {pivot: bottom; range: 12; yaw: 0.6; wind: 0.08}]">
+    <!-- Outer Ear -->
+    <path d="M 30 110 C 20 70 35 25 75 10 C 95 40 105 75 105 110 Z" fill="#312e81" stroke="#1e1b4b" stroke-width="3" stroke-linejoin="round"/>
+    <!-- Inner Ear Pink -->
+    <path d="M 45 102 C 38 75 48 40 73 26 C 85 50 92 78 92 102 Z" fill="#fb7185" opacity="0.9"/>
+    <!-- Fluff Tuft -->
+    <path d="M 40 95 Q 60 85 55 105 Q 75 90 70 108" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </g>
+  <!-- Right Ear with Sway Physics -->
+  <g id="acc_cat_ear_right" inkscape:label="Right Ear [Sway {pivot: bottom; range: -12; yaw: -0.6; wind: 0.08}]" data-name="Right Ear [Sway {pivot: bottom; range: -12; yaw: -0.6; wind: 0.08}]">
+    <!-- Outer Ear -->
+    <path d="M 250 110 C 260 70 245 25 205 10 C 185 40 175 75 175 110 Z" fill="#312e81" stroke="#1e1b4b" stroke-width="3" stroke-linejoin="round"/>
+    <!-- Inner Ear Pink -->
+    <path d="M 235 102 C 242 75 232 40 207 26 C 195 50 188 78 188 102 Z" fill="#fb7185" opacity="0.9"/>
+    <!-- Fluff Tuft -->
+    <path d="M 240 95 Q 220 85 225 105 Q 205 90 210 108" stroke="#ffffff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -46,31 +46,44 @@ The following features from the initial roadmap have been fully implemented and 
   - Step-by-step OBS Browser Source setup, 60 FPS vector configuration, and transparency tips.
   - Important checkbox gotchas ("Shutdown source when not visible" & "Refresh browser when scene becomes active").
   - Hardware acceleration instructions, audio modes (Hybrid vs PNGTuber), and Stream Deck integration.
+- [x] **🎀 Modular Accessory & Prop Attachment System**:
+  - Load external accessory SVG files (`sunglasses.svg`, `cat_ears.svg`, `sweat_drop.svg`, custom SVGs) stored in `accessories/` folders.
+  - Mount/pin accessories to target avatar anchor nodes (`#layer_head`, `#head`, `#root_svg`) with front/back Z-order.
+  - Interactive transform tuning in Studio: live position (`x`, `y`), scale/stretch (`scaleX`, `scaleY`), rotation angle, and layer ordering.
+  - Automatically inherits parent motion, head tracking, sway, and bounce, and parses inner rig directives (e.g. cat ear sway).
+  - Live synchronization across OBS Overlay and Studio via WebSocket and REST API.
 
 ---
 
 ## 📋 Active Backlog & Next Milestones
 
-### 1. 🖱️ Global / Window Mouse Look-At
+### 1. 💧 Procedural & Loop Animation Directives (`[Drip]`, `[Pulse]`, `[Float]`)
+- **Status:** Planned
+- **Estimated Effort:** ~3 hours
+- **Concept:**
+  - Continuous or triggered procedural animations evaluated at 60 FPS:
+    - `[Drip {distance: 35; duration: 1.2s; loop: true; fade: true}]`: Sweat drips sliding down temple/forehead, tears streaming, anime drool.
+    - `[Pulse {scale: 0.85 to 1.15; period: 600ms; pivot: center}]`: Throbbing anger veins, pulsing blush, panic marks.
+    - `[Float {distance: -40; drift: 10; duration: 1.8s; loop: true}]`: Steam puffs drifting up, floating hearts, sparkles.
+
+---
+
+### 2. 🌐 OS Global Hotkeys (Zero-CGO Pure Go)
+- **Status:** Planned
+- **Estimated Effort:** ~2–3 hours
+- **Concept:**
+  - Global hotkeys across Windows and Linux (e.g. `F13`–`F24`, `Numpad 1`–`9`, `Ctrl+Shift+E`) so streamers can toggle expressions, calibrate, or equip accessories while tabbed into fullscreen games or drawing applications.
+  - Windows: pure Go `syscall.NewLazyDLL("user32.dll").NewProc("RegisterHotKey")` with a message pump.
+  - Linux: X11 / XDG GlobalShortcuts DBus portal.
+
+---
+
+### 3. 🖱️ Global / Window Mouse Look-At
 - **Status:** Planned
 - **Estimated Effort:** ~4–5 hours
 - **Concept:**
   - Enables the avatar's gaze (and subtle head angle) to follow the user's mouse cursor across the screen.
-  - Especially popular for gaming streams, speedruns, and digital art streams.
-- **Implementation Strategy:**
-  - Studio can capture mouse coordinates within the window via `mousemove`.
-  - Optional OS-level global cursor polling in pure Go (or a lightweight tray hook) streaming normalized screen `(x, y)` to the overlay.
-  - Directive syntax:
-    ```ini
-    Pupils [Move {x: mouseX; y: mouseY; range: 8}]
-    ```
+  - Popular for gaming streams, speedruns, and digital art streams.
+  - Directive syntax: `Pupils [Move {x: mouseX; y: mouseY; range: 8}]`.
 
----
-
-### 2. 🎛️ Custom Keybinding Manager in Studio
-- **Status:** Under Consideration
-- **Estimated Effort:** ~1–2 hours
-- **Concept:**
-  - While keys `1`–`9` are already mapped to expressions, allow streamers to customize their hotkeys (e.g. mapping `C` or `Space` to calibrate, or custom modifier keys `Ctrl+Shift+E`).
-  - Saved in the user's OS `settings.json`.
 
