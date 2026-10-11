@@ -439,4 +439,34 @@ func TestServer_AvatarManagement(t *testing.T) {
 	}
 }
 
+func TestServer_APIVersion(t *testing.T) {
+	tempDir := t.TempDir()
+	avatarPath := filepath.Join(tempDir, "avatar.svg")
+	_ = os.WriteFile(avatarPath, []byte(`<svg></svg>`), 0644)
+
+	srv := New(0, avatarPath, NewHub(), tracking.NewEngine())
+	srv.SetVersion("v0.0.4", "abc1234", "2026-10-11")
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	srv.handleAPIVersion(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 on /api/version, got %d", rec.Code)
+	}
+
+	var data map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &data); err != nil {
+		t.Fatalf("Failed to parse /api/version JSON: %v", err)
+	}
+
+	if data["version"] != "v0.0.4" {
+		t.Errorf("Expected version v0.0.4, got %q", data["version"])
+	}
+	if data["commit"] != "abc1234" {
+		t.Errorf("Expected commit abc1234, got %q", data["commit"])
+	}
+}
+
+
 

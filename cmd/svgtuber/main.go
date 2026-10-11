@@ -103,6 +103,7 @@ func main() {
 	hub := server.NewHub()
 	engine := tracking.NewEngine(cfgMgr)
 	srv := server.New(*port, avatarPath, hub, engine, cfgMgr)
+	srv.SetVersion(version, commit, date)
 
 	if err := srv.Start(); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

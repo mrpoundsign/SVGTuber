@@ -438,6 +438,24 @@ function showCalibratedFlash() {
   }, 1200);
 }
 
+async function fetchAppVersion() {
+  try {
+    const res = await fetch("/api/version");
+    if (res.ok) {
+      const data = await res.json();
+      const el = document.getElementById("app-version");
+      if (el && data.version) {
+        el.textContent = data.version.startsWith("v") ? data.version : `v${data.version}`;
+        if (data.commit && data.commit !== "none") {
+          el.title = `Commit: ${data.commit}\nBuilt: ${data.date || "unknown"}`;
+        }
+      }
+    }
+  } catch (err) {
+    console.debug("[Studio] Could not fetch /api/version:", err);
+  }
+}
+
 // Initialize MediaPipe Vision Tasks
 async function initMediaPipe() {
   try {
@@ -461,6 +479,7 @@ async function initMediaPipe() {
     updateStatus("Model Ready. Start Camera.", "status-ok");
     btnToggleCamera.disabled = false;
     initTickerWorker();
+    fetchAppVersion();
     await populateCameraDevices();
     await populateAudioDevices();
 

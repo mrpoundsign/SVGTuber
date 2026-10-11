@@ -40,6 +40,9 @@ type Server struct {
 	preprocessedAvatar []byte
 	avatarWatcher      *watcher.AvatarWatcher
 	accessoriesDir     string
+	version            string
+	commit             string
+	date               string
 	expMgr        *ExpressionManager
 	trackerMu     sync.RWMutex
 	trackerConns  map[*websocket.Conn]chan []byte
@@ -168,6 +171,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/ws/tracker", s.handleTrackerWS)
 
 	// REST API control endpoints
+	mux.HandleFunc("/api/version", s.handleAPIVersion)
 	mux.HandleFunc("/api/calibrate", s.handleAPICalibrate)
 	mux.HandleFunc("/api/settings", s.handleAPISettings)
 	mux.HandleFunc("/api/settings/reset", s.handleAPISettingsReset)
@@ -1174,3 +1178,32 @@ func (s *Server) broadcastAccessoryUpdate() {
 	s.hub.BroadcastJSON(update)
 	s.broadcastTracker(update)
 }
+
+// SetVersion configures the runtime application version, commit hash, and build date.
+func (s *Server) SetVersion(version, commit, date string) {
+	s.rigMu.Lock()
+	defer s.rigMu.Unlock()
+	s.version = version
+	s.commit = commit
+	s.date = date
+}
+
+func (s *Server) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
+	s.rigMu.RLock()
+	ver := s.version
+	commit := s.commit
+	date := s.date
+	s.rigMu.RUnlock()
+
+	if ver == "" {
+		ver = "v0.0.4"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"version": ver,
+		"commit":  commit,
+		"date":    date,
+	})
+}
+
