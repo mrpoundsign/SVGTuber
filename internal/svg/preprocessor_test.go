@@ -93,3 +93,19 @@ func TestPreprocessSVG_AvatarFiles(t *testing.T) {
 		_ = os.WriteFile("/home/mrp/.gemini/antigravity-ide/brain/115b14fa-1e84-4ce1-9919-d73ebbc333ac/scratch/preprocessed_"+strings.ReplaceAll(file, "../../testdata/", ""), out, 0644)
 	}
 }
+
+func TestPreprocessSVG_TextTransform(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/text_jank.svg")
+	if err != nil {
+		t.Fatalf("Failed to read text_jank.svg: %v", err)
+	}
+	out, err := PreprocessSVG(data)
+	if err != nil {
+		t.Fatalf("PreprocessSVG failed: %v", err)
+	}
+	outStr := string(out)
+	if !strings.Contains(outStr, "256.391") {
+		t.Errorf("Expected text transform with 256.391 to be preserved, but it was lost in output:\n%s", outStr)
+	}
+}
+

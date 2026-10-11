@@ -59,6 +59,13 @@ func (m Matrix2D) TransformVector(dx, dy float64) (float64, float64) {
 	return m.A*dx + m.C*dy, m.B*dx + m.D*dy
 }
 
+// ToSVG returns the SVG transform attribute string for the matrix.
+func (m Matrix2D) ToSVG() string {
+	return fmt.Sprintf("matrix(%s %s %s %s %s %s)",
+		formatFloat(m.A), formatFloat(m.B), formatFloat(m.C),
+		formatFloat(m.D), formatFloat(m.E), formatFloat(m.F))
+}
+
 var transformCallRe = regexp.MustCompile(`([a-zA-Z]+)\s*\(([^)]*)\)`)
 
 // ParseTransform parses an SVG transform attribute string into a combined Matrix2D.
@@ -498,6 +505,24 @@ func parseXMLTree(data []byte) (*XMLNode, map[string]string, error) {
 	return root, nsToPrefix, nil
 }
 
+func isContainerTag(tag string) bool {
+	switch tag {
+	case "g", "svg", "a":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGeometryTag(tag string) bool {
+	switch tag {
+	case "path", "rect", "circle", "ellipse", "line", "polygon", "polyline":
+		return true
+	default:
+		return false
+	}
+}
+
 func processNode(node *XMLNode, accumulatedMatrix Matrix2D) bool {
 	if node == nil {
 		return false
@@ -522,41 +547,70 @@ func processNode(node *XMLNode, accumulatedMatrix Matrix2D) bool {
 
 	effectiveMatrix := accumulatedMatrix.Multiply(localMatrix)
 
-	if transformIdx >= 0 {
-		// Strip the transform attribute so it gets baked into child geometries
-		node.Attrs = append(node.Attrs[:transformIdx], node.Attrs[transformIdx+1:]...)
-		accumulatedMatrix = effectiveMatrix
-		modified = true
-	} else {
-		accumulatedMatrix = effectiveMatrix
-	}
-
-	// Apply accumulated matrix to geometry attributes if this is a leaf geometry element
-	if !accumulatedMatrix.IsIdentity() {
-		switch tag {
-		case "path":
-			for i, attr := range node.Attrs {
-				if attr.Name.Local == "d" {
-					node.Attrs[i].Value = TransformPathD(attr.Value, accumulatedMatrix)
-					modified = true
-					break
-				}
-			}
-		case "rect":
-			applyMatrixToRect(node, accumulatedMatrix)
-			modified = true
-		case "circle":
-			applyMatrixToCircle(node, accumulatedMatrix)
-			modified = true
-		case "ellipse":
-			applyMatrixToEllipse(node, accumulatedMatrix)
+	if isContainerTag(tag) {
+		// Container elements: strip transform so it gets baked into children
+		if transformIdx >= 0 {
+			node.Attrs = append(node.Attrs[:transformIdx], node.Attrs[transformIdx+1:]...)
 			modified = true
 		}
+		for _, child := range node.Children {
+			if processNode(child, effectiveMatrix) {
+				modified = true
+			}
+		}
+		return modified
 	}
 
-	// Recurse to children with the accumulated matrix
+	if isGeometryTag(tag) {
+		// Geometry elements: strip local transform because it gets baked directly into the geometry coordinates
+		if transformIdx >= 0 {
+			node.Attrs = append(node.Attrs[:transformIdx], node.Attrs[transformIdx+1:]...)
+			modified = true
+		}
+		if !effectiveMatrix.IsIdentity() {
+			switch tag {
+			case "path":
+				for i, attr := range node.Attrs {
+					if attr.Name.Local == "d" {
+						node.Attrs[i].Value = TransformPathD(attr.Value, effectiveMatrix)
+						modified = true
+						break
+					}
+				}
+			case "rect":
+				applyMatrixToRect(node, effectiveMatrix)
+				modified = true
+			case "circle":
+				applyMatrixToCircle(node, effectiveMatrix)
+				modified = true
+			case "ellipse":
+				applyMatrixToEllipse(node, effectiveMatrix)
+				modified = true
+			case "line":
+				applyMatrixToLine(node, effectiveMatrix)
+				modified = true
+			case "polygon", "polyline":
+				applyMatrixToPolygon(node, effectiveMatrix)
+				modified = true
+			}
+		}
+		for _, child := range node.Children {
+			if processNode(child, Identity()) {
+				modified = true
+			}
+		}
+		return modified
+	}
+
+	// Non-geometry leaf or text elements (text, image, use, etc.)
+	// We CANNOT bake coordinate transforms into text/image glyphs/pixels directly.
+	// Therefore, their transform attribute must reflect the effectiveMatrix.
+	if applyMatrixToTransformableNonGeometry(node, effectiveMatrix) {
+		modified = true
+	}
 	for _, child := range node.Children {
-		if processNode(child, accumulatedMatrix) {
+		// Children of text (e.g. tspan) already live in the text's coordinate system
+		if processNode(child, Identity()) {
 			modified = true
 		}
 	}
@@ -671,6 +725,92 @@ func applyMatrixToEllipse(node *XMLNode, m Matrix2D) {
 			node.Attrs[ryIdx].Value = formatFloat(ry * scaleY)
 		}
 	}
+}
+
+func applyMatrixToLine(node *XMLNode, m Matrix2D) {
+	var x1, y1, x2, y2 float64
+	var x1Idx, y1Idx, x2Idx, y2Idx = -1, -1, -1, -1
+
+	for i, attr := range node.Attrs {
+		switch attr.Name.Local {
+		case "x1":
+			x1, _ = strconv.ParseFloat(attr.Value, 64)
+			x1Idx = i
+		case "y1":
+			y1, _ = strconv.ParseFloat(attr.Value, 64)
+			y1Idx = i
+		case "x2":
+			x2, _ = strconv.ParseFloat(attr.Value, 64)
+			x2Idx = i
+		case "y2":
+			y2, _ = strconv.ParseFloat(attr.Value, 64)
+			y2Idx = i
+		}
+	}
+
+	tx1, ty1 := m.TransformPoint(x1, y1)
+	tx2, ty2 := m.TransformPoint(x2, y2)
+
+	if x1Idx >= 0 {
+		node.Attrs[x1Idx].Value = formatFloat(tx1)
+	}
+	if y1Idx >= 0 {
+		node.Attrs[y1Idx].Value = formatFloat(ty1)
+	}
+	if x2Idx >= 0 {
+		node.Attrs[x2Idx].Value = formatFloat(tx2)
+	}
+	if y2Idx >= 0 {
+		node.Attrs[y2Idx].Value = formatFloat(ty2)
+	}
+}
+
+func applyMatrixToPolygon(node *XMLNode, m Matrix2D) {
+	for i, attr := range node.Attrs {
+		if attr.Name.Local == "points" {
+			nums := parseNumbers(attr.Value)
+			var pairs []string
+			for j := 0; j+1 < len(nums); j += 2 {
+				tx, ty := m.TransformPoint(nums[j], nums[j+1])
+				pairs = append(pairs, formatFloat(tx)+","+formatFloat(ty))
+			}
+			node.Attrs[i].Value = strings.Join(pairs, " ")
+			break
+		}
+	}
+}
+
+func applyMatrixToTransformableNonGeometry(node *XMLNode, m Matrix2D) bool {
+	transformIdx := -1
+	for idx, attr := range node.Attrs {
+		if attr.Name.Local == "transform" {
+			transformIdx = idx
+			break
+		}
+	}
+
+	if m.IsIdentity() {
+		if transformIdx >= 0 {
+			node.Attrs = append(node.Attrs[:transformIdx], node.Attrs[transformIdx+1:]...)
+			return true
+		}
+		return false
+	}
+
+	newTransformVal := m.ToSVG()
+	if transformIdx >= 0 {
+		if node.Attrs[transformIdx].Value != newTransformVal {
+			node.Attrs[transformIdx].Value = newTransformVal
+			return true
+		}
+		return false
+	}
+
+	node.Attrs = append(node.Attrs, xml.Attr{
+		Name:  xml.Name{Local: "transform"},
+		Value: newTransformVal,
+	})
+	return true
 }
 
 func serializeNode(w *bytes.Buffer, node *XMLNode, nsToPrefix map[string]string) {
