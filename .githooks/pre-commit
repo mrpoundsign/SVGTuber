@@ -47,6 +47,12 @@ else
 fi
 
 echo "==> 4. Running all test suites (including avatar integration tests)..."
+if command -v npm >/dev/null 2>&1 && [ -f "package.json" ]; then
+    echo "==> Running frontend TypeScript tests & typecheck..."
+    npm test
+    npm run typecheck
+    echo "✓ Frontend tests & typecheck passed!"
+fi
 go test ./...
 echo "✓ All tests passed!"
 

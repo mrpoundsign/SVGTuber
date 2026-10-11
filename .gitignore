@@ -9,3 +9,4 @@ build/
 scratch/
 notes/
 planning/
+node_modules/

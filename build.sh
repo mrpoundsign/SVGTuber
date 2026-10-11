@@ -3,6 +3,13 @@ set -euo pipefail
 
 TARGET="${1:-build}"
 
+bundle_frontend() {
+  if command -v npm &>/dev/null && [ -f "package.json" ]; then
+    echo "==> Bundling frontend TypeScript..."
+    npm run build
+  fi
+}
+
 bundle_accessories() {
   echo "==> Bundling default accessories into build/accessories..."
   mkdir -p build/accessories
@@ -13,6 +20,7 @@ bundle_accessories() {
 
 case "$TARGET" in
   build)
+    bundle_frontend
     echo "==> Building svgtuber binary..."
     mkdir -p build
     bundle_accessories
@@ -20,7 +28,11 @@ case "$TARGET" in
     echo "==> Successfully built build/svgtuber"
     ;;
   test)
-    echo "==> Running unit tests..."
+    if command -v npm &>/dev/null && [ -f "package.json" ]; then
+      echo "==> Running TypeScript unit tests..."
+      npm test
+    fi
+    echo "==> Running Go unit tests..."
     go test -v -count=1 ./...
     ;;
   race)
@@ -32,6 +44,7 @@ case "$TARGET" in
     go vet ./...
     ;;
   windows)
+    bundle_frontend
     echo "==> Building svgtuber.exe (Windows amd64)..."
     mkdir -p build
     bundle_accessories
