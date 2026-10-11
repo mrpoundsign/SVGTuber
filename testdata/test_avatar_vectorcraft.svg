@@ -39,7 +39,7 @@
     </linearGradient>
   </defs>
   <title>test_avatar.svg</title>
-  <g id="Body__Idle__breathe__0.02__period__3.5s__pivot__bottom__" data-name="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}]">
+  <g id="Body__Idle__breathe__0.02__period__3.5s__pivot__bottom___Bounce__height__6__speed__16__squash__0.04__pivot__bottom__" data-name="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}] [Bounce {height: 6; speed: 16; squash: 0.04; pivot: bottom}]">
     <path id="path4" d="M176 380 C229.333 366.667 282.667 366.667 336 380 L362.687 399.835 L370 512 L142 512 L151.047 404.642 Z" class="cls-1"/>
     <path id="path5" d="M230 380 L256 420 L282 380 Z" class="cls-2"/>
   </g>
@@ -49,7 +49,7 @@
       <path id="path7" d="M360.411 218.684 C409.813 222.586 412.909 340.392 372 400 C345.333 346.667 332 300 332 260 Z" class="cls-4"/>
     </g>
     <path id="ellipse7" d="M376 250 C376 321.797 322.274 380 256 380 C189.726 380 136 321.797 136 250 C136 178.203 189.726 120 256 120 C322.274 120 376 178.203 376 250 Z" class="cls-5"/>
-    <g id="Blush__Show__when__isBlush__" data-name="Blush [Show {when: isBlush}]" class="cls-6">
+    <g id="Blush__Expression__name__blush___Fade__param__smile__from__0__to__0.85__duration__350ms__" data-name="Blush [Expression {name: blush}] [Fade {param: smile; from: 0.0; to: 0.85; duration: 350ms}]" class="cls-6">
       <path id="ellipse8" d="M202 280 C202 286.075 192.15 291 180 291 C167.85 291 158 286.075 158 280 C158 273.925 167.85 269 180 269 C192.15 269 202 273.925 202 280 Z" class="cls-7"/>
       <path id="ellipse9" d="M354 280 C354 286.075 344.15 291 332 291 C319.85 291 310 286.075 310 280 C310 273.925 319.85 269 332 269 C344.15 269 354 273.925 354 280 Z" class="cls-7"/>
     </g>

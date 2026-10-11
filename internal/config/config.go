@@ -25,8 +25,17 @@ type TrackingSettings struct {
 	EyeGazeGain      float64 `json:"eyeGazeGain"`      // Multiplier on pupil gaze range (default: 1.0)
 	YawMultiplier    float64 `json:"yawMultiplier"`    // Head yaw rotation sensitivity (default: 1.0)
 	PitchMultiplier  float64 `json:"pitchMultiplier"`  // Head pitch rotation sensitivity (default: 1.0)
-	RollMultiplier   float64 `json:"rollMultiplier"`   // Head roll tilt sensitivity (default: 1.0)
-	PoseSmoothing    float64 `json:"poseSmoothing"`    // Smoothing strength multiplier (default: 1.0)
+	RollMultiplier       float64 `json:"rollMultiplier"`       // Head roll tilt sensitivity (default: 1.0)
+	PoseSmoothing        float64 `json:"poseSmoothing"`        // Smoothing strength multiplier (default: 1.0)
+	AutoBlink            bool    `json:"autoBlink"`            // Autonomous natural blinking (default: true)
+	AutoBlinkMode        string  `json:"autoBlinkMode"`        // "always", "face_lost_only", "tracked_only" (default: "always")
+	AutoBlinkIntervalSec float64 `json:"autoBlinkIntervalSec"` // Interval between auto-blinks in seconds (default: 4.0)
+	AutoGaze             bool    `json:"autoGaze"`             // Autonomous subtle eye gaze saccades (default: true)
+	AutoGazeMode         string  `json:"autoGazeMode"`         // "always", "face_lost_only", "tracked_only" (default: "always")
+	AutoGazeRange        float64 `json:"autoGazeRange"`        // Scale multiplier on gaze micro-movements (default: 1.0)
+	AutoTilt             bool    `json:"autoTilt"`             // Autonomous gentle head tilt and sway (default: true)
+	AutoTiltMode         string  `json:"autoTiltMode"`         // "always", "face_lost_only", "tracked_only" (default: "always")
+	AutoTiltAmount       float64 `json:"autoTiltAmount"`       // Scale multiplier on head sway/tilt (default: 1.0)
 }
 
 // AudioSettings contains microphone lip-sync and blending configuration.
@@ -64,8 +73,17 @@ func DefaultSettings() Settings {
 			EyeGazeGain:      1.0,
 			YawMultiplier:    1.0,
 			PitchMultiplier:  1.0,
-			RollMultiplier:   1.0,
-			PoseSmoothing:    1.0,
+			RollMultiplier:       1.0,
+			PoseSmoothing:        1.0,
+			AutoBlink:            true,
+			AutoBlinkMode:        "always",
+			AutoBlinkIntervalSec: 4.0,
+			AutoGaze:             true,
+			AutoGazeMode:         "always",
+			AutoGazeRange:        1.0,
+			AutoTilt:             true,
+			AutoTiltMode:         "always",
+			AutoTiltAmount:       1.0,
 		},
 		Audio: AudioSettings{
 			Mode:        "hybrid",
@@ -320,6 +338,24 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.RollMultiplier <= 0 {
 		s.Tracking.RollMultiplier = 1.0
+	}
+	if s.Tracking.AutoBlinkIntervalSec <= 0 {
+		s.Tracking.AutoBlinkIntervalSec = 4.0
+	}
+	if s.Tracking.AutoBlinkMode == "" {
+		s.Tracking.AutoBlinkMode = "always"
+	}
+	if s.Tracking.AutoGazeRange <= 0 {
+		s.Tracking.AutoGazeRange = 1.0
+	}
+	if s.Tracking.AutoGazeMode == "" {
+		s.Tracking.AutoGazeMode = "always"
+	}
+	if s.Tracking.AutoTiltAmount <= 0 {
+		s.Tracking.AutoTiltAmount = 1.0
+	}
+	if s.Tracking.AutoTiltMode == "" {
+		s.Tracking.AutoTiltMode = "always"
 	}
 	if s.Audio.Mode == "" {
 		s.Audio.Mode = "hybrid"

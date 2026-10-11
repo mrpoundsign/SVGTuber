@@ -410,6 +410,78 @@
             sy *= idleFactor;
             break;
           }
+          case 'rotate': {
+            const pVal = getParam(params.param || params.target || params.source, 0);
+            if (params.from !== undefined || params.to !== undefined) {
+              const fromAngle = parseFloat(params.from || 0);
+              const toAngle = parseFloat(params.to || 0);
+              rot += fromAngle + (toAngle - fromAngle) * pVal;
+            } else {
+              const range = parseFloat(params.range || params.deg || params.angle || 15);
+              rot += pVal * range;
+            }
+            break;
+          }
+          case 'fade':
+          case 'opacity': {
+            let pVal;
+            if (params.when) {
+              pVal = evaluateCondition(params.when, p) ? 1.0 : 0.0;
+            } else {
+              const src = params.param || params.target || params.source;
+              pVal = getParam(src, 0);
+              if (src && src.toLowerCase() === 'smile' && activeExpressions && (activeExpressions['blush'] || activeExpressions['isblush'])) {
+                pVal = 1.0;
+              }
+            }
+            const from = parseFloat(params.from !== undefined ? params.from : 0.0);
+            const to = parseFloat(params.to !== undefined ? params.to : 1.0);
+            const targetOpacity = Math.max(0, Math.min(1, from + (to - from) * pVal));
+
+            if (d._currentOpacity === undefined) {
+              d._currentOpacity = from;
+            }
+
+            let rate = 0.10; // ~250-300ms smooth ease transition
+            if (params.speed) {
+              rate = Math.max(0.01, Math.min(1.0, parseFloat(params.speed)));
+            } else if (params.duration) {
+              const durMs = parseDuration(params.duration, 300);
+              rate = Math.max(0.01, Math.min(1.0, (1000 / 60) / durMs * 3.0));
+            }
+
+            d._currentOpacity += (targetOpacity - d._currentOpacity) * rate;
+            if (Math.abs(targetOpacity - d._currentOpacity) < 0.005) {
+              d._currentOpacity = targetOpacity;
+            }
+
+            el.style.opacity = d._currentOpacity.toFixed(3);
+            if (d._currentOpacity > 0.005) {
+              el.style.display = 'inline';
+            } else if (from <= 0.005 && targetOpacity <= 0.005) {
+              el.style.display = 'none';
+            }
+            break;
+          }
+          case 'bounce': {
+            const height = parseFloat(params.height || params.y || 7);
+            const squash = parseFloat(params.squash || 0.04);
+            const minVol = parseFloat(params.minvolume || params.gate || 0.03);
+            const vol = parseFloat(p.audioVolume || p.volume || 0);
+            const isSpeaking = Boolean(p.isSpeaking || vol > minVol);
+            if (isSpeaking && vol > 0.01) {
+              const normVol = Math.min(1.0, Math.max(0.2, (vol - minVol) / (1.0 - minVol)));
+              const speed = parseFloat(params.speed || 16);
+              const hop = Math.abs(Math.sin(now * speed * 0.001));
+              const bounceOffset = -hop * height * normVol;
+              ty += bounceOffset;
+              if (squash > 0) {
+                sy *= (1.0 + (hop * squash * normVol));
+                sx *= (1.0 - (hop * squash * 0.5 * normVol));
+              }
+            }
+            break;
+          }
         }
       }
 

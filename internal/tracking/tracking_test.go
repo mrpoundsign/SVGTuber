@@ -250,8 +250,8 @@ func TestEngine_AudioOnlyMode(t *testing.T) {
 	}
 	out := eng.Process(f)
 
-	if !out.Present {
-		t.Errorf("Expected Present=true during speech in audio-only mode")
+	if out.Present {
+		t.Errorf("Expected Present=false when camera is off/face lost, got true")
 	}
 	if out.MouthOpen <= 0.3 {
 		t.Errorf("Expected MouthOpen > 0.3, got %f", out.MouthOpen)
@@ -478,6 +478,110 @@ func TestEngine_WinkIsBlink(t *testing.T) {
 	out3 := eng.Process(f3)
 	if !out3.IsBlinkL || !out3.IsBlinkR {
 		t.Errorf("Expected BOTH eyes to close on Right wink when WinkIsBlink=true, got L=%v R=%v", out3.IsBlinkL, out3.IsBlinkR)
+	}
+}
+
+func TestEngine_AutoBlink(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	s := cfgMgr.Get()
+	s.Tracking.AutoBlink = true
+	s.Tracking.AutoBlinkIntervalSec = 3.0 // 3 seconds
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// Step 1: Initial frame at t=1000ms with eyes open
+	f1 := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.0,
+			"eyeBlinkRight": 0.0,
+		},
+	}
+	out1 := eng.Process(f1)
+	if out1.IsBlinkL || out1.IsBlinkR || out1.AutoBlink {
+		t.Errorf("Expected eyes open on initial frame, got AutoBlink=%v", out1.AutoBlink)
+	}
+
+	// Step 2: Advance time past auto-blink interval (t = 5500ms > 1000 + 3000*1.2)
+	// Peak of auto-blink (e.g. 70ms into 140ms duration)
+	f2 := FaceFrame{
+		Timestamp: 5500,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.0,
+			"eyeBlinkRight": 0.0,
+		},
+	}
+	out2 := eng.Process(f2)
+	if !out2.AutoBlink {
+		t.Errorf("Expected AutoBlink to trigger at t=5500ms")
+	}
+
+	// Mid-blink at t=5570ms: eyes should be closed
+	f3 := FaceFrame{
+		Timestamp: 5570,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.0,
+			"eyeBlinkRight": 0.0,
+		},
+	}
+	out3 := eng.Process(f3)
+	if !out3.IsBlinkL || !out3.IsBlinkR {
+		t.Errorf("Expected both eyes closed mid-autoblink, got L=%v R=%v", out3.IsBlinkL, out3.IsBlinkR)
+	}
+
+	// Step 3: Advance past blink duration (t = 5700ms > 5500 + 140ms)
+	f4 := FaceFrame{
+		Timestamp: 5700,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.0,
+			"eyeBlinkRight": 0.0,
+		},
+	}
+	out4 := eng.Process(f4)
+	if out4.AutoBlink || out4.IsBlinkL || out4.IsBlinkR {
+		t.Errorf("Expected eyes reopened after autoblink finished, got AutoBlink=%v L=%v R=%v", out4.AutoBlink, out4.IsBlinkL, out4.IsBlinkR)
+	}
+}
+
+func TestEngine_AutomationsMode_FaceLostOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	s := cfgMgr.Get()
+	s.Tracking.AutoBlink = true
+	s.Tracking.AutoBlinkIntervalSec = 2.0
+	s.Tracking.AutoBlinkMode = "face_lost_only"
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// Step 1: Face is present for 5000ms. Auto-blink should NOT trigger because mode is face_lost_only.
+	_ = eng.Process(FaceFrame{Timestamp: 1000, Present: true})
+	outTracked := eng.Process(FaceFrame{Timestamp: 5000, Present: true})
+	if outTracked.AutoBlink {
+		t.Errorf("Expected AutoBlink to NOT trigger while face is present in face_lost_only mode")
+	}
+
+	// Step 2: Face is lost at t=5500ms. Now auto-blink should be allowed!
+	_ = eng.Process(FaceFrame{Timestamp: 5500, Present: false})
+	outLost := eng.Process(FaceFrame{Timestamp: 8500, Present: false})
+	if !outLost.AutoBlink {
+		t.Errorf("Expected AutoBlink to trigger when face is lost in face_lost_only mode")
 	}
 }
 

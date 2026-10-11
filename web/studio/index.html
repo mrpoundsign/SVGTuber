@@ -670,6 +670,85 @@
             <input type="range" id="slider-pitch-multiplier" min="0.5" max="2.5" step="0.1" value="1.0">
             <span id="val-pitch-multiplier" class="slider-val">1.0x</span>
           </div>
+
+          <!-- Automations & Autonomous Life (Accessibility, Audio-Only, Idle Posture) -->
+          <div class="automations-card" style="margin-top: 16px; padding: 12px; background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 8px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+              <span style="font-weight: 600; font-size: 13px; color: var(--accent); display: flex; align-items: center; gap: 6px;">
+                ✨ Automations & Life
+              </span>
+              <span style="font-size: 10px; color: var(--text-muted);">Idle & Accessibility</span>
+            </div>
+
+            <!-- Auto-Blink -->
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+              <label style="margin-bottom: 0; font-size: 12px;">Auto-Blink</label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="checkbox-auto-blink" checked style="width: 15px; height: 15px; accent-color: var(--accent);">
+                <span style="font-size: 11px; color: var(--text-muted);">Enable</span>
+              </label>
+              <span></span>
+            </div>
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <label for="select-auto-blink-mode" style="font-size: 11px; color: var(--text-muted); margin-bottom: 0;">When Active</label>
+              <select id="select-auto-blink-mode" style="font-size: 11px; padding: 2px 6px; background: var(--bg-card); color: var(--text-main); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 4px;">
+                <option value="always">Always Active</option>
+                <option value="face_lost_only">Only When Face Lost</option>
+                <option value="tracked_only">Only When Tracked</option>
+              </select>
+            </div>
+            <div class="slider-item" style="margin-bottom: 12px;">
+              <label for="slider-auto-blink-interval" style="font-size: 11px; color: var(--text-muted);">Blink Interval</label>
+              <input type="range" id="slider-auto-blink-interval" min="1.5" max="8.0" step="0.5" value="4.0">
+              <span id="val-auto-blink-interval" class="slider-val">4.0s</span>
+            </div>
+
+            <!-- Auto-Gaze (Micro-dart saccades) -->
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+              <label style="margin-bottom: 0; font-size: 12px;">Auto-Gaze (Wander)</label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="checkbox-auto-gaze" checked style="width: 15px; height: 15px; accent-color: var(--accent);">
+                <span style="font-size: 11px; color: var(--text-muted);">Enable</span>
+              </label>
+              <span></span>
+            </div>
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <label for="select-auto-gaze-mode" style="font-size: 11px; color: var(--text-muted); margin-bottom: 0;">When Active</label>
+              <select id="select-auto-gaze-mode" style="font-size: 11px; padding: 2px 6px; background: var(--bg-card); color: var(--text-main); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 4px;">
+                <option value="always">Always Active</option>
+                <option value="face_lost_only">Only When Face Lost</option>
+                <option value="tracked_only">Only When Tracked</option>
+              </select>
+            </div>
+            <div class="slider-item" style="margin-bottom: 12px;">
+              <label for="slider-auto-gaze-range" style="font-size: 11px; color: var(--text-muted);">Gaze Wander Range</label>
+              <input type="range" id="slider-auto-gaze-range" min="0.2" max="2.5" step="0.1" value="1.0">
+              <span id="val-auto-gaze-range" class="slider-val">1.0x</span>
+            </div>
+
+            <!-- Auto-Tilt (Gentle posture sway & head tilts) -->
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+              <label style="margin-bottom: 0; font-size: 12px;">Auto-Tilt (Head Sway)</label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="checkbox-auto-tilt" checked style="width: 15px; height: 15px; accent-color: var(--accent);">
+                <span style="font-size: 11px; color: var(--text-muted);">Enable</span>
+              </label>
+              <span></span>
+            </div>
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <label for="select-auto-tilt-mode" style="font-size: 11px; color: var(--text-muted); margin-bottom: 0;">When Active</label>
+              <select id="select-auto-tilt-mode" style="font-size: 11px; padding: 2px 6px; background: var(--bg-card); color: var(--text-main); border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 4px;">
+                <option value="always">Always Active</option>
+                <option value="face_lost_only">Only When Face Lost</option>
+                <option value="tracked_only">Only When Tracked</option>
+              </select>
+            </div>
+            <div class="slider-item" style="margin-bottom: 4px;">
+              <label for="slider-auto-tilt-amount" style="font-size: 11px; color: var(--text-muted);">Tilt & Sway Amount</label>
+              <input type="range" id="slider-auto-tilt-amount" min="0.2" max="2.5" step="0.1" value="1.0">
+              <span id="val-auto-tilt-amount" class="slider-val">1.0x</span>
+            </div>
+          </div>
         </div>
 
         <div style="font-size: 11px; color: var(--text-muted); line-height: 1.4; word-break: break-all;">

@@ -2,6 +2,7 @@ package tracking
 
 import (
 	"math"
+	"math/rand"
 	"sync"
 
 	"github.com/mrpoundsign/SVGTuber/internal/config"
@@ -34,6 +35,28 @@ type Engine struct {
 	openTimeR        float64
 	inBilateralBlink bool
 	exprProvider     func() map[string]bool
+
+	// Auto-blink state
+	lastBlinkTime         float64
+	nextAutoBlinkInterval float64
+	autoBlinkActive       bool
+	autoBlinkStart        float64
+
+	// Autonomous gaze (saccade) state
+	lastSaccadeTime     float64
+	nextSaccadeInterval float64
+	saccadeX            float64
+	saccadeY            float64
+
+	// Autonomous head tilt / sway state
+	lastTiltTime     float64
+	nextTiltInterval float64
+	targetTiltRoll   float64
+	targetTiltPitch  float64
+	targetTiltYaw    float64
+	currentTiltRoll  float64
+	currentTiltPitch float64
+	currentTiltYaw   float64
 }
 
 // NewEngine creates a new tracking Engine.
@@ -104,6 +127,21 @@ func (e *Engine) ResetCalibration() {
 	e.openTimeL = 0
 	e.openTimeR = 0
 	e.inBilateralBlink = false
+	e.autoBlinkActive = false
+	e.lastBlinkTime = 0
+	e.nextAutoBlinkInterval = 0
+	e.lastSaccadeTime = 0
+	e.nextSaccadeInterval = 0
+	e.saccadeX = 0
+	e.saccadeY = 0
+	e.lastTiltTime = 0
+	e.nextTiltInterval = 0
+	e.targetTiltRoll = 0
+	e.targetTiltPitch = 0
+	e.targetTiltYaw = 0
+	e.currentTiltRoll = 0
+	e.currentTiltPitch = 0
+	e.currentTiltYaw = 0
 	e.filter.Reset()
 }
 
@@ -185,22 +223,29 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		e.pendingCloseL = false
 		e.pendingCloseR = false
 		e.pendingOpenL = false
+		autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp, false, false)
+		saccadeX, saccadeY := e.computeSaccade(ts, raw.Timestamp, false)
+		tiltYaw, tiltPitch, tiltRoll := e.computeTilt(ts, raw.Timestamp, tSec, false)
+		filtBlinkL := e.filter.blinkL.Filter(autoBlink, tSec)
+		filtBlinkR := e.filter.blinkR.Filter(autoBlink, tSec)
+		isAutoClosed := autoActive && (autoBlink >= ts.BlinkThreshold)
+
 		e.pendingOpenR = false
-		e.inBilateralBlink = false
+		e.inBilateralBlink = isAutoClosed
 		return ParamFrame{
 			Type:             "param_frame",
 			T:                raw.Timestamp,
-			Present:          true,
-			HeadYaw:          e.filter.yaw.Filter(0, tSec),
-			HeadPitch:        e.filter.pitch.Filter(0, tSec),
-			HeadRoll:         e.filter.roll.Filter(0, tSec),
+			Present:          false,
+			HeadYaw:          e.filter.yaw.Filter(tiltYaw, tSec),
+			HeadPitch:        e.filter.pitch.Filter(tiltPitch, tSec),
+			HeadRoll:         e.filter.roll.Filter(tiltRoll, tSec),
 			HeadX:            e.filter.x.Filter(0, tSec),
 			HeadY:            e.filter.y.Filter(-audioMouth*4.0, tSec), // subtle speech bob
 			HeadZ:            e.filter.z.Filter(0, tSec),
-			EyeX:             e.filter.eyeX.Filter(0, tSec),
-			EyeY:             e.filter.eyeY.Filter(0, tSec),
-			BlinkL:           e.filter.blinkL.Filter(0, tSec),
-			BlinkR:           e.filter.blinkR.Filter(0, tSec),
+			EyeX:             e.filter.eyeX.Filter(saccadeX, tSec),
+			EyeY:             e.filter.eyeY.Filter(saccadeY, tSec),
+			BlinkL:           filtBlinkL,
+			BlinkR:           filtBlinkR,
 			MouthOpen:        filtMouth,
 			Smile:            e.filter.smile.Filter(0, tSec),
 			BrowUp:           e.filter.browUp.Filter(0, tSec),
@@ -213,8 +258,9 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
 			IsSpeaking:       isSpeaking,
-			IsBlinkL:         false,
-			IsBlinkR:         false,
+			IsBlinkL:         isAutoClosed,
+			IsBlinkR:         isAutoClosed,
+			AutoBlink:        autoActive,
 			IsMouthOpen:      filtMouth >= ts.MouthThreshold,
 			IsSmiling:        false,
 			Expressions:      activeExprs,
@@ -222,28 +268,33 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	}
 
 	if !raw.Present {
+		autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp, false, false)
+		saccadeX, saccadeY := e.computeSaccade(ts, raw.Timestamp, false)
+		tiltYaw, tiltPitch, tiltRoll := e.computeTilt(ts, raw.Timestamp, tSec, false)
+		filtBlinkL := e.filter.blinkL.Filter(autoBlink, tSec)
+		filtBlinkR := e.filter.blinkR.Filter(autoBlink, tSec)
+		isAutoClosed := autoActive && (autoBlink >= ts.BlinkThreshold)
+
 		// Face lost: smoothly filter down toward neutral (0)
-		filtBlinkL := e.filter.blinkL.Filter(0, tSec)
-		filtBlinkR := e.filter.blinkR.Filter(0, tSec)
 		filtMouth := e.filter.mouthOpen.Filter(0, tSec)
 		filtSmile := e.filter.smile.Filter(0, tSec)
 		e.pendingCloseL = false
 		e.pendingCloseR = false
 		e.pendingOpenL = false
 		e.pendingOpenR = false
-		e.inBilateralBlink = false
+		e.inBilateralBlink = isAutoClosed
 		return ParamFrame{
 			Type:             "param_frame",
 			T:                raw.Timestamp,
 			Present:          false,
-			HeadYaw:          e.filter.yaw.Filter(0, tSec),
-			HeadPitch:        e.filter.pitch.Filter(0, tSec),
-			HeadRoll:         e.filter.roll.Filter(0, tSec),
+			HeadYaw:          e.filter.yaw.Filter(tiltYaw, tSec),
+			HeadPitch:        e.filter.pitch.Filter(tiltPitch, tSec),
+			HeadRoll:         e.filter.roll.Filter(tiltRoll, tSec),
 			HeadX:            e.filter.x.Filter(0, tSec),
 			HeadY:            e.filter.y.Filter(0, tSec),
 			HeadZ:            e.filter.z.Filter(0, tSec),
-			EyeX:             e.filter.eyeX.Filter(0, tSec),
-			EyeY:             e.filter.eyeY.Filter(0, tSec),
+			EyeX:             e.filter.eyeX.Filter(saccadeX, tSec),
+			EyeY:             e.filter.eyeY.Filter(saccadeY, tSec),
 			BlinkL:           filtBlinkL,
 			BlinkR:           filtBlinkR,
 			MouthOpen:        filtMouth,
@@ -258,10 +309,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
 			IsSpeaking:       isSpeaking,
-			IsBlinkL:         filtBlinkL >= threshL,
-			IsBlinkR:         filtBlinkR >= threshR,
-			IsMouthOpen:      filtMouth >= ts.MouthThreshold,
-			IsSmiling:        filtSmile >= ts.SmileThreshold,
+			IsBlinkL:         isAutoClosed,
+			IsBlinkR:         isAutoClosed,
+			AutoBlink:        autoActive,
+			IsMouthOpen:      false,
+			IsSmiling:        false,
 			Expressions:      activeExprs,
 		}
 	}
@@ -380,18 +432,34 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		isBlinkL, isBlinkR = e.evaluateBlinks(blinkL, blinkR, threshL, threshR, syncDelay, raw.Timestamp)
 	}
 
+	naturalBlink := isBlinkL || isBlinkR || (blinkL >= threshL) || (blinkR >= threshR)
+	autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp, true, naturalBlink)
+	if autoActive {
+		filtBlinkL = math.Max(filtBlinkL, autoBlink)
+		filtBlinkR = math.Max(filtBlinkR, autoBlink)
+		if autoBlink >= threshL {
+			isBlinkL = true
+		}
+		if autoBlink >= threshR {
+			isBlinkR = true
+		}
+	}
+
+	saccadeX, saccadeY := e.computeSaccade(ts, raw.Timestamp, true)
+	tiltYaw, tiltPitch, tiltRoll := e.computeTilt(ts, raw.Timestamp, tSec, true)
+
 	return ParamFrame{
 		Type:             "param_frame",
 		T:                raw.Timestamp,
 		Present:          true,
-		HeadYaw:          e.filter.yaw.Filter(yaw, tSec),
-		HeadPitch:        e.filter.pitch.Filter(pitch, tSec),
-		HeadRoll:         e.filter.roll.Filter(roll, tSec),
+		HeadYaw:          e.filter.yaw.Filter(yaw+tiltYaw, tSec),
+		HeadPitch:        e.filter.pitch.Filter(pitch+tiltPitch, tSec),
+		HeadRoll:         e.filter.roll.Filter(roll+tiltRoll, tSec),
 		HeadX:            e.filter.x.Filter(x, tSec),
 		HeadY:            e.filter.y.Filter(y, tSec),
 		HeadZ:            e.filter.z.Filter(z, tSec),
-		EyeX:             e.filter.eyeX.Filter(eyeX, tSec),
-		EyeY:             e.filter.eyeY.Filter(eyeY, tSec),
+		EyeX:             e.filter.eyeX.Filter(eyeX+saccadeX, tSec),
+		EyeY:             e.filter.eyeY.Filter(eyeY+saccadeY, tSec),
 		BlinkL:           filtBlinkL,
 		BlinkR:           filtBlinkR,
 		MouthOpen:        filtMouth,
@@ -408,6 +476,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		IsSpeaking:       isSpeaking,
 		IsBlinkL:         isBlinkL,
 		IsBlinkR:         isBlinkR,
+		AutoBlink:        autoActive,
 		IsMouthOpen:      filtMouth >= ts.MouthThreshold,
 		IsSmiling:        filtSmile >= ts.SmileThreshold,
 		Expressions:      activeExprs,
@@ -526,4 +595,156 @@ func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs
 	}
 
 	return rawL, rawR
+}
+
+// isAutomationEnabled checks if an automation should run based on its configured mode and current tracking state.
+func isAutomationEnabled(enabled bool, mode string, facePresent bool) bool {
+	if !enabled {
+		return false
+	}
+	switch mode {
+	case "face_lost_only":
+		return !facePresent
+	case "tracked_only":
+		return facePresent
+	case "always":
+		fallthrough
+	default:
+		return true
+	}
+}
+
+// computeAutoBlink evaluates autonomous natural blinks when tracking is idle, in audio mode, or face lost.
+func (e *Engine) computeAutoBlink(ts config.TrackingSettings, timestamp float64, facePresent bool, naturalBlink bool) (bool, float64) {
+	if !isAutomationEnabled(ts.AutoBlink, ts.AutoBlinkMode, facePresent) {
+		e.autoBlinkActive = false
+		return false, 0
+	}
+
+	baseIntervalMs := ts.AutoBlinkIntervalSec * 1000.0
+	if baseIntervalMs <= 500 {
+		baseIntervalMs = 4000.0
+	}
+
+	if naturalBlink {
+		e.lastBlinkTime = timestamp
+		e.autoBlinkActive = false
+		e.nextAutoBlinkInterval = baseIntervalMs * (0.8 + rand.Float64()*0.4)
+		return false, 0
+	}
+
+	if e.lastBlinkTime == 0 {
+		e.lastBlinkTime = timestamp
+		e.nextAutoBlinkInterval = baseIntervalMs * (0.8 + rand.Float64()*0.4)
+	}
+
+	const blinkDurationMs = 140.0 // 140ms natural blink duration
+
+	if !e.autoBlinkActive {
+		if timestamp-e.lastBlinkTime >= e.nextAutoBlinkInterval {
+			e.autoBlinkActive = true
+			e.autoBlinkStart = timestamp
+		}
+	}
+
+	if e.autoBlinkActive {
+		elapsed := timestamp - e.autoBlinkStart
+		if elapsed >= blinkDurationMs {
+			e.autoBlinkActive = false
+			e.lastBlinkTime = timestamp
+			e.nextAutoBlinkInterval = baseIntervalMs * (0.8 + rand.Float64()*0.4)
+			return false, 0
+		}
+		// Smooth sine bell curve from 0.0 to 1.0 back to 0.0
+		progress := elapsed / blinkDurationMs
+		blinkVal := math.Sin(progress * math.Pi)
+		return true, blinkVal
+	}
+
+	return false, 0
+}
+
+// computeSaccade generates subtle autonomous micro-darts of eye gaze (saccades).
+func (e *Engine) computeSaccade(ts config.TrackingSettings, timestamp float64, facePresent bool) (float64, float64) {
+	if !isAutomationEnabled(ts.AutoGaze, ts.AutoGazeMode, facePresent) {
+		e.saccadeX = 0
+		e.saccadeY = 0
+		return 0, 0
+	}
+
+	if e.lastSaccadeTime == 0 {
+		e.lastSaccadeTime = timestamp
+		e.nextSaccadeInterval = 1800.0 + rand.Float64()*2200.0 // 1.8s - 4.0s
+	}
+
+	if timestamp-e.lastSaccadeTime >= e.nextSaccadeInterval {
+		e.lastSaccadeTime = timestamp
+		e.nextSaccadeInterval = 1800.0 + rand.Float64()*2200.0
+
+		// 45% chance: return to neutral center (0, 0)
+		// 55% chance: subtle glance around (+/- 0.16 horizontal, +/- 0.08 vertical)
+		if rand.Float64() < 0.45 {
+			e.saccadeX = 0.0
+			e.saccadeY = 0.0
+		} else {
+			e.saccadeX = (rand.Float64() - 0.5) * 0.32
+			e.saccadeY = (rand.Float64() - 0.5) * 0.16
+		}
+	}
+
+	rangeMult := ts.AutoGazeRange
+	if rangeMult <= 0 {
+		rangeMult = 1.0
+	}
+	return e.saccadeX * rangeMult, e.saccadeY * rangeMult
+}
+
+// computeTilt generates gentle autonomous head tilts and breathing posture sway.
+func (e *Engine) computeTilt(ts config.TrackingSettings, timestamp float64, tSec float64, facePresent bool) (yaw, pitch, roll float64) {
+	if !isAutomationEnabled(ts.AutoTilt, ts.AutoTiltMode, facePresent) {
+		e.currentTiltRoll = 0
+		e.currentTiltPitch = 0
+		e.currentTiltYaw = 0
+		return 0, 0, 0
+	}
+
+	amount := ts.AutoTiltAmount
+	if amount <= 0 {
+		amount = 1.0
+	}
+
+	// 1. Slow, soothing continuous breathing posture sway (period ~6.5 seconds)
+	breathingPhase := tSec * (2.0 * math.Pi / 6.5)
+	swayRoll := math.Sin(breathingPhase) * 0.8 * amount
+	swayPitch := math.Cos(breathingPhase*0.7) * 0.5 * amount
+
+	// 2. Occasional spontaneous head tilt adjustment (every 3.5s - 7.0s)
+	if e.lastTiltTime == 0 {
+		e.lastTiltTime = timestamp
+		e.nextTiltInterval = 3500.0 + rand.Float64()*3500.0
+	}
+
+	if timestamp-e.lastTiltTime >= e.nextTiltInterval {
+		e.lastTiltTime = timestamp
+		e.nextTiltInterval = 3500.0 + rand.Float64()*3500.0
+
+		// 40% return to neutral, 60% gentle posture tilt
+		if rand.Float64() < 0.40 {
+			e.targetTiltRoll = 0.0
+			e.targetTiltPitch = 0.0
+			e.targetTiltYaw = 0.0
+		} else {
+			e.targetTiltRoll = (rand.Float64() - 0.5) * 3.5 * amount
+			e.targetTiltPitch = (rand.Float64() - 0.5) * 1.8 * amount
+			e.targetTiltYaw = (rand.Float64() - 0.5) * 2.2 * amount
+		}
+	}
+
+	// Smoothly interpolate toward target posture tilt (exponential ease)
+	lerpRate := 0.04
+	e.currentTiltRoll += (e.targetTiltRoll - e.currentTiltRoll) * lerpRate
+	e.currentTiltPitch += (e.targetTiltPitch - e.currentTiltPitch) * lerpRate
+	e.currentTiltYaw += (e.targetTiltYaw - e.currentTiltYaw) * lerpRate
+
+	return e.currentTiltYaw, swayPitch + e.currentTiltPitch, swayRoll + e.currentTiltRoll
 }

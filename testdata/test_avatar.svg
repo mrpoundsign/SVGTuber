@@ -77,7 +77,7 @@
   <g
      inkscape:groupmode="layer"
      id="layer_body"
-     inkscape:label="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}]">
+     inkscape:label="Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}] [Bounce {height: 6; speed: 16; squash: 0.04; pivot: bottom}]">
     <path
        d="m 176,380 c 53.33333,-13.33333 106.66667,-13.33333 160,0 L 362.68662,399.83491 370,512 H 142 l 9.04658,-107.35793 z"
        fill="#1e1b4b"
@@ -123,7 +123,7 @@
     <!-- Blush Expression -->
     <g
        id="expr_blush"
-       inkscape:label="Blush [Show {when: isBlush}]"
+       inkscape:label="Blush [Expression {name: blush}] [Fade {param: smile; from: 0.0; to: 0.85; duration: 350ms}]"
        style="display: none;">
       <ellipse
          cx="180"

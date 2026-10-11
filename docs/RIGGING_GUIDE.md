@@ -185,6 +185,57 @@ Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}]
 
 ---
 
+### 7. `[Rotate]` — Parameter-Driven Tilting & Rotation
+Rotates an element around its local pivot based on any face tracking parameter or custom expression (e.g., expressive eyebrows, animal ears twitching, or head accessories tilting).
+
+```text
+Left Brow [Rotate {param: browInnerUp; range: 12; pivot: right}]
+Right Ear [Rotate {param: eyeBlinkR; from: 0; to: -10; pivot: bottom}]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `param` | string | — | Tracking parameter or blendshape (e.g. `browInnerUp`, `smile`, `headRoll`) |
+| `range` | float | `15` | Total angular range in degrees multiplied by the parameter value |
+| `from` | float | `0` | Starting angle in degrees at parameter value `0.0` |
+| `to` | float | `0` | Target angle in degrees at parameter value `1.0` |
+| `pivot` | string | `center` | Anchor origin: `center`, `top`, `bottom`, `left`, `right`, or `#element_id` |
+
+---
+
+### 8. `[Fade]` / `[Opacity]` — Smooth Expression Transitions
+Smoothly adjusts layer opacity instead of abrupt binary popping. Perfect for gentle blush, sweating, tears, or ambient shadows.
+
+```text
+Blush [Fade {param: isBlush; from: 0.0; to: 0.85}]
+Sweat [Opacity {when: isSweat; from: 0.0; to: 1.0}]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `param` / `when` | string | — | Parameter or boolean condition driving opacity |
+| `from` | float | `0.0` | Minimum opacity when inactive (`0.0` = fully transparent) |
+| `to` | float | `1.0` | Maximum opacity when active (`1.0` = fully opaque) |
+
+---
+
+### 9. `[Bounce]` — Voice-Reactive Audio Jiggle
+Applies an energetic vertical bounce and subtle squash-and-stretch whenever you speak, giving classic PNGTuber-style liveliness in both Hybrid and Audio-Only modes.
+
+```text
+Body [Bounce {height: 8; squash: 0.04; minVolume: 0.05}]
+Ahoge [Bounce {height: 14; squash: 0.0; speed: 24}]
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `height` | float | `8` | Maximum bounce height in pixels at peak voice volume |
+| `squash` | float | `0.03` | Squash-and-stretch intensity factor |
+| `minVolume` | float | `0.04` | Noise gate threshold below which bounce is idle |
+| `speed` | float | `18` | Oscillation bounce frequency |
+
+---
+
 ## 🎭 Creating Custom Expressions
 
 SVGTuber automatically scans your avatar SVG for any layer using the `is[A-Z]*` naming convention in a `[Show]` or `[Hide]` directive. **No server configuration or code editing is required!**

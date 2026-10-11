@@ -32,4 +32,6 @@
 ## 4. Verification & Testing
 
 - Always run `go test ./...` and `go vet ./...` before finalizing changes.
-- Ensure the static binary builds cleanly: `go build ./cmd/svgtuber`.
+- **Do not build the binary**: The user handles all binary building (`go build`, creating `.exe` files, etc.). Do not build binaries or overwrite executables in `build/`.
+- **Never modify user config files**: Never modify or overwrite the user's configuration files (`config.json`, `svgtuber.json`, etc.).
+

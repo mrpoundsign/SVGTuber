@@ -50,6 +50,7 @@ type ParamFrame struct {
 	IsSpeaking     bool               `json:"isSpeaking,omitempty"`
 	IsBlinkL       bool               `json:"isBlinkL"`
 	IsBlinkR       bool               `json:"isBlinkR"`
+	AutoBlink      bool               `json:"autoBlink,omitempty"`
 	IsMouthOpen    bool               `json:"isMouthOpen"`
 	IsSmiling      bool               `json:"isSmiling"`
 	Expressions    map[string]bool    `json:"expressions,omitempty"`

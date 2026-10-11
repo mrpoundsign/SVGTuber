@@ -107,12 +107,13 @@ function initTickerWorker() {
         if (document.hidden) {
           processFrame(false);
         }
-      } else if (micRunning) {
+      } else {
         if (document.hidden) {
-          processAudioOnlyFrame(false);
+          processCameraOffFrame(false);
         }
       }
     };
+    tickerWorker.postMessage('start');
   } catch (err) {
     console.warn("[Studio Tracker] Could not initialize background worker ticker:", err);
   }
@@ -271,9 +272,8 @@ function stopMic() {
   if (valVuMeter) valVuMeter.textContent = "0%";
 
   if (!webcamRunning) {
-    if (tickerWorker) tickerWorker.postMessage('stop');
-    stopAudioKeepAlive();
-    sendTrackingLoss({ volume: 0, isSpeaking: false });
+    // Keep camera off loop running to stream face lost frames
+    startCameraOffLoop();
   }
 }
 
@@ -331,22 +331,27 @@ function updateAudioUI(audioState) {
   }
 }
 
-function startAudioOnlyLoop() {
-  function audioLoop() {
-    if (!micRunning || webcamRunning) return;
-    if (!document.hidden) {
-      processAudioOnlyFrame(true);
+let cameraOffAnimId = null;
+
+function startCameraOffLoop() {
+  if (cameraOffAnimId) cancelAnimationFrame(cameraOffAnimId);
+  function cameraOffLoop() {
+    if (webcamRunning) {
+      cameraOffAnimId = null;
+      return;
     }
-    requestAnimationFrame(audioLoop);
+    if (!document.hidden) {
+      processCameraOffFrame(true);
+    }
+    cameraOffAnimId = requestAnimationFrame(cameraOffLoop);
   }
-  requestAnimationFrame(audioLoop);
+  cameraOffAnimId = requestAnimationFrame(cameraOffLoop);
 }
 
-function processAudioOnlyFrame(renderUI = true) {
-  if (!micRunning) return;
+function processCameraOffFrame(renderUI = true) {
   const now = performance.now();
   const audioState = sampleAudio();
-  if (renderUI) {
+  if (renderUI && audioState) {
     updateAudioUI(audioState);
   }
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -371,7 +376,10 @@ function connectWebSocket() {
 
   socket.onopen = () => {
     console.log("[Studio Tracker] Connected to Go server.");
-    updateStatus("Connected (Camera Offline)", "status-warn");
+    if (!webcamRunning) {
+      updateStatus(micRunning ? "Camera Off (Face Lost) - Audio Active" : "Camera Off (Face Lost)", "status-warn");
+      startCameraOffLoop();
+    }
   };
 
   socket.onmessage = (event) => {
@@ -457,8 +465,12 @@ async function initMediaPipe() {
       console.log("[Studio Tracker] Auto-starting camera stream on load...");
       startCamera().catch(e => {
         console.warn("[Studio Tracker] Auto-start camera warning:", e);
-        updateStatus("Model Ready. Start Camera.", "status-ok");
+        updateStatus("Camera Off (Face Lost)", "status-warn");
+        startCameraOffLoop();
       });
+    } else {
+      updateStatus("Camera Off (Face Lost)", "status-warn");
+      startCameraOffLoop();
     }
   } catch (err) {
     console.error("[Studio Tracker] Failed to initialize MediaPipe:", err);
@@ -577,6 +589,11 @@ async function startCamera(deviceId = null) {
       startMic().catch(e => console.warn("[Studio Tracker] Auto-restore mic:", e));
     }
 
+    if (cameraOffAnimId) {
+      cancelAnimationFrame(cameraOffAnimId);
+      cameraOffAnimId = null;
+    }
+
     if (animFrameId) cancelAnimationFrame(animFrameId);
     animFrameId = requestAnimationFrame(predictLoop);
   };
@@ -596,14 +613,7 @@ function stopCamera() {
     cancelAnimationFrame(animFrameId);
     animFrameId = null;
   }
-  if (micRunning) {
-    startAudioOnlyLoop();
-  } else {
-    if (tickerWorker) {
-      tickerWorker.postMessage('stop');
-    }
-    stopAudioKeepAlive();
-  }
+  startCameraOffLoop();
 
   if (video.srcObject) {
     video.srcObject.getTracks().forEach(t => t.stop());
@@ -611,8 +621,9 @@ function stopCamera() {
   }
   btnToggleCamera.textContent = "Start Camera";
   btnToggleCamera.classList.remove("btn-danger");
-  updateStatus(micRunning ? "Audio Lip-Sync Active" : "Camera Stopped", micRunning ? "status-ok" : "status-warn");
+  updateStatus(micRunning ? "Camera Off (Face Lost) - Audio Active" : "Camera Off (Face Lost)", "status-warn");
   canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+  resetTrackingGauges();
   sendTrackingLoss();
 }
 
@@ -748,6 +759,7 @@ function processFrame(renderUI = true) {
       sendTrackingLoss(audioState);
       if (renderUI) {
         canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+        resetTrackingGauges();
         updateStatus("No Face Detected", "status-warn");
       }
     }
@@ -779,9 +791,13 @@ function predictLoop() {
 
 // Resume rAF loop when tab returns to foreground
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && webcamRunning) {
-    if (animFrameId) cancelAnimationFrame(animFrameId);
-    animFrameId = requestAnimationFrame(predictLoop);
+  if (!document.hidden) {
+    if (webcamRunning) {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      animFrameId = requestAnimationFrame(predictLoop);
+    } else {
+      startCameraOffLoop();
+    }
   }
 });
 
@@ -793,6 +809,22 @@ function sendTrackingLoss(audioState) {
       audio: audioState || sampleAudio()
     }));
   }
+}
+
+function resetTrackingGauges() {
+  if (valYaw) valYaw.textContent = "0.0°";
+  if (valPitch) valPitch.textContent = "0.0°";
+  if (valRoll) valRoll.textContent = "0.0°";
+  if (gaugeYaw) gaugeYaw.style.width = "50%";
+  if (gaugePitch) gaugePitch.style.width = "50%";
+  if (gaugeRoll) gaugeRoll.style.width = "50%";
+  if (gaugeBlinkL) gaugeBlinkL.style.width = "0%";
+  if (gaugeBlinkR) gaugeBlinkR.style.width = "0%";
+  if (valBlinkL) valBlinkL.textContent = "0%";
+  if (valBlinkR) valBlinkR.textContent = "0%";
+  if (gaugeMouthOpen) gaugeMouthOpen.style.width = "0%";
+  if (gaugeSmile) gaugeSmile.style.width = "0%";
+  if (valSmile) valSmile.textContent = "0%";
 }
 
 function updateGauges(pose, blendshapes) {
@@ -894,6 +926,18 @@ const sliderMouthGain = document.getElementById("slider-mouth-gain");
 const sliderMouthThreshold = document.getElementById("slider-mouth-threshold");
 const checkboxEnableSmile = document.getElementById("checkbox-enable-smile");
 const checkboxWinkIsBlink = document.getElementById("checkbox-wink-is-blink");
+const checkboxAutoBlink = document.getElementById("checkbox-auto-blink");
+const selectAutoBlinkMode = document.getElementById("select-auto-blink-mode");
+const sliderAutoBlinkInterval = document.getElementById("slider-auto-blink-interval");
+const valAutoBlinkInterval = document.getElementById("val-auto-blink-interval");
+const checkboxAutoGaze = document.getElementById("checkbox-auto-gaze");
+const selectAutoGazeMode = document.getElementById("select-auto-gaze-mode");
+const sliderAutoGazeRange = document.getElementById("slider-auto-gaze-range");
+const valAutoGazeRange = document.getElementById("val-auto-gaze-range");
+const checkboxAutoTilt = document.getElementById("checkbox-auto-tilt");
+const selectAutoTiltMode = document.getElementById("select-auto-tilt-mode");
+const sliderAutoTiltAmount = document.getElementById("slider-auto-tilt-amount");
+const valAutoTiltAmount = document.getElementById("val-auto-tilt-amount");
 const sliderSmileThreshold = document.getElementById("slider-smile-threshold");
 const sliderBlinkThresholdL = document.getElementById("slider-blink-threshold-l");
 const sliderBlinkThresholdR = document.getElementById("slider-blink-threshold-r");
@@ -952,6 +996,15 @@ function syncSettingsToUI(s) {
     if (checkboxEnableSmile) checkboxEnableSmile.checked = t.enableSmile !== false;
     if (sliderSmileThreshold) sliderSmileThreshold.value = t.smileThreshold || 0.50;
     if (checkboxWinkIsBlink) checkboxWinkIsBlink.checked = Boolean(t.winkIsBlink);
+    if (checkboxAutoBlink) checkboxAutoBlink.checked = t.autoBlink !== false;
+    if (selectAutoBlinkMode) selectAutoBlinkMode.value = t.autoBlinkMode || "always";
+    if (sliderAutoBlinkInterval) sliderAutoBlinkInterval.value = t.autoBlinkIntervalSec || 4.0;
+    if (checkboxAutoGaze) checkboxAutoGaze.checked = t.autoGaze !== false;
+    if (selectAutoGazeMode) selectAutoGazeMode.value = t.autoGazeMode || "always";
+    if (sliderAutoGazeRange) sliderAutoGazeRange.value = t.autoGazeRange || 1.0;
+    if (checkboxAutoTilt) checkboxAutoTilt.checked = t.autoTilt !== false;
+    if (selectAutoTiltMode) selectAutoTiltMode.value = t.autoTiltMode || "always";
+    if (sliderAutoTiltAmount) sliderAutoTiltAmount.value = t.autoTiltAmount || 1.0;
     if (sliderBlinkThresholdL) sliderBlinkThresholdL.value = t.blinkThresholdL || t.blinkThreshold || 0.45;
     if (sliderBlinkThresholdR) sliderBlinkThresholdR.value = t.blinkThresholdR || t.blinkThreshold || 0.45;
     if (sliderBlinkSyncDelay) sliderBlinkSyncDelay.value = (t.blinkSyncDelayMs !== undefined ? t.blinkSyncDelayMs : 50);
@@ -979,6 +1032,9 @@ function updateSliderLabels() {
   if (valBlinkThresholdL && sliderBlinkThresholdL) valBlinkThresholdL.textContent = parseFloat(sliderBlinkThresholdL.value).toFixed(2);
   if (valBlinkThresholdR && sliderBlinkThresholdR) valBlinkThresholdR.textContent = parseFloat(sliderBlinkThresholdR.value).toFixed(2);
   if (valBlinkSyncDelay && sliderBlinkSyncDelay) valBlinkSyncDelay.textContent = `${sliderBlinkSyncDelay.value}ms`;
+  if (valAutoBlinkInterval && sliderAutoBlinkInterval) valAutoBlinkInterval.textContent = `${parseFloat(sliderAutoBlinkInterval.value).toFixed(1)}s`;
+  if (valAutoGazeRange && sliderAutoGazeRange) valAutoGazeRange.textContent = `${parseFloat(sliderAutoGazeRange.value).toFixed(1)}x`;
+  if (valAutoTiltAmount && sliderAutoTiltAmount) valAutoTiltAmount.textContent = `${parseFloat(sliderAutoTiltAmount.value).toFixed(1)}x`;
   if (valEyeGain && sliderEyeGain) valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
   if (valYawMultiplier && sliderYawMultiplier) valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier) valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
@@ -1020,6 +1076,15 @@ function collectSettingsFromUI() {
       blinkThresholdR: parseFloat(sliderBlinkThresholdR?.value || 0.45),
       blinkSyncDelayMs: parseFloat(sliderBlinkSyncDelay?.value || 50),
       winkIsBlink: checkboxWinkIsBlink ? checkboxWinkIsBlink.checked : false,
+      autoBlink: checkboxAutoBlink ? checkboxAutoBlink.checked : true,
+      autoBlinkMode: selectAutoBlinkMode ? selectAutoBlinkMode.value : "always",
+      autoBlinkIntervalSec: parseFloat(sliderAutoBlinkInterval?.value || 4.0),
+      autoGaze: checkboxAutoGaze ? checkboxAutoGaze.checked : true,
+      autoGazeMode: selectAutoGazeMode ? selectAutoGazeMode.value : "always",
+      autoGazeRange: parseFloat(sliderAutoGazeRange?.value || 1.0),
+      autoTilt: checkboxAutoTilt ? checkboxAutoTilt.checked : true,
+      autoTiltMode: selectAutoTiltMode ? selectAutoTiltMode.value : "always",
+      autoTiltAmount: parseFloat(sliderAutoTiltAmount?.value || 1.0),
       eyeGazeGain: parseFloat(sliderEyeGain?.value || 1.0),
       yawMultiplier: parseFloat(sliderYawMultiplier?.value || 1.0),
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || 1.0),
@@ -1072,6 +1137,9 @@ function onSliderInput() {
   sliderBlinkThresholdL,
   sliderBlinkThresholdR,
   sliderBlinkSyncDelay,
+  sliderAutoBlinkInterval,
+  sliderAutoGazeRange,
+  sliderAutoTiltAmount,
   sliderEyeGain,
   sliderYawMultiplier,
   sliderPitchMultiplier,
@@ -1102,6 +1170,24 @@ if (checkboxEnableSmile) {
 }
 if (checkboxWinkIsBlink) {
   checkboxWinkIsBlink.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (checkboxAutoBlink) {
+  checkboxAutoBlink.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (selectAutoBlinkMode) {
+  selectAutoBlinkMode.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (checkboxAutoGaze) {
+  checkboxAutoGaze.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (selectAutoGazeMode) {
+  selectAutoGazeMode.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (checkboxAutoTilt) {
+  checkboxAutoTilt.addEventListener("change", () => sendSettingsUpdate(true));
+}
+if (selectAutoTiltMode) {
+  selectAutoTiltMode.addEventListener("change", () => sendSettingsUpdate(true));
 }
 
 if (btnSaveSettings) {

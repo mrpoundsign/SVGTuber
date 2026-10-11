@@ -232,11 +232,14 @@ func ExtractExpressionsFromRig(rigDef *rig.RigDefinition) []string {
 				}
 			}
 
-			// 2. Conditional expressions in Show / Hide: e.g. Show {when: isBlush}
-			if (dType == "show" || dType == "hide") && d.Params != nil {
-				when := d.Params["when"]
-				if when != "" {
-					matches := isTokenRegex.FindAllString(when, -1)
+			// 2. Scan directive params (e.g. Show/Hide {when: isBlush}, Fade {param: isBlush}, etc.)
+			if d.Params != nil {
+				for _, key := range []string{"when", "param", "target", "source"} {
+					val := d.Params[key]
+					if val == "" {
+						continue
+					}
+					matches := isTokenRegex.FindAllString(val, -1)
 					for _, m := range matches {
 						lower := strings.ToLower(m)
 						if builtInIsTokens[lower] {

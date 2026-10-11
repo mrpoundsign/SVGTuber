@@ -1,6 +1,7 @@
 package server
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -138,3 +139,57 @@ func TestExtractExpressionsFromRig(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractExpressionsFromRig_TestAvatar(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/test_avatar.svg")
+	if err != nil {
+		t.Fatalf("Failed to read test_avatar.svg: %v", err)
+	}
+	rigDef, err := rig.ParseSVG(data)
+	if err != nil {
+		t.Fatalf("Failed to parse test_avatar.svg: %v", err)
+	}
+
+	discovered := ExtractExpressionsFromRig(rigDef)
+	expected := map[string]bool{
+		"blush": true,
+		"sweat": true,
+	}
+
+	if len(discovered) != len(expected) {
+		t.Fatalf("Expected %d expressions, got %d: %v", len(expected), len(discovered), discovered)
+	}
+	for _, name := range discovered {
+		if !expected[name] {
+			t.Errorf("Unexpected expression in test avatar: %s", name)
+		}
+	}
+}
+
+func TestExtractExpressionsFromRig_Vectorcraft(t *testing.T) {
+	data, err := os.ReadFile("../../testdata/test_avatar_vectorcraft.svg")
+	if err != nil {
+		t.Fatalf("Failed to read test_avatar_vectorcraft.svg: %v", err)
+	}
+	rigDef, err := rig.ParseSVG(data)
+	if err != nil {
+		t.Fatalf("Failed to parse test_avatar_vectorcraft.svg: %v", err)
+	}
+
+	discovered := ExtractExpressionsFromRig(rigDef)
+	expected := map[string]bool{
+		"blush": true,
+		"sweat": true,
+	}
+
+	if len(discovered) != len(expected) {
+		t.Fatalf("Expected %d expressions, got %d: %v", len(expected), len(discovered), discovered)
+	}
+	for _, name := range discovered {
+		if !expected[name] {
+			t.Errorf("Unexpected expression in vectorcraft test avatar: %s", name)
+		}
+	}
+}
+
+
