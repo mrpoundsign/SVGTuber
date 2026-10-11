@@ -17,6 +17,8 @@
   let activeExpressions = {};
   let activeAccessories = [];
   const accessorySVGCache = new Map();
+  const urlParams = new URLSearchParams(window.location.search);
+  const isFreezeMode = urlParams.has('freeze') || urlParams.has('rest');
   // Initialize with neutral defaults so Idle breathing and initial positioning work immediately
   let latestParams = {
     present: false,
@@ -447,6 +449,59 @@
     return svg;
   }
 
+  function computeTargetAnchorCenter(targetNode, svg) {
+    if (!targetNode || targetNode === svg) {
+      if (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width > 0) {
+        return {
+          x: svg.viewBox.baseVal.x + svg.viewBox.baseVal.width / 2,
+          y: svg.viewBox.baseVal.y + svg.viewBox.baseVal.height / 2,
+        };
+      }
+      const w = parseFloat(svg.getAttribute('width')) || 512;
+      const h = parseFloat(svg.getAttribute('height')) || 512;
+      return { x: w / 2, y: h / 2 };
+    }
+
+    // Hide all existing accessory nodes inside targetNode so they don't skew the target bounding box
+    const attachedAccs = targetNode.querySelectorAll('.svgtuber-accessory');
+    const prevDisplays = [];
+    attachedAccs.forEach(node => {
+      prevDisplays.push(node.style.display);
+      node.style.display = 'none';
+    });
+
+    const prevDisplay = targetNode.style.display;
+    const isHidden = (getComputedStyle(targetNode).display === 'none') || (prevDisplay === 'none');
+    if (isHidden) targetNode.style.display = 'inline';
+
+    let anchorX = 0, anchorY = 0;
+    try {
+      const tb = targetNode.getBBox();
+      if (tb && (tb.width > 0 || tb.height > 0)) {
+        anchorX = tb.x + tb.width / 2;
+        anchorY = tb.y + tb.height / 2;
+      }
+    } catch (e) {}
+
+    if (isHidden) targetNode.style.display = prevDisplay;
+    attachedAccs.forEach((node, i) => {
+      node.style.display = prevDisplays[i];
+    });
+
+    if (anchorX === 0 && anchorY === 0) {
+      if (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width > 0) {
+        anchorX = svg.viewBox.baseVal.x + svg.viewBox.baseVal.width / 2;
+        anchorY = svg.viewBox.baseVal.y + svg.viewBox.baseVal.height / 2;
+      } else {
+        const w = parseFloat(svg.getAttribute('width')) || 512;
+        const h = parseFloat(svg.getAttribute('height')) || 512;
+        anchorX = w / 2;
+        anchorY = h / 2;
+      }
+    }
+    return { x: anchorX, y: anchorY };
+  }
+
   async function _doSyncAccessories(list) {
     if (Array.isArray(list)) {
       activeAccessories = list;
@@ -547,34 +602,9 @@
           let targetNode = findAnchorTarget(svg, acc.target || 'layer_head');
 
           // Calculate target anchor center before appending accGroup
-          let anchorX = 0, anchorY = 0;
-          if (targetNode !== svg) {
-            try {
-              const prevDisplay = targetNode.style.display;
-              const isHidden = (getComputedStyle(targetNode).display === 'none') || (prevDisplay === 'none');
-              if (isHidden) targetNode.style.display = 'inline';
-              const tb = targetNode.getBBox();
-              if (isHidden) targetNode.style.display = prevDisplay;
-              if (tb && (tb.width > 0 || tb.height > 0)) {
-                anchorX = tb.x + tb.width / 2;
-                anchorY = tb.y + tb.height / 2;
-              }
-            } catch (e) {}
-          }
-          if (anchorX === 0 && anchorY === 0) {
-            if (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width > 0) {
-              anchorX = svg.viewBox.baseVal.x + svg.viewBox.baseVal.width / 2;
-              anchorY = svg.viewBox.baseVal.y + svg.viewBox.baseVal.height / 2;
-            } else {
-              const w = parseFloat(svg.getAttribute('width')) || 512;
-              const h = parseFloat(svg.getAttribute('height')) || 512;
-              anchorX = w / 2;
-              anchorY = h / 2;
-            }
-          }
-
-          accGroup.dataset.anchorX = String(anchorX);
-          accGroup.dataset.anchorY = String(anchorY);
+          const anchor = computeTargetAnchorCenter(targetNode, svg);
+          accGroup.dataset.anchorX = String(anchor.x);
+          accGroup.dataset.anchorY = String(anchor.y);
           accGroup.dataset.currentTarget = acc.target || 'layer_head';
 
           if (acc.order === 'back') {
@@ -600,35 +630,9 @@
           }
 
           // Recompute anchor center for new target
-          let anchorX = 0, anchorY = 0;
-          if (desiredTarget !== svg) {
-            try {
-              const prevDisplay = desiredTarget.style.display;
-              const isHidden = (getComputedStyle(desiredTarget).display === 'none') || (prevDisplay === 'none');
-              if (isHidden) desiredTarget.style.display = 'inline';
-              accGroup.style.display = 'none';
-              const tb = desiredTarget.getBBox();
-              accGroup.style.display = '';
-              if (isHidden) desiredTarget.style.display = prevDisplay;
-              if (tb && (tb.width > 0 || tb.height > 0)) {
-                anchorX = tb.x + tb.width / 2;
-                anchorY = tb.y + tb.height / 2;
-              }
-            } catch (e) {}
-          }
-          if (anchorX === 0 && anchorY === 0) {
-            if (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.width > 0) {
-              anchorX = svg.viewBox.baseVal.x + svg.viewBox.baseVal.width / 2;
-              anchorY = svg.viewBox.baseVal.y + svg.viewBox.baseVal.height / 2;
-            } else {
-              const w = parseFloat(svg.getAttribute('width')) || 512;
-              const h = parseFloat(svg.getAttribute('height')) || 512;
-              anchorX = w / 2;
-              anchorY = h / 2;
-            }
-          }
-          accGroup.dataset.anchorX = String(anchorX);
-          accGroup.dataset.anchorY = String(anchorY);
+          const newAnchor = computeTargetAnchorCenter(desiredTarget, svg);
+          accGroup.dataset.anchorX = String(newAnchor.x);
+          accGroup.dataset.anchorY = String(newAnchor.y);
         } else {
           if (acc.order === 'back' && accGroup !== desiredTarget.firstChild) {
             desiredTarget.insertBefore(accGroup, desiredTarget.firstChild);
@@ -825,7 +829,7 @@
     prevAudioVol = audioVol;
 
     let globalPhysicsMult = 1.0;
-    if (p.physicsEnabled === false) {
+    if (isFreezeMode || p.physicsEnabled === false) {
       globalPhysicsMult = 0;
     } else if (p.physicsAmount !== undefined) {
       const val = parseFloat(p.physicsAmount);
@@ -902,11 +906,13 @@
           }
           case 'idle':
           case 'breathe': {
-            const breathe = parseFloat(params.breathe || 0.02);
-            const period = parseDuration(params.period, 3500);
-            const phase = ((now % period) / period) * 2 * Math.PI;
-            const idleFactor = 1.0 + Math.sin(phase) * breathe;
-            sy *= idleFactor;
+            if (!isFreezeMode) {
+              const breathe = parseFloat(params.breathe || 0.02);
+              const period = parseDuration(params.period, 3500);
+              const phase = ((now % period) / period) * 2 * Math.PI;
+              const idleFactor = 1.0 + Math.sin(phase) * breathe;
+              sy *= idleFactor;
+            }
             break;
           }
           case 'rotate': {
@@ -1324,6 +1330,10 @@
         } else if (msg.type === 'accessory_update') {
           syncAccessories(msg.accessories);
         } else if (msg.type === 'param_frame') {
+          if (isFreezeMode) {
+            // Stay in pure rest pose during fitting/freeze mode
+            return;
+          }
           latestParams = msg;
           window.latestParams = msg;
           if (msg.expressions) {

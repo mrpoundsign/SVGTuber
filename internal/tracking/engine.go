@@ -34,6 +34,10 @@ type Engine struct {
 	openTimeL        float64
 	openTimeR        float64
 	inBilateralBlink bool
+	eyeClosedL       bool
+	eyeClosedR       bool
+	lastCloseTimeL   float64
+	lastCloseTimeR   float64
 	exprProvider     func() map[string]bool
 
 	// Auto-blink state
@@ -127,6 +131,10 @@ func (e *Engine) ResetCalibration() {
 	e.openTimeL = 0
 	e.openTimeR = 0
 	e.inBilateralBlink = false
+	e.eyeClosedL = false
+	e.eyeClosedR = false
+	e.lastCloseTimeL = 0
+	e.lastCloseTimeR = 0
 	e.autoBlinkActive = false
 	e.lastBlinkTime = 0
 	e.nextAutoBlinkInterval = 0
@@ -235,12 +243,12 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		e.pendingCloseL = false
 		e.pendingCloseR = false
 		e.pendingOpenL = false
-		autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp, false, false)
+		autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp)
 		saccadeX, saccadeY := e.computeSaccade(ts, raw.Timestamp, false)
 		tiltYaw, tiltPitch, tiltRoll := e.computeTilt(ts, raw.Timestamp, tSec, false)
-		filtBlinkL := e.filter.blinkL.Filter(autoBlink, tSec)
-		filtBlinkR := e.filter.blinkR.Filter(autoBlink, tSec)
-		isAutoClosed := autoActive && (autoBlink >= ts.BlinkThreshold)
+		filtBlinkL := autoBlink
+		filtBlinkR := autoBlink
+		isAutoClosed := autoActive && (autoBlink >= 0.5)
 
 		e.pendingOpenR = false
 		e.inBilateralBlink = isAutoClosed
@@ -283,12 +291,12 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	}
 
 	if !raw.Present {
-		autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp, false, false)
+		autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp)
 		saccadeX, saccadeY := e.computeSaccade(ts, raw.Timestamp, false)
 		tiltYaw, tiltPitch, tiltRoll := e.computeTilt(ts, raw.Timestamp, tSec, false)
-		filtBlinkL := e.filter.blinkL.Filter(autoBlink, tSec)
-		filtBlinkR := e.filter.blinkR.Filter(autoBlink, tSec)
-		isAutoClosed := autoActive && (autoBlink >= ts.BlinkThreshold)
+		filtBlinkL := autoBlink
+		filtBlinkR := autoBlink
+		isAutoClosed := autoActive && (autoBlink >= 0.5)
 
 		// Face lost: smoothly filter down toward neutral (0)
 		filtMouth := e.filter.mouthOpen.Filter(0, tSec)
@@ -451,18 +459,10 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		isBlinkL, isBlinkR = e.evaluateBlinks(blinkL, blinkR, threshL, threshR, syncDelay, raw.Timestamp)
 	}
 
-	naturalBlink := isBlinkL || isBlinkR || (blinkL >= threshL) || (blinkR >= threshR)
-	autoActive, autoBlink := e.computeAutoBlink(ts, raw.Timestamp, true, naturalBlink)
-	if autoActive {
-		filtBlinkL = math.Max(filtBlinkL, autoBlink)
-		filtBlinkR = math.Max(filtBlinkR, autoBlink)
-		if autoBlink >= threshL {
-			isBlinkL = true
-		}
-		if autoBlink >= threshR {
-			isBlinkR = true
-		}
-	}
+	// Auto-blink is strictly for when camera or face is not detected.
+	// When camera detects face, blinks are driven purely by optical tracking.
+	e.autoBlinkActive = false
+	e.lastBlinkTime = raw.Timestamp
 
 	saccadeX, saccadeY := e.computeSaccade(ts, raw.Timestamp, true)
 	tiltYaw, tiltPitch, tiltRoll := e.computeTilt(ts, raw.Timestamp, tSec, true)
@@ -498,7 +498,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		IsSpeaking:       isSpeaking,
 		IsBlinkL:         isBlinkL,
 		IsBlinkR:         isBlinkR,
-		AutoBlink:        autoActive,
+		AutoBlink:        false,
 		IsMouthOpen:      filtMouth >= ts.MouthThreshold,
 		IsSmiling:        filtSmile >= ts.SmileThreshold,
 		Expressions:      activeExprs,
@@ -509,8 +509,34 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 // evaluateBlinks applies independent thresholds and a synchronization delay window to
 // discriminate between natural bilateral blinks and intentional unilateral winks.
 func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs float64) (bool, bool) {
-	rawL := filtL >= threshL
-	rawR := filtR >= threshR
+	// Apply hysteresis to prevent rapid flutter around threshold
+	const hysteresis = 0.08
+
+	reopenL := math.Max(0.1, threshL-hysteresis)
+	reopenR := math.Max(0.1, threshR-hysteresis)
+
+	if !e.eyeClosedL {
+		if filtL >= threshL {
+			e.eyeClosedL = true
+		}
+	} else {
+		if filtL < reopenL {
+			e.eyeClosedL = false
+		}
+	}
+
+	if !e.eyeClosedR {
+		if filtR >= threshR {
+			e.eyeClosedR = true
+		}
+	} else {
+		if filtR < reopenR {
+			e.eyeClosedR = false
+		}
+	}
+
+	rawL := e.eyeClosedL
+	rawR := e.eyeClosedR
 
 	if syncDelay <= 0 {
 		e.pendingCloseL = false
@@ -636,9 +662,10 @@ func isAutomationEnabled(enabled bool, mode string, facePresent bool) bool {
 	}
 }
 
-// computeAutoBlink evaluates autonomous natural blinks when tracking is idle, in audio mode, or face lost.
-func (e *Engine) computeAutoBlink(ts config.TrackingSettings, timestamp float64, facePresent bool, naturalBlink bool) (bool, float64) {
-	if !isAutomationEnabled(ts.AutoBlink, ts.AutoBlinkMode, facePresent) {
+// computeAutoBlink evaluates autonomous natural blinks when camera or face is not detected.
+// Auto-blink uses strictly AutoBlinkIntervalSec and is independent of camera optical thresholds.
+func (e *Engine) computeAutoBlink(ts config.TrackingSettings, timestamp float64) (bool, float64) {
+	if !ts.AutoBlink {
 		e.autoBlinkActive = false
 		return false, 0
 	}
@@ -648,14 +675,7 @@ func (e *Engine) computeAutoBlink(ts config.TrackingSettings, timestamp float64,
 		baseIntervalMs = 4000.0
 	}
 
-	if naturalBlink {
-		e.lastBlinkTime = timestamp
-		e.autoBlinkActive = false
-		e.nextAutoBlinkInterval = baseIntervalMs * (0.8 + rand.Float64()*0.4)
-		return false, 0
-	}
-
-	if e.lastBlinkTime == 0 {
+	if e.lastBlinkTime == 0 || e.nextAutoBlinkInterval <= 0 {
 		e.lastBlinkTime = timestamp
 		e.nextAutoBlinkInterval = baseIntervalMs * (0.8 + rand.Float64()*0.4)
 	}

@@ -447,19 +447,28 @@ func (m *Manager) Update(newSettings Settings) error {
 	if newSettings.AvatarPath == "" && m.settings.AvatarPath != "" {
 		newSettings.AvatarPath = m.settings.AvatarPath
 	}
+	// Preserve configured accessories if incoming payload leaves them empty
+	if len(newSettings.AvatarAccessories) == 0 && len(m.settings.AvatarAccessories) > 0 {
+		newSettings.AvatarAccessories = m.settings.AvatarAccessories
+	}
+	if len(newSettings.Accessories) == 0 && len(m.settings.Accessories) > 0 {
+		newSettings.Accessories = m.settings.Accessories
+	}
 	m.settings = newSettings
 	m.mu.Unlock()
 
 	return m.Save()
 }
 
-// Reset restores settings to default values and saves to disk while preserving avatar directory and paths.
+// Reset restores settings to default values and saves to disk while preserving avatar directory, paths, and accessories.
 func (m *Manager) Reset() (Settings, error) {
 	defaults := DefaultSettings()
 	m.mu.Lock()
 	defaults.AvatarDir = m.settings.AvatarDir
 	defaults.CurrentAvatar = m.settings.CurrentAvatar
 	defaults.AvatarPath = m.settings.AvatarPath
+	defaults.Accessories = m.settings.Accessories
+	defaults.AvatarAccessories = m.settings.AvatarAccessories
 	m.settings = defaults
 	m.mu.Unlock()
 

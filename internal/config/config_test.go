@@ -326,4 +326,71 @@ func TestManager_PerAvatarAccessories(t *testing.T) {
 	}
 }
 
+func TestConfigManager_UpdatePreservesAccessories(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+
+	mgr, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	avatar := "test.svg"
+	if err := mgr.SetActiveAvatar(avatar); err != nil {
+		t.Fatalf("SetActiveAvatar failed: %v", err)
+	}
+
+	acc := AccessoryConfig{
+		ID:      "shades",
+		File:    "shades.svg",
+		Target:  "layer_head",
+		Enabled: true,
+	}
+	if err := mgr.SetAccessoryForAvatar(avatar, acc); err != nil {
+		t.Fatalf("SetAccessoryForAvatar failed: %v", err)
+	}
+
+	// Verify accessory exists before Update
+	before := mgr.GetAccessoriesForAvatar(avatar)
+	if len(before) != 1 || before[0].ID != "shades" {
+		t.Fatalf("Expected 1 accessory before update, got: %+v", before)
+	}
+
+	// Simulate frontend updating tracking sliders (which sends Settings with empty/nil accessories)
+	sliderUpdate := Settings{
+		Version: 2,
+		Tracking: TrackingSettings{
+			MouthGain: 2.5,
+		},
+	}
+	if err := mgr.Update(sliderUpdate); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	// Verify accessory was NOT wiped
+	after := mgr.GetAccessoriesForAvatar(avatar)
+	if len(after) != 1 || after[0].ID != "shades" {
+		t.Fatalf("Update wiped accessories! Expected 1 accessory, got: %+v", after)
+	}
+
+	// Reload from disk and verify persistence
+	mgrReloaded, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager reload failed: %v", err)
+	}
+	afterReload := mgrReloaded.GetAccessoriesForAvatar(avatar)
+	if len(afterReload) != 1 || afterReload[0].ID != "shades" {
+		t.Fatalf("Reloaded config missing accessories! Got: %+v", afterReload)
+	}
+
+	// Verify Reset also preserves accessories
+	if _, err := mgr.Reset(); err != nil {
+		t.Fatalf("Reset failed: %v", err)
+	}
+	afterReset := mgr.GetAccessoriesForAvatar(avatar)
+	if len(afterReset) != 1 || afterReset[0].ID != "shades" {
+		t.Fatalf("Reset wiped accessories! Got: %+v", afterReset)
+	}
+}
+
 

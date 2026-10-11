@@ -1262,6 +1262,7 @@ loadSettings();
 
 // Expressions & Hotkeys Management
 let availableExpressions = [];
+let avatarExpressions = [];
 let activeExpressions = {};
 const expressionsContainer = document.getElementById("expressions-container");
 const btnClearExpressions = document.getElementById("btn-clear-expressions");
@@ -1275,6 +1276,7 @@ async function loadExpressions() {
     const data = await res.json();
     activeExpressions = data.active || {};
     availableExpressions = data.available || [];
+    avatarExpressions = data.avatarExpressions || [];
     renderExpressionButtons();
     updateAllExpressionDropdowns();
   } catch (err) {
@@ -1342,16 +1344,20 @@ function renderExpressionButtons() {
 }
 
 function updateExpressionButtonsUI() {
-  if (!expressionsContainer) return;
-  const buttons = expressionsContainer.querySelectorAll(".expr-btn");
-  buttons.forEach(btn => {
-    const name = btn.dataset.name;
-    if (activeExpressions[name]) {
-      btn.classList.add("active");
-    } else {
-      btn.classList.remove("active");
-    }
-  });
+  if (expressionsContainer) {
+    const buttons = expressionsContainer.querySelectorAll(".expr-btn");
+    buttons.forEach(btn => {
+      const name = btn.dataset.name;
+      if (activeExpressions[name]) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+  }
+  if (typeof renderModalExpressionPreview === "function" && typeof getActiveModalAcc === "function") {
+    renderModalExpressionPreview(getActiveModalAcc());
+  }
 }
 
 async function toggleExpression(name) {
@@ -1515,7 +1521,7 @@ loadAvatars();
 // ==========================================
 let availableAccessoryFiles = [];
 let configuredAccessories = [];
-const openDrawers = new Set();
+let accessoryFileExpressions = {};
 const accessoryDebounceMap = new Map();
 
 const accessoryCountBadge = document.getElementById("accessory-count-badge");
@@ -1540,6 +1546,7 @@ async function loadAccessories() {
     const data = await res.json();
     availableAccessoryFiles = data.availableFiles || [];
     configuredAccessories = data.accessories || [];
+    accessoryFileExpressions = data.fileExpressions || {};
     renderAccessoriesUI();
   } catch (err) {
     console.error("[Studio Tracker] Error loading accessories:", err);
@@ -1630,47 +1637,17 @@ function renderAccessoriesUI() {
   // Update existing or append new cards
   configuredAccessories.forEach((acc) => {
     let card = accessoryListEl.querySelector(`.accessory-card[data-acc-id="${CSS.escape(acc.id)}"]`);
+    const exprText = acc.expression ? ` • Trigger: ${acc.expression}` : "";
+    const metaText = `${acc.file} • ${acc.target || 'layer_head'}${exprText}`;
+
     if (card) {
-      // In-place update to prevent DOM recreation and focus loss!
+      // In-place update
       const meta = card.querySelector('.accessory-meta');
-      if (meta) meta.textContent = `${acc.file} • ${acc.target || 'layer_head'}`;
+      if (meta) meta.textContent = metaText;
 
       const switchInput = card.querySelector('.switch input');
       if (switchInput && document.activeElement !== switchInput) {
         switchInput.checked = Boolean(acc.enabled);
-      }
-
-      // Do NOT overwrite slider / input values while user is interacting inside this card!
-      if (!card.contains(document.activeElement)) {
-        const xRange = card.querySelector('.ctrl-x input[type=range]');
-        const xNum = card.querySelector('.ctrl-x input[type=number]');
-        if (xRange) xRange.value = String(acc.x || 0);
-        if (xNum) xNum.value = String(acc.x || 0);
-
-        const yRange = card.querySelector('.ctrl-y input[type=range]');
-        const yNum = card.querySelector('.ctrl-y input[type=number]');
-        if (yRange) yRange.value = String(acc.y || 0);
-        if (yNum) yNum.value = String(acc.y || 0);
-
-        const sxRange = card.querySelector('.ctrl-sx input[type=range]');
-        const sxNum = card.querySelector('.ctrl-sx input[type=number]');
-        if (sxRange) sxRange.value = String(acc.scaleX !== undefined ? acc.scaleX : 1.0);
-        if (sxNum) sxNum.value = String(parseFloat(acc.scaleX !== undefined ? acc.scaleX : 1.0).toFixed(2));
-
-        const syRange = card.querySelector('.ctrl-sy input[type=range]');
-        const syNum = card.querySelector('.ctrl-sy input[type=number]');
-        if (syRange) syRange.value = String(acc.scaleY !== undefined ? acc.scaleY : 1.0);
-        if (syNum) syNum.value = String(parseFloat(acc.scaleY !== undefined ? acc.scaleY : 1.0).toFixed(2));
-
-        const rotRange = card.querySelector('.ctrl-rot input[type=range]');
-        const rotNum = card.querySelector('.ctrl-rot input[type=number]');
-        if (rotRange) rotRange.value = String(acc.rotation || 0);
-        if (rotNum) rotNum.value = String(acc.rotation || 0);
-
-        const exprSelect = card.querySelector('.acc-expr-select');
-        if (exprSelect && document.activeElement !== exprSelect) {
-          populateExpressionSelect(exprSelect, acc.expression || "");
-        }
       }
       return;
     }
@@ -1769,231 +1746,87 @@ function renderAccessoriesUI() {
       }
     });
 
-    // Expand arrow
-    const expandIcon = document.createElement("span");
-    expandIcon.style.fontSize = "11px";
-    expandIcon.style.color = "var(--text-muted)";
-    expandIcon.textContent = isOpen ? "▲" : "▼";
-
     controls.appendChild(switchLabel);
     controls.appendChild(btnFit);
     controls.appendChild(btnRemove);
-    controls.appendChild(expandIcon);
+
+    // Clicking anywhere on card opens Dressing Room
+    header.style.cursor = "pointer";
+    header.title = "Click to fit in Dressing Room";
+    header.addEventListener("click", () => {
+      openDressingRoom(acc.id);
+    });
 
     header.appendChild(info);
     header.appendChild(controls);
 
-    // Drawer for Position, Stretch, Rotation
-    const drawer = document.createElement("div");
-    drawer.className = `accessory-drawer ${isOpen ? "open" : ""}`;
-
-    // Target, Order, and Expression row
-    const targetRow = document.createElement("div");
-    targetRow.style.display = "grid";
-    targetRow.style.gridTemplateColumns = "1fr 1fr 1fr";
-    targetRow.style.gap = "8px";
-
-    const targetGroup = document.createElement("div");
-    targetGroup.innerHTML = `
-      <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Anchor Target</label>
-      <select class="form-select acc-target-select" style="width: 100%; background: #191924; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 8px; font-size: 12px;">
-        <option value="layer_head">layer_head (Head Anchor)</option>
-        <option value="head">head (Face Anchor)</option>
-        <option value="root_svg">root_svg (Root Space)</option>
-      </select>
-    `;
-    const targetSelect = targetGroup.querySelector("select");
-    if (acc.target) {
-      if (!["layer_head", "head", "root_svg"].includes(acc.target)) {
-        const customOpt = document.createElement("option");
-        customOpt.value = acc.target;
-        customOpt.textContent = acc.target;
-        targetSelect.appendChild(customOpt);
-      }
-      targetSelect.value = acc.target;
-    }
-    targetSelect.addEventListener("change", (e) => {
-      acc.target = e.target.value;
-      meta.textContent = `${acc.file} • ${acc.target}`;
-      debounceSaveAccessory(acc);
-    });
-
-    const orderGroup = document.createElement("div");
-    orderGroup.innerHTML = `
-      <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Layer Order</label>
-      <select class="form-select acc-order-select" style="width: 100%; background: #191924; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 8px; font-size: 12px;">
-        <option value="front">In Front (Foreground)</option>
-        <option value="back">Behind (Background)</option>
-      </select>
-    `;
-    const orderSelect = orderGroup.querySelector("select");
-    orderSelect.value = acc.order || "front";
-    orderSelect.addEventListener("change", (e) => {
-      acc.order = e.target.value;
-      debounceSaveAccessory(acc);
-    });
-
-    const exprGroup = document.createElement("div");
-    exprGroup.innerHTML = `
-      <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Expression Trigger</label>
-      <select class="form-select acc-expr-select" style="width: 100%; background: #191924; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 4px 8px; font-size: 12px;">
-      </select>
-    `;
-    const exprSelect = exprGroup.querySelector("select");
-    populateExpressionSelect(exprSelect, acc.expression || "");
-    exprSelect.addEventListener("change", (e) => {
-      if (e.target.value === "__custom__") {
-        const customName = prompt("Enter custom expression trigger name (e.g. sweat, crying, angry):");
-        if (customName && customName.trim()) {
-          const clean = customName.trim().toLowerCase();
-          acc.expression = clean;
-          populateExpressionSelect(exprSelect, clean);
-          debounceSaveAccessory(acc);
-          flashAccessorySaved();
-        } else {
-          exprSelect.value = acc.expression || "";
-        }
-        return;
-      }
-      acc.expression = e.target.value;
-      debounceSaveAccessory(acc);
-      flashAccessorySaved();
-    });
-
-    targetRow.appendChild(targetGroup);
-    targetRow.appendChild(orderGroup);
-    targetRow.appendChild(exprGroup);
-    drawer.appendChild(targetRow);
-
-    // Helper to build a slider row with linked numeric input
-    function makeSliderRow(label, min, max, step, val, className, onChange) {
-      const row = document.createElement("div");
-      row.className = `slider-item ${className || ''}`;
-      row.style.gridTemplateColumns = "110px 1fr 62px";
-
-      const lbl = document.createElement("label");
-      lbl.textContent = label;
-      lbl.style.fontSize = "11px";
-
-      const input = document.createElement("input");
-      input.type = "range";
-      input.min = String(min);
-      input.max = String(max);
-      input.step = String(step);
-      input.value = String(val);
-
-      const numInput = document.createElement("input");
-      numInput.type = "number";
-      numInput.className = "slider-num-input";
-      numInput.min = String(min);
-      numInput.max = String(max);
-      numInput.step = String(step);
-      numInput.value = String(parseFloat(val).toFixed(step < 1 ? 2 : 0));
-
-      input.addEventListener("input", (e) => {
-        const num = parseFloat(e.target.value);
-        numInput.value = num.toFixed(step < 1 ? 2 : 0);
-        onChange(num);
-      });
-
-      numInput.addEventListener("input", (e) => {
-        const num = parseFloat(e.target.value);
-        if (!isNaN(num)) {
-          input.value = String(num);
-          onChange(num);
-        }
-      });
-
-      row.appendChild(lbl);
-      row.appendChild(input);
-      row.appendChild(numInput);
-      return { row, input, numInput };
-    }
-
-    // X Position: -1000px to +1000px
-    const xCtrl = makeSliderRow("Position X (px)", -1000, 1000, 1, acc.x || 0, "ctrl-x", (val) => {
-      acc.x = val;
-      debounceSaveAccessory(acc);
-    });
-    drawer.appendChild(xCtrl.row);
-
-    // Y Position: -1000px to +1000px
-    const yCtrl = makeSliderRow("Position Y (px)", -1000, 1000, 1, acc.y || 0, "ctrl-y", (val) => {
-      acc.y = val;
-      debounceSaveAccessory(acc);
-    });
-    drawer.appendChild(yCtrl.row);
-
-    // Scale X (Stretch Width): 0.05 to 5.0
-    const scaleXCtrl = makeSliderRow("Scale X (Width)", 0.05, 5.0, 0.05, acc.scaleX !== undefined ? acc.scaleX : 1.0, "ctrl-sx", (val) => {
-      acc.scaleX = val;
-      debounceSaveAccessory(acc);
-    });
-    drawer.appendChild(scaleXCtrl.row);
-
-    // Scale Y (Stretch Height): 0.05 to 5.0
-    const scaleYCtrl = makeSliderRow("Scale Y (Height)", 0.05, 5.0, 0.05, acc.scaleY !== undefined ? acc.scaleY : 1.0, "ctrl-sy", (val) => {
-      acc.scaleY = val;
-      debounceSaveAccessory(acc);
-    });
-    drawer.appendChild(scaleYCtrl.row);
-
-    // Rotation: -180 to +180 deg
-    const rotCtrl = makeSliderRow("Rotation (°)", -180, 180, 1, acc.rotation || 0, "ctrl-rot", (val) => {
-      acc.rotation = val;
-      debounceSaveAccessory(acc);
-    });
-    drawer.appendChild(rotCtrl.row);
-
-    // Reset Button Row
-    const actionRow = document.createElement("div");
-    actionRow.style.display = "flex";
-    actionRow.style.justifyContent = "flex-end";
-    actionRow.style.gap = "8px";
-    actionRow.style.marginTop = "4px";
-
-    const btnReset = document.createElement("button");
-    btnReset.className = "btn btn-secondary";
-    btnReset.style.fontSize = "10px";
-    btnReset.style.padding = "3px 8px";
-    btnReset.textContent = "Reset Transforms";
-    btnReset.addEventListener("click", () => {
-      acc.x = 0;
-      acc.y = 0;
-      acc.scaleX = 1.0;
-      acc.scaleY = 1.0;
-      acc.rotation = 0;
-      xCtrl.input.value = "0";
-      xCtrl.numInput.value = "0";
-      yCtrl.input.value = "0";
-      yCtrl.numInput.value = "0";
-      scaleXCtrl.input.value = "1";
-      scaleXCtrl.numInput.value = "1.00";
-      scaleYCtrl.input.value = "1";
-      scaleYCtrl.numInput.value = "1.00";
-      rotCtrl.input.value = "0";
-      rotCtrl.numInput.value = "0";
-      debounceSaveAccessory(acc);
-    });
-    actionRow.appendChild(btnReset);
-    drawer.appendChild(actionRow);
-
-    // Toggle drawer on header click
-    header.addEventListener("click", () => {
-      if (openDrawers.has(acc.id)) {
-        openDrawers.delete(acc.id);
-        drawer.classList.remove("open");
-        expandIcon.textContent = "▼";
-      } else {
-        openDrawers.add(acc.id);
-        drawer.classList.add("open");
-        expandIcon.textContent = "▲";
-      }
-    });
-
     card.appendChild(header);
-    card.appendChild(drawer);
     accessoryListEl.appendChild(card);
+  });
+
+  renderModalDiscoveredAccessoriesChips();
+}
+
+const modalDiscoveredAccessoriesChipsEl = document.getElementById("modal-discovered-accessories-chips");
+const modalBtnRefreshAccessories = document.getElementById("modal-btn-refresh-accessories");
+
+function renderModalDiscoveredAccessoriesChips() {
+  if (!modalDiscoveredAccessoriesChipsEl) return;
+  modalDiscoveredAccessoriesChipsEl.innerHTML = "";
+
+  if (availableAccessoryFiles.length === 0) {
+    modalDiscoveredAccessoriesChipsEl.innerHTML = '<span style="font-size: 11px; color: var(--text-muted);">No .svg files found in accessories directory.</span>';
+    return;
+  }
+
+  const activeAcc = typeof getActiveModalAcc === "function" ? getActiveModalAcc() : null;
+
+  availableAccessoryFiles.forEach(file => {
+    const isEquipped = configuredAccessories.some(a => a.file === file);
+    const isSelected = activeAcc && activeAcc.file === file;
+    const chip = document.createElement("button");
+    chip.className = `acc-chip ${isSelected ? "active-modal-chip" : ""}`;
+    chip.style.fontSize = "11px";
+    chip.style.padding = "3px 8px";
+    chip.style.display = "inline-flex";
+    chip.style.alignItems = "center";
+    chip.style.gap = "5px";
+
+    if (isEquipped) {
+      chip.title = `${file} is equipped. Click to select & adjust in Dressing Room.`;
+      chip.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓</span> <span>${file}</span>`;
+      chip.addEventListener("click", () => {
+        const acc = configuredAccessories.find(a => a.file === file);
+        if (acc) {
+          activeModalAccId = acc.id;
+          if (modalAccessorySelect) modalAccessorySelect.value = acc.id;
+          syncModalControlsFromAcc(acc);
+          renderModalExpressionPreview(acc);
+          renderModalDiscoveredAccessoriesChips();
+        }
+      });
+    } else {
+      chip.title = `Click to equip ${file} to avatar`;
+      chip.innerHTML = `<span style="color: var(--accent); font-weight: bold;">+</span> <span>${file}</span>`;
+      chip.addEventListener("click", async () => {
+        await equipNewAccessory(file);
+      });
+    }
+
+    modalDiscoveredAccessoriesChipsEl.appendChild(chip);
+  });
+}
+
+if (modalBtnRefreshAccessories) {
+  modalBtnRefreshAccessories.addEventListener("click", async () => {
+    modalBtnRefreshAccessories.disabled = true;
+    modalBtnRefreshAccessories.textContent = "↻ ...";
+    try {
+      await loadAccessories();
+    } finally {
+      modalBtnRefreshAccessories.disabled = false;
+      modalBtnRefreshAccessories.textContent = "↻ Refresh";
+    }
   });
 }
 
@@ -2006,6 +1839,9 @@ async function equipNewAccessory(filename) {
     .replace(/[_-]/g, " ")
     .replace(/\b\w/g, c => c.toUpperCase());
 
+  const defaultExprs = accessoryFileExpressions[filename] || [];
+  const initialExpr = defaultExprs.length > 0 ? defaultExprs[0] : "";
+
   const newAcc = {
     id: uniqueId,
     file: filename,
@@ -2017,10 +1853,10 @@ async function equipNewAccessory(filename) {
     scaleY: 1.0,
     rotation: 0,
     order: "front",
-    enabled: true
+    enabled: true,
+    expression: initialExpr
   };
 
-  openDrawers.add(uniqueId);
   try {
     const res = await fetch("/api/accessories/update", {
       method: "POST",
@@ -2030,6 +1866,7 @@ async function equipNewAccessory(filename) {
     if (res.ok) {
       await loadAccessories();
       flashAccessorySaved();
+      openDressingRoom(uniqueId);
     }
   } catch (err) {
     console.error("[Studio Tracker] Equip accessory error:", err);
@@ -2090,6 +1927,8 @@ const btnZoomReset = document.getElementById("btn-zoom-reset");
 const btnZoomHead = document.getElementById("btn-zoom-head");
 const btnZoomTight = document.getElementById("btn-zoom-tight");
 const btnReloadFitting = document.getElementById("btn-reload-fitting");
+const btnFittingFreeze = document.getElementById("btn-fitting-freeze");
+let fittingMirrorFrozen = true;
 
 const nudgeUp = document.getElementById("nudge-up");
 const nudgeDown = document.getElementById("nudge-down");
@@ -2146,16 +1985,111 @@ function updateAllExpressionDropdowns() {
     const acc = getActiveModalAcc();
     populateExpressionSelect(modalExpressionSelect, acc ? acc.expression : "");
   }
-  const allCardSelects = document.querySelectorAll(".acc-expr-select");
-  allCardSelects.forEach(sel => {
-    const card = sel.closest(".accessory-card");
-    if (card && card.dataset.accId) {
-      const acc = configuredAccessories.find(a => a.id === card.dataset.accId);
-      if (acc && document.activeElement !== sel) {
-        populateExpressionSelect(sel, acc.expression || "");
-      }
+}
+
+const modalExprAlert = document.getElementById("modal-expr-alert");
+const modalExprAlertText = document.getElementById("modal-expr-alert-text");
+const modalBtnEnableExpr = document.getElementById("modal-btn-enable-expr");
+const modalAccessoryExprCard = document.getElementById("modal-accessory-expr-card");
+const modalAccessoryExpressionChips = document.getElementById("modal-accessory-expression-chips");
+const modalAccessoryExprStatus = document.getElementById("modal-accessory-expr-status");
+const modalAvatarExpressionChips = document.getElementById("modal-avatar-expression-chips");
+
+function renderModalExpressionPreview(acc) {
+  // 1. Populate Avatar Expressions (independent live testing of avatar expressions in the mirror)
+  if (modalAvatarExpressionChips) {
+    modalAvatarExpressionChips.innerHTML = "";
+    const avatarList = (Array.isArray(avatarExpressions) && avatarExpressions.length > 0)
+      ? avatarExpressions
+      : availableExpressions.filter(name => {
+          for (const file in accessoryFileExpressions) {
+            if (accessoryFileExpressions[file]?.includes(name)) return false;
+          }
+          return true;
+        });
+
+    if (avatarList.length > 0) {
+      avatarList.forEach(name => {
+        const isActive = Boolean(activeExpressions[name]);
+        const pill = document.createElement("button");
+        pill.className = `btn ${isActive ? "btn-primary" : "btn-secondary"}`;
+        pill.style.fontSize = "10px";
+        pill.style.padding = "2px 7px";
+        pill.style.opacity = isActive ? "1" : "0.75";
+        pill.textContent = `${name}: ${isActive ? "ON" : "OFF"}`;
+        pill.title = `Toggle ${name} on avatar`;
+        pill.addEventListener("click", () => {
+          toggleExpression(name);
+        });
+        modalAvatarExpressionChips.appendChild(pill);
+      });
+    } else {
+      const noneSpan = document.createElement("span");
+      noneSpan.style.fontSize = "10px";
+      noneSpan.style.color = "var(--text-muted)";
+      noneSpan.textContent = "None defined in avatar SVG";
+      modalAvatarExpressionChips.appendChild(noneSpan);
     }
-  });
+  }
+
+  // 2. Check Expression Trigger condition for the active accessory
+  const triggerExpr = (acc && acc.expression && acc.expression.trim().toLowerCase()) || "";
+  if (modalExprAlert && modalExprAlertText && modalBtnEnableExpr) {
+    if (triggerExpr && !activeExpressions[triggerExpr]) {
+      modalExprAlert.style.display = "flex";
+      modalExprAlertText.textContent = `Visibility Trigger "${triggerExpr}" is OFF (accessory is hidden in mirror).`;
+      modalBtnEnableExpr.textContent = `Turn ON "${triggerExpr}"`;
+      modalBtnEnableExpr.onclick = async () => {
+        await toggleExpression(triggerExpr);
+      };
+    } else {
+      modalExprAlert.style.display = "none";
+    }
+  }
+
+  // 3. Populate ONLY expressions defined inside this accessory SVG
+  if (modalAccessoryExprCard && modalAccessoryExpressionChips) {
+    const accFile = acc ? acc.file : "";
+    const specificExprs = (accFile && accessoryFileExpressions[accFile]) || [];
+
+    if (specificExprs.length === 0) {
+      modalAccessoryExprCard.style.display = "none";
+      modalAccessoryExpressionChips.innerHTML = "";
+    } else {
+      modalAccessoryExprCard.style.display = "block";
+      if (modalAccessoryExprStatus) {
+        modalAccessoryExprStatus.textContent = `Defined in ${accFile}`;
+      }
+      modalAccessoryExpressionChips.innerHTML = "";
+      specificExprs.forEach(name => {
+        const isActive = Boolean(activeExpressions[name]);
+        const btn = document.createElement("button");
+        btn.className = `btn ${isActive ? "btn-primary" : "btn-secondary"}`;
+        btn.style.fontSize = "11px";
+        btn.style.padding = "4px 10px";
+        btn.style.display = "inline-flex";
+        btn.style.alignItems = "center";
+        btn.style.gap = "6px";
+        btn.title = `Click to ${isActive ? "turn OFF" : "turn ON"} "${name}" in mirror`;
+
+        const dot = document.createElement("span");
+        dot.style.fontSize = "9px";
+        dot.textContent = isActive ? "🟢" : "⚪";
+
+        const label = document.createElement("span");
+        label.textContent = `${name.charAt(0).toUpperCase() + name.slice(1)}: ${isActive ? "ON" : "OFF"}`;
+
+        btn.appendChild(dot);
+        btn.appendChild(label);
+
+        btn.addEventListener("click", () => {
+          toggleExpression(name);
+        });
+
+        modalAccessoryExpressionChips.appendChild(btn);
+      });
+    }
+  }
 }
 
 function flashModalSaved() {
@@ -2185,7 +2119,7 @@ function syncModalControlsFromAcc(acc) {
     if (!["layer_head", "head", "root_svg"].includes(acc.target)) {
       const customOpt = document.createElement("option");
       customOpt.value = acc.target;
-      customOpt.textContent = acc.target;
+      customOpt.textContent = customOpt.value;
       modalTargetSelect.appendChild(customOpt);
     }
     modalTargetSelect.value = acc.target || "layer_head";
@@ -2218,6 +2152,22 @@ function syncModalControlsFromAcc(acc) {
   const rotVal = acc.rotation || 0;
   if (modalSliderRot) modalSliderRot.value = String(rotVal);
   if (modalNumRot) modalNumRot.value = String(rotVal);
+
+  renderModalExpressionPreview(acc);
+}
+
+function updateFittingMirrorSrc() {
+  if (!fittingFrame) return;
+  const freezeParam = fittingMirrorFrozen ? "&freeze=1" : "";
+  fittingFrame.src = `/overlay?t=${Date.now()}${freezeParam}`;
+  if (btnFittingFreeze) {
+    btnFittingFreeze.textContent = fittingMirrorFrozen ? "🧘 Rest Pose" : "🎥 Live Motion";
+    btnFittingFreeze.title = fittingMirrorFrozen
+      ? "Mirror is in Rest Pose (Click for Live Motion)"
+      : "Mirror is following Live Motion (Click for Rest Pose)";
+    btnFittingFreeze.classList.toggle("btn-primary", !fittingMirrorFrozen);
+    btnFittingFreeze.classList.toggle("btn-secondary", fittingMirrorFrozen);
+  }
 }
 
 function openDressingRoom(accId = null) {
@@ -2227,7 +2177,7 @@ function openDressingRoom(accId = null) {
   if (modalAccessorySelect) {
     modalAccessorySelect.innerHTML = "";
     if (configuredAccessories.length === 0) {
-      modalAccessorySelect.innerHTML = '<option value="">No accessories available</option>';
+      modalAccessorySelect.innerHTML = '<option value="">No accessories equipped (click a file below to equip)</option>';
     } else {
       configuredAccessories.forEach(acc => {
         const opt = document.createElement("option");
@@ -2251,11 +2201,11 @@ function openDressingRoom(accId = null) {
 
   // Show modal
   dressingRoomModal.style.display = "flex";
+  renderModalDiscoveredAccessoriesChips();
+  renderModalExpressionPreview(getActiveModalAcc());
 
-  // Reload fitting mirror iframe
-  if (fittingFrame) {
-    fittingFrame.src = `/overlay?t=${Date.now()}`;
-  }
+  // Reload fitting mirror iframe with current freeze/live mode
+  updateFittingMirrorSrc();
 }
 
 function closeDressingRoom() {
@@ -2336,6 +2286,8 @@ if (modalAccessorySelect) {
   modalAccessorySelect.addEventListener("change", (e) => {
     activeModalAccId = e.target.value;
     syncModalControlsFromAcc(getActiveModalAcc());
+    renderModalExpressionPreview(getActiveModalAcc());
+    renderModalDiscoveredAccessoriesChips();
   });
 }
 
@@ -2392,6 +2344,7 @@ if (modalExpressionSelect) {
         const clean = customName.trim().toLowerCase();
         acc.expression = clean;
         populateExpressionSelect(modalExpressionSelect, clean);
+        renderModalExpressionPreview(acc);
         debounceSaveAccessory(acc);
         flashModalSaved();
       } else {
@@ -2400,6 +2353,7 @@ if (modalExpressionSelect) {
       return;
     }
     acc.expression = e.target.value;
+    renderModalExpressionPreview(acc);
     debounceSaveAccessory(acc);
     flashModalSaved();
   });
@@ -2587,9 +2541,15 @@ if (btnZoomTight) {
     if (fittingZoomBadge) fittingZoomBadge.textContent = "2.0x Face";
   });
 }
+if (btnFittingFreeze) {
+  btnFittingFreeze.addEventListener("click", () => {
+    fittingMirrorFrozen = !fittingMirrorFrozen;
+    updateFittingMirrorSrc();
+  });
+}
 if (btnReloadFitting) {
   btnReloadFitting.addEventListener("click", () => {
-    if (fittingFrame) fittingFrame.src = `/overlay?t=${Date.now()}`;
+    updateFittingMirrorSrc();
   });
 }
 if (checkShowCrosshair) {

@@ -23,13 +23,7 @@
 
 ---
 
-## 3. Shell Execution Rule
-
-- **Append `; exit $?` to all `run_command` invocations under WSL** to prevent lingering non-interactive subshell deadlocks.
-
----
-
-## 4. Verification & Testing
+## 3. Verification & Testing
 
 - Always run `go fix ./...` (or verify with `go fix -diff ./...`), `golangci-lint-v2 run ./...`, `go vet ./...`, and `go test ./...` before finalizing changes or creating commits.
 - **Pre-commit hook**: Ensure pre-commit checks pass (`.githooks/pre-commit` and `.git/hooks/pre-commit`).

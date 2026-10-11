@@ -49,8 +49,9 @@ func TestServer_AccessoriesAPI(t *testing.T) {
 	}
 
 	var accList struct {
-		AvailableFiles []string                 `json:"availableFiles"`
-		Accessories    []config.AccessoryConfig `json:"accessories"`
+		AvailableFiles  []string                 `json:"availableFiles"`
+		FileExpressions map[string][]string      `json:"fileExpressions"`
+		Accessories     []config.AccessoryConfig `json:"accessories"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &accList); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
@@ -58,6 +59,9 @@ func TestServer_AccessoriesAPI(t *testing.T) {
 
 	if len(accList.AvailableFiles) != 1 || accList.AvailableFiles[0] != "sunglasses.svg" {
 		t.Errorf("expected availableFiles to have sunglasses.svg, got %+v", accList.AvailableFiles)
+	}
+	if accList.FileExpressions == nil {
+		t.Errorf("expected non-nil FileExpressions map")
 	}
 
 	// 2. Static GET /accessories/sunglasses.svg

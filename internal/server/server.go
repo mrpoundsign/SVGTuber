@@ -750,9 +750,17 @@ func (s *Server) handleAPIExpressions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.rigMu.RLock()
+	var avatarExprs []string
+	if s.rigDef != nil {
+		avatarExprs = ExtractExpressionsFromRig(s.rigDef)
+	}
+	s.rigMu.RUnlock()
+
 	resp := map[string]any{
-		"active":    s.expMgr.GetActive(),
-		"available": s.expMgr.GetAvailable(),
+		"active":            s.expMgr.GetActive(),
+		"available":         s.expMgr.GetAvailable(),
+		"avatarExpressions": avatarExprs,
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }
@@ -946,32 +954,65 @@ func (s *Server) refreshAvailableExpressions(rigDef *rig.RigDefinition) []string
 	}
 
 	// 2. Also scan accessory SVG files in accessories directory for any directives like [Show {when: is...}] or [Expression {name: ...}]
-	s.rigMu.RLock()
-	accDir := s.accessoriesDir
-	s.rigMu.RUnlock()
-	if accDir != "" {
-		if entries, err := os.ReadDir(accDir); err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".svg") {
-					path := filepath.Join(accDir, entry.Name())
-					if data, err := os.ReadFile(path); err == nil {
-						if accRig, err := rig.DefaultParser.Parse(data); err == nil {
-							accExprs := ExtractExpressionsFromRig(accRig)
-							for _, e := range accExprs {
-								if !seen[e] {
-									seen[e] = true
-									available = append(available, e)
-								}
-							}
-						}
-					}
-				}
+	fileExprs := s.scanAccessoryFileExpressions()
+	for _, exprs := range fileExprs {
+		for _, e := range exprs {
+			if !seen[e] {
+				seen[e] = true
+				available = append(available, e)
 			}
 		}
 	}
 
 	s.expMgr.SetAvailable(available)
 	return available
+}
+
+func (s *Server) scanAccessoryFileExpressions() map[string][]string {
+	fileExprs := make(map[string][]string)
+
+	s.rigMu.RLock()
+	accDir := s.accessoriesDir
+	s.rigMu.RUnlock()
+
+	dirs := []string{}
+	if accDir != "" {
+		dirs = append(dirs, accDir)
+	}
+	dirs = append(dirs, filepath.Join("testdata", "accessories"))
+
+	seenFiles := make(map[string]bool)
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".svg") {
+				continue
+			}
+			fname := entry.Name()
+			if seenFiles[fname] {
+				continue
+			}
+			seenFiles[fname] = true
+
+			path := filepath.Join(dir, fname)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			accRig, err := rig.DefaultParser.Parse(data)
+			if err != nil {
+				continue
+			}
+			exprs := ExtractExpressionsFromRig(accRig)
+			if len(exprs) > 0 {
+				fileExprs[fname] = exprs
+			}
+		}
+	}
+	return fileExprs
 }
 
 func (s *Server) handleAPIAccessories(w http.ResponseWriter, r *http.Request) {
@@ -998,10 +1039,11 @@ func (s *Server) handleAPIAccessories(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"currentAvatar":  currentAvatar,
-		"targetAvatar":   targetAvatar,
-		"availableFiles": availableFiles,
-		"accessories":    configured,
+		"currentAvatar":   currentAvatar,
+		"targetAvatar":    targetAvatar,
+		"availableFiles":  availableFiles,
+		"fileExpressions": s.scanAccessoryFileExpressions(),
+		"accessories":     configured,
 	})
 }
 

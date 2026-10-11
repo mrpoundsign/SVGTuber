@@ -481,6 +481,12 @@
       border-color: var(--accent-hover);
       color: #fff;
     }
+    .acc-chip.active-modal-chip {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 0 8px rgba(99, 102, 241, 0.35);
+    }
     .slider-num-input {
       width: 58px;
       background: #191924;
@@ -1177,6 +1183,7 @@
               <span id="fitting-zoom-badge" class="badge" style="font-size: 10px;">1.0x Zoom</span>
             </div>
             <div style="display: flex; gap: 6px;">
+              <button id="btn-fitting-freeze" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;" title="Mirror is in Rest Pose (Click for Live Motion)">🧘 Rest Pose</button>
               <button id="btn-zoom-reset" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;">1x</button>
               <button id="btn-zoom-head" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;">Head 1.5x</button>
               <button id="btn-zoom-tight" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;">Face 2.0x</button>
@@ -1212,6 +1219,17 @@
             </div>
           </div>
 
+          <!-- Discovered Accessory Files Bar (Add & Equip directly in Dressing Room) -->
+          <div style="background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Discovered Accessory Files</span>
+              <button id="modal-btn-refresh-accessories" class="btn btn-secondary" style="font-size: 10px; padding: 2px 7px;" title="Rescan accessories directory for SVG files">↻ Refresh</button>
+            </div>
+            <div id="modal-discovered-accessories-chips" style="display: flex; flex-wrap: wrap; gap: 6px;">
+              <span style="font-size: 11px; color: var(--text-muted);">Scanning folder...</span>
+            </div>
+          </div>
+
           <!-- Anchor Target, Z-Order & Expression Trigger -->
           <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
             <div style="background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
@@ -1234,6 +1252,29 @@
               <select id="modal-expression-select" class="form-select" style="width: 100%; background: #111118; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 8px; font-size: 12px;">
                 <option value="">Always Visible</option>
               </select>
+            </div>
+          </div>
+
+          <!-- Inactive Trigger Warning Alert -->
+          <div id="modal-expr-alert" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 6px; padding: 8px 10px; font-size: 11px; color: #fbbf24; align-items: center; justify-content: space-between; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span>⚠️</span>
+              <span id="modal-expr-alert-text">Visibility Trigger is currently OFF in mirror.</span>
+            </div>
+            <button id="modal-btn-enable-expr" class="btn btn-primary" style="font-size: 10px; padding: 3px 8px; white-space: nowrap;">Turn ON</button>
+          </div>
+
+          <!-- Accessory Expressions (Only shown when this accessory SVG defines internal expressions) -->
+          <div id="modal-accessory-expr-card" style="display: none; background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 13px;">✨</span>
+                <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Accessory Expressions</span>
+              </div>
+              <div id="modal-accessory-expr-status" style="font-size: 11px; color: var(--text-muted);">Defined in SVG</div>
+            </div>
+            <div id="modal-accessory-expression-chips" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
+              <!-- Dynamic toggle buttons rendered here -->
             </div>
           </div>
 
@@ -1319,6 +1360,20 @@
               <label for="modal-slider-rot" style="font-size: 12px;">Rotation</label>
               <input type="range" id="modal-slider-rot" min="-180" max="180" step="1" value="0">
               <input type="number" id="modal-num-rot" class="slider-num-input" min="-180" max="180" step="1" value="0">
+            </div>
+          </div>
+
+          <!-- Avatar Expressions (Test mirror expressions independently) -->
+          <div id="modal-avatar-expr-card" style="background: #181822; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <span style="font-size: 13px;">🎭</span>
+                <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Avatar Expressions</span>
+              </div>
+              <div style="font-size: 10px; color: var(--text-muted);">Live Mirror Test</div>
+            </div>
+            <div id="modal-avatar-expression-chips" style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+              <!-- Avatar expression chips -->
             </div>
           </div>
 

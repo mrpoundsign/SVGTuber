@@ -498,8 +498,8 @@ func TestEngine_AutoBlink(t *testing.T) {
 
 	eng := NewEngine(cfgMgr)
 
-	// Step 1: Initial frame at t=1000ms with eyes open
-	f1 := FaceFrame{
+	// Step 1: When face is present, auto-blink must NEVER trigger (pure optical camera tracking)
+	fTracked := FaceFrame{
 		Timestamp: 1000,
 		Present:   true,
 		Blendshapes: map[string]float64{
@@ -507,48 +507,51 @@ func TestEngine_AutoBlink(t *testing.T) {
 			"eyeBlinkRight": 0.0,
 		},
 	}
-	out1 := eng.Process(f1)
+	out1 := eng.Process(fTracked)
 	if out1.IsBlinkL || out1.IsBlinkR || out1.AutoBlink {
 		t.Errorf("Expected eyes open on initial frame, got AutoBlink=%v", out1.AutoBlink)
 	}
 
-	// Step 2: Advance time past auto-blink interval (t = 5500ms > 1000 + 3000*1.2)
-	// Peak of auto-blink (e.g. 70ms into 140ms duration)
-	f2 := FaceFrame{
-		Timestamp: 5500,
+	outTrackedLate := eng.Process(FaceFrame{
+		Timestamp: 6000,
 		Present:   true,
 		Blendshapes: map[string]float64{
 			"eyeBlinkLeft":  0.0,
 			"eyeBlinkRight": 0.0,
 		},
+	})
+	if outTrackedLate.AutoBlink {
+		t.Errorf("Expected AutoBlink to NEVER trigger while face is present/tracked")
+	}
+
+	// Step 2: Camera off or face lost (Present: false). Auto-blink should engage at configured interval.
+	_ = eng.Process(FaceFrame{Timestamp: 6000, Present: false})
+
+	// Advance time past auto-blink interval (t = 10500ms > 6000 + 3000*1.2)
+	// Peak of auto-blink (e.g. 70ms into 140ms duration)
+	f2 := FaceFrame{
+		Timestamp: 10500,
+		Present:   false,
 	}
 	out2 := eng.Process(f2)
 	if !out2.AutoBlink {
-		t.Errorf("Expected AutoBlink to trigger at t=5500ms")
+		t.Errorf("Expected AutoBlink to trigger at t=10500ms when face is not present")
 	}
 
-	// Mid-blink at t=5570ms: eyes should be closed
+	// Mid-blink at t=10570ms: eyes should be closed
 	f3 := FaceFrame{
-		Timestamp: 5570,
-		Present:   true,
-		Blendshapes: map[string]float64{
-			"eyeBlinkLeft":  0.0,
-			"eyeBlinkRight": 0.0,
-		},
+		Timestamp: 10570,
+		Present:   false,
 	}
 	out3 := eng.Process(f3)
 	if !out3.IsBlinkL || !out3.IsBlinkR {
 		t.Errorf("Expected both eyes closed mid-autoblink, got L=%v R=%v", out3.IsBlinkL, out3.IsBlinkR)
 	}
 
-	// Step 3: Advance past blink duration (t = 5700ms > 5500 + 140ms)
+	// Step 3: Advance past blink duration (t = 10700ms > 10500 + 140ms)
 	f4 := FaceFrame{
-		Timestamp: 5700,
-		Present:   true,
-		Blendshapes: map[string]float64{
-			"eyeBlinkLeft":  0.0,
-			"eyeBlinkRight": 0.0,
-		},
+		Timestamp: 10700,
+		Present:   false,
 	}
 	out4 := eng.Process(f4)
 	if out4.AutoBlink || out4.IsBlinkL || out4.IsBlinkR {
@@ -586,3 +589,63 @@ func TestEngine_AutomationsMode_FaceLostOnly(t *testing.T) {
 		t.Errorf("Expected AutoBlink to trigger when face is lost in face_lost_only mode")
 	}
 }
+
+func TestEngine_StreamBlinkCount(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	s := cfgMgr.Get()
+	s.Tracking.AutoBlink = true
+	s.Tracking.AutoBlinkIntervalSec = 4.5
+	s.Tracking.AutoBlinkMode = "face_lost_only"
+	s.Tracking.BlinkThreshold = 0.46
+	s.Tracking.BlinkThresholdL = 0.46
+	s.Tracking.BlinkThresholdR = 0.46
+	_ = cfgMgr.Update(s)
+
+	eng := NewEngine(cfgMgr)
+
+	// Simulate 10 seconds of 60fps frames with Face NOT present
+	var blinksCount int
+	wasBlink := false
+	for tMs := 0.0; tMs <= 10000.0; tMs += 16.6 {
+		out := eng.Process(FaceFrame{
+			Timestamp: tMs,
+			Present:   false,
+		})
+		isClosed := out.IsBlinkL || out.IsBlinkR
+		if isClosed && !wasBlink {
+			blinksCount++
+		}
+		wasBlink = isClosed
+	}
+	t.Logf("Face lost: 10s of 60fps yielded %d auto-blinks (expected ~2 with 4.5s interval)", blinksCount)
+
+	// Simulate 10 seconds of 60fps with Face present and eye hovering around 0.45-0.47
+	eng2 := NewEngine(cfgMgr)
+	var noiseBlinksCount int
+	wasNoiseBlink := false
+	for i, tMs := 0, 0.0; tMs <= 10000.0; i, tMs = i+1, tMs+16.6 {
+		// Eye value slightly jittering around 0.46
+		eyeVal := 0.45 + float64(i%2)*0.02 // 0.45, 0.47, 0.45, 0.47...
+		out := eng2.Process(FaceFrame{
+			Timestamp: tMs,
+			Present:   true,
+			Blendshapes: map[string]float64{
+				"eyeBlinkLeft":  eyeVal,
+				"eyeBlinkRight": eyeVal,
+			},
+		})
+		isClosed := out.IsBlinkL || out.IsBlinkR
+		if isClosed && !wasNoiseBlink {
+			noiseBlinksCount++
+		}
+		wasNoiseBlink = isClosed
+	}
+	t.Logf("Tracked with 0.45-0.47 noise: 10s of 60fps yielded %d blinks!", noiseBlinksCount)
+}
+
