@@ -940,9 +940,13 @@ func (s *Server) refreshAvailableExpressions(rigDef *rig.RigDefinition) []string
 		seen[e] = true
 	}
 
-	// 1. Add any expressions declared on active accessories
+	// Add expressions declared on or defined within actively equipped/enabled accessories only
 	if s.configMgr != nil {
+		fileExprs := s.scanAccessoryFileExpressions()
 		for _, acc := range s.configMgr.GetAccessories() {
+			if !acc.Enabled {
+				continue
+			}
 			if acc.Expression != "" {
 				clean := normalizeExpressionName(acc.Expression)
 				if clean != "" && !seen[clean] {
@@ -950,16 +954,13 @@ func (s *Server) refreshAvailableExpressions(rigDef *rig.RigDefinition) []string
 					available = append(available, clean)
 				}
 			}
-		}
-	}
-
-	// 2. Also scan accessory SVG files in accessories directory for any directives like [Show {when: is...}] or [Expression {name: ...}]
-	fileExprs := s.scanAccessoryFileExpressions()
-	for _, exprs := range fileExprs {
-		for _, e := range exprs {
-			if !seen[e] {
-				seen[e] = true
-				available = append(available, e)
+			if exprs, ok := fileExprs[acc.File]; ok {
+				for _, e := range exprs {
+					if !seen[e] {
+						seen[e] = true
+						available = append(available, e)
+					}
+				}
 			}
 		}
 	}

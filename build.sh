@@ -18,14 +18,25 @@ bundle_accessories() {
   fi
 }
 
+build_binary_linux() {
+  echo "==> Building svgtuber binary..."
+  mkdir -p build
+  CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.4-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber ./cmd/svgtuber
+  echo "==> Successfully built build/svgtuber"
+}
+
+build_binary_windows() {
+  echo "==> Building svgtuber.exe (Windows amd64)..."
+  mkdir -p build
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.4-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber.exe ./cmd/svgtuber
+  echo "==> Successfully built build/svgtuber.exe"
+}
+
 case "$TARGET" in
   build)
     bundle_frontend
-    echo "==> Building svgtuber binary..."
-    mkdir -p build
     bundle_accessories
-    CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.4-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber ./cmd/svgtuber
-    echo "==> Successfully built build/svgtuber"
+    build_binary_linux
     ;;
   test)
     if command -v npm &>/dev/null && [ -f "package.json" ]; then
@@ -45,15 +56,14 @@ case "$TARGET" in
     ;;
   windows)
     bundle_frontend
-    echo "==> Building svgtuber.exe (Windows amd64)..."
-    mkdir -p build
     bundle_accessories
-    GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.4-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber.exe ./cmd/svgtuber
-    echo "==> Successfully built build/svgtuber.exe"
+    build_binary_windows
     ;;
   all)
-    "$0" build
-    "$0" windows
+    bundle_frontend
+    bundle_accessories
+    build_binary_linux
+    build_binary_windows
     ;;
   lint)
     echo "==> Running golangci-lint-v2..."

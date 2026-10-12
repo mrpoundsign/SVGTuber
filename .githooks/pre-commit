@@ -10,6 +10,18 @@ if ! command -v go >/dev/null 2>&1; then
     fi
 fi
 
+# Resolve node / npm if not in default PATH
+if ! command -v npm >/dev/null 2>&1; then
+    if [ -f "/c/Program Files/nodejs/npm" ] || [ -f "/c/Program Files/nodejs/npm.cmd" ]; then
+        export PATH="/c/Program Files/nodejs:$PATH"
+    elif [ -f "C:/Program Files/nodejs/npm.cmd" ]; then
+        export PATH="C:/Program Files/nodejs:$PATH"
+    elif [ -d "$HOME/.nvm" ]; then
+        export NVM_DIR="$HOME/.nvm"
+        [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    fi
+fi
+
 # Resolve golangci-lint-v2 if not in default PATH
 LINTER=""
 if command -v golangci-lint-v2 >/dev/null 2>&1; then
@@ -46,14 +58,21 @@ else
     echo "⚠️ Warning: golangci-lint-v2 not found in PATH; skipping linter."
 fi
 
-echo "==> 4. Running all test suites (including avatar integration tests)..."
-if command -v npm >/dev/null 2>&1 && [ -f "package.json" ]; then
-    echo "==> Running frontend TypeScript tests & typecheck..."
-    npm test
-    npm run typecheck
-    echo "✓ Frontend tests & typecheck passed!"
+echo "==> 4. Running frontend TypeScript tests & typecheck..."
+if ! command -v npm >/dev/null 2>&1; then
+    echo "❌ Error: npm not found in PATH. Node.js & npm are required to run TypeScript tests."
+    exit 1
 fi
+if [ ! -f "package.json" ]; then
+    echo "❌ Error: package.json not found in repository root."
+    exit 1
+fi
+npm test
+npm run typecheck
+echo "✓ Frontend TypeScript tests & typecheck passed!"
+
+echo "==> 5. Running Go test suites (including avatar integration tests)..."
 go test ./...
-echo "✓ All tests passed!"
+echo "✓ Go tests passed!"
 
 echo "==> All pre-commit checks passed successfully!"

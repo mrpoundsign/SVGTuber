@@ -184,3 +184,118 @@ func TestServer_AccessoriesAPI(t *testing.T) {
 	}
 }
 
+func TestServer_UnequippedAccessoryExpressionNotAvailable(t *testing.T) {
+	tempDir := t.TempDir()
+	avatarPath := filepath.Join(tempDir, "avatar.svg")
+	avatarSVG := `<svg id="avatar"><g id="layer_blush" inkscape:label="[Show {when: isBlush}]"></g></svg>`
+	if err := os.WriteFile(avatarPath, []byte(avatarSVG), 0644); err != nil {
+		t.Fatalf("failed to write avatar: %v", err)
+	}
+
+	accDir := filepath.Join(tempDir, "accessories")
+	if err := os.MkdirAll(accDir, 0755); err != nil {
+		t.Fatalf("failed to create accessories dir: %v", err)
+	}
+
+	// Place sweat_drop.svg in accessories folder with isSweat directive
+	sweatSVG := `<svg id="sweat_drop"><g id="sweat" inkscape:label="[Show {when: isSweat}]"></g></svg>`
+	if err := os.WriteFile(filepath.Join(accDir, "sweat_drop.svg"), []byte(sweatSVG), 0644); err != nil {
+		t.Fatalf("failed to write sweat accessory: %v", err)
+	}
+
+	cfgMgr, err := config.NewManager(filepath.Join(tempDir, "config.json"))
+	if err != nil {
+		t.Fatalf("failed to create config manager: %v", err)
+	}
+
+	hub := NewHub()
+	srv := New(0, avatarPath, hub, tracking.NewEngine(), cfgMgr)
+	if _, err := srv.ReloadRig(); err != nil {
+		t.Fatalf("failed to reload rig: %v", err)
+	}
+
+	// 1. Initially, sweat accessory is in the directory but NOT equipped/configured.
+	// Only "blush" should be available; "sweat" must NOT be available.
+	avail := srv.expMgr.GetAvailable()
+	hasSweat := false
+	hasBlush := false
+	for _, e := range avail {
+		if e == "sweat" {
+			hasSweat = true
+		}
+		if e == "blush" {
+			hasBlush = true
+		}
+	}
+	if !hasBlush {
+		t.Errorf("expected 'blush' to be available on avatar rig, got: %v", avail)
+	}
+	if hasSweat {
+		t.Errorf("unequipped accessory expression 'sweat' should NOT be available, got: %v", avail)
+	}
+
+	// Verify via GET /api/expressions
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/expressions", nil)
+	srv.handleAPIExpressions(rec, req)
+	var expResp struct {
+		Available []string `json:"available"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &expResp)
+	for _, e := range expResp.Available {
+		if e == "sweat" {
+			t.Errorf("GET /api/expressions returned unequipped expression 'sweat'")
+		}
+	}
+
+	// 2. Equip the accessory with Enabled: true
+	acc := config.AccessoryConfig{
+		ID:      "sweat_acc",
+		File:    "sweat_drop.svg",
+		Name:    "Sweat Drops",
+		Target:  "layer_blush",
+		Enabled: true,
+	}
+	payload, _ := json.Marshal(acc)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/accessories/update", bytes.NewReader(payload))
+	srv.handleAPIAccessoryUpdate(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleAPIAccessoryUpdate failed: %d", rec.Code)
+	}
+
+	// Now "sweat" should be available
+	avail = srv.expMgr.GetAvailable()
+	hasSweat = false
+	for _, e := range avail {
+		if e == "sweat" {
+			hasSweat = true
+		}
+	}
+	if !hasSweat {
+		t.Errorf("expected 'sweat' to become available after equipping accessory, got: %v", avail)
+	}
+
+	// 3. Toggle accessory to disabled (Enabled: false)
+	togglePayload, _ := json.Marshal(map[string]string{"id": "sweat_acc"})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/api/accessories/toggle", bytes.NewReader(togglePayload))
+	srv.handleAPIAccessoryToggle(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("handleAPIAccessoryToggle failed: %d", rec.Code)
+	}
+
+	// "sweat" should NO LONGER be available
+	avail = srv.expMgr.GetAvailable()
+	hasSweat = false
+	for _, e := range avail {
+		if e == "sweat" {
+			hasSweat = true
+		}
+	}
+	if hasSweat {
+		t.Errorf("expected 'sweat' to be removed from available after disabling accessory, got: %v", avail)
+	}
+}
+
+

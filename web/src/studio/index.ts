@@ -447,6 +447,7 @@ function connectWebSocket() {
       } else if (msg.type === "accessory_update") {
         configuredAccessories = msg.accessories || [];
         renderAccessoriesUI();
+        loadExpressions();
       } else if (msg.type === "rig_update") {
         loadExpressions();
         loadAccessories();
@@ -1595,13 +1596,22 @@ function renderAccessoriesUI() {
 
     const controls = document.createElement("div");
     controls.className = "accessory-controls";
+    controls.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
 
     const switchLabel = document.createElement("label");
     switchLabel.className = "switch";
     switchLabel.title = acc.enabled ? "Unequip Accessory" : "Equip Accessory";
+    switchLabel.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
     const switchInput = document.createElement("input");
     switchInput.type = "checkbox";
     switchInput.checked = Boolean(acc.enabled);
+    switchInput.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
     switchInput.addEventListener("change", async (e) => {
       e.stopPropagation();
       acc.enabled = switchInput.checked;
@@ -1622,6 +1632,9 @@ function renderAccessoriesUI() {
     });
     const switchSlider = document.createElement("span");
     switchSlider.className = "switch-slider";
+    switchSlider.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
     switchLabel.appendChild(switchInput);
     switchLabel.appendChild(switchSlider);
 
@@ -1662,9 +1675,10 @@ function renderAccessoriesUI() {
     controls.appendChild(btnFit);
     controls.appendChild(btnRemove);
 
-    header.style.cursor = "pointer";
-    header.title = "Click to fit in Dressing Room";
-    header.addEventListener("click", () => {
+    info.style.cursor = "pointer";
+    info.title = "Click to fit in Dressing Room";
+    info.addEventListener("click", (e) => {
+      e.stopPropagation();
       openDressingRoom(acc.id);
     });
 
