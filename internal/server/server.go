@@ -1239,7 +1239,7 @@ func (s *Server) handleAPIVersion(w http.ResponseWriter, r *http.Request) {
 	s.rigMu.RUnlock()
 
 	if ver == "" {
-		ver = "v0.0.4"
+		ver = "v0.0.5"
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -445,7 +445,7 @@ func TestServer_APIVersion(t *testing.T) {
 	_ = os.WriteFile(avatarPath, []byte(`<svg></svg>`), 0644)
 
 	srv := New(0, avatarPath, NewHub(), tracking.NewEngine())
-	srv.SetVersion("v0.0.4", "abc1234", "2026-10-11")
+	srv.SetVersion("v0.0.5", "abc1234", "2026-10-11")
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
@@ -460,8 +460,8 @@ func TestServer_APIVersion(t *testing.T) {
 		t.Fatalf("Failed to parse /api/version JSON: %v", err)
 	}
 
-	if data["version"] != "v0.0.4" {
-		t.Errorf("Expected version v0.0.4, got %q", data["version"])
+	if data["version"] != "v0.0.5" {
+		t.Errorf("Expected version v0.0.5, got %q", data["version"])
 	}
 	if data["commit"] != "abc1234" {
 		t.Errorf("Expected commit abc1234, got %q", data["commit"])

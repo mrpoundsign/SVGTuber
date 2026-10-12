@@ -1,6 +1,6 @@
 {
   "name": "svgtuber-web",
-  "version": "0.0.4-dev",
+  "version": "0.0.5",
   "description": "SVGTuber Frontend Web Assets (Overlay & Studio Tracker)",
   "private": true,
   "type": "module",
