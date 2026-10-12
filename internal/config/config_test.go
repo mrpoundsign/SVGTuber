@@ -163,11 +163,17 @@ func TestScanAvatarDir(t *testing.T) {
 	_ = os.MkdirAll(hiddenDir, 0755)
 	_ = os.WriteFile(filepath.Join(hiddenDir, "secret.svg"), []byte("<svg/>"), 0644)
 
+	accDir := filepath.Join(tmpDir, "accessories")
+	_ = os.MkdirAll(accDir, 0755)
+	_ = os.WriteFile(filepath.Join(accDir, "sunglasses.svg"), []byte("<svg/>"), 0644)
+	_ = os.WriteFile(filepath.Join(accDir, "cat_ears.svg"), []byte("<svg/>"), 0644)
+
 	results, err := ScanAvatarDir(tmpDir)
 	if err != nil {
 		t.Fatalf("ScanAvatarDir failed: %v", err)
 	}
 
+	// Must NOT include accessories/sunglasses.svg or accessories/cat_ears.svg
 	expected := []string{"outfits/casual.svg", "outfits/formal.SVG", "root.svg"}
 	if len(results) != len(expected) {
 		t.Fatalf("Expected %d avatars, got %d: %v", len(expected), len(results), results)
@@ -175,6 +181,21 @@ func TestScanAvatarDir(t *testing.T) {
 	for i, exp := range expected {
 		if results[i] != exp {
 			t.Errorf("Result [%d]: expected %q, got %q", i, exp, results[i])
+		}
+	}
+
+	// ScanAccessoryDir on accDir should find accessories
+	accResults, err := ScanAccessoryDir(accDir)
+	if err != nil {
+		t.Fatalf("ScanAccessoryDir failed: %v", err)
+	}
+	expectedAccs := []string{"cat_ears.svg", "sunglasses.svg"}
+	if len(accResults) != len(expectedAccs) {
+		t.Fatalf("Expected %d accessories, got %d: %v", len(expectedAccs), len(accResults), accResults)
+	}
+	for i, exp := range expectedAccs {
+		if accResults[i] != exp {
+			t.Errorf("Accessory [%d]: expected %q, got %q", i, exp, accResults[i])
 		}
 	}
 }

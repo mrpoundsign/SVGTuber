@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET="${1:-build}"
+TARGET="${1:-all}"
 
 bundle_frontend() {
   if command -v npm &>/dev/null && [ -f "package.json" ]; then

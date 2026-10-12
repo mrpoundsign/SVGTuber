@@ -619,9 +619,18 @@ func (m *Manager) Load() error {
 	return nil
 }
 
-// ScanAvatarDir recursively scans a directory for .svg files (including subdirectories)
-// and returns their relative paths formatted with forward slashes.
+// ScanAvatarDir recursively scans a directory for avatar .svg files (including subdirectories),
+// excluding hidden directories and the "accessories" directory.
 func ScanAvatarDir(dir string) ([]string, error) {
+	return scanSVGDir(dir, true)
+}
+
+// ScanAccessoryDir recursively scans a directory for accessory .svg files.
+func ScanAccessoryDir(dir string) ([]string, error) {
+	return scanSVGDir(dir, false)
+}
+
+func scanSVGDir(dir string, excludeAccessories bool) ([]string, error) {
 	if dir == "" {
 		return nil, nil
 	}
@@ -642,12 +651,19 @@ func ScanAvatarDir(dir string) ([]string, error) {
 			if strings.HasPrefix(d.Name(), ".") && path != absDir {
 				return filepath.SkipDir
 			}
+			if excludeAccessories && strings.EqualFold(d.Name(), "accessories") && path != absDir {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if strings.EqualFold(filepath.Ext(path), ".svg") {
 			rel, relErr := filepath.Rel(absDir, path)
 			if relErr == nil && !strings.HasPrefix(rel, "..") {
-				results = append(results, filepath.ToSlash(rel))
+				cleanRel := filepath.ToSlash(rel)
+				if excludeAccessories && (strings.HasPrefix(strings.ToLower(cleanRel), "accessories/") || strings.EqualFold(cleanRel, "accessories")) {
+					return nil
+				}
+				results = append(results, cleanRel)
 			}
 		}
 		return nil

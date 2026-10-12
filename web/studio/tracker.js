@@ -1305,7 +1305,9 @@ async function loadAvatars() {
     const data = await res.json();
     const dir = data.avatarDir || "";
     const current = data.currentAvatar || "";
-    const avatars = data.avatars || [];
+    const avatars = (data.avatars || []).filter(
+      (av) => !av.toLowerCase().startsWith("accessories/")
+    );
     if (avatarDirLabel) {
       avatarDirLabel.textContent = `\u{1F4C1} ${dir}`;
       avatarDirLabel.title = dir;

@@ -534,6 +534,11 @@ func (s *Server) SwitchAvatar(relPath string) error {
 		return fmt.Errorf("invalid avatar relative path: %s", relPath)
 	}
 
+	cleanSlash := filepath.ToSlash(cleanRel)
+	if strings.HasPrefix(strings.ToLower(cleanSlash), "accessories/") || strings.EqualFold(cleanSlash, "accessories") {
+		return fmt.Errorf("accessories cannot be selected as avatar: %s", relPath)
+	}
+
 	s.rigMu.RLock()
 	dir := s.avatarDir
 	s.rigMu.RUnlock()
@@ -1026,9 +1031,9 @@ func (s *Server) handleAPIAccessories(w http.ResponseWriter, r *http.Request) {
 		targetAvatar = currentAvatar
 	}
 
-	availableFiles, _ := config.ScanAvatarDir(accDir)
+	availableFiles, _ := config.ScanAccessoryDir(accDir)
 	if len(availableFiles) == 0 {
-		if fallbackFiles, err := config.ScanAvatarDir(filepath.Join("testdata", "accessories")); err == nil && len(fallbackFiles) > 0 {
+		if fallbackFiles, err := config.ScanAccessoryDir(filepath.Join("testdata", "accessories")); err == nil && len(fallbackFiles) > 0 {
 			availableFiles = fallbackFiles
 		}
 	}

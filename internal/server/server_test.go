@@ -368,6 +368,10 @@ func TestServer_AvatarManagement(t *testing.T) {
 	avatar2Path := filepath.Join(subDir, "casual.svg")
 	_ = os.WriteFile(avatar2Path, []byte(`<svg id="root"><g id="h2" inkscape:label="Head [Follow]"></g></svg>`), 0644)
 
+	accDir := filepath.Join(tempDir, "accessories")
+	_ = os.MkdirAll(accDir, 0755)
+	_ = os.WriteFile(filepath.Join(accDir, "hat.svg"), []byte(`<svg id="hat"></svg>`), 0644)
+
 	cfgPath := filepath.Join(tempDir, "settings.json")
 	cfgMgr, err := config.NewManager(cfgPath)
 	if err != nil {
@@ -377,7 +381,7 @@ func TestServer_AvatarManagement(t *testing.T) {
 	hub := NewHub()
 	srv := New(0, avatar1Path, hub, tracking.NewEngine(), cfgMgr)
 
-	// 1. GET /api/avatars
+	// 1. GET /api/avatars (accessories must NOT appear)
 	recList := httptest.NewRecorder()
 	reqList := httptest.NewRequest(http.MethodGet, "/api/avatars", nil)
 	srv.handleAPIAvatars(recList, reqList)
@@ -408,6 +412,14 @@ func TestServer_AvatarManagement(t *testing.T) {
 	srv.handleAPIAvatarSelect(recBad, reqBad)
 	if recBad.Code != http.StatusBadRequest {
 		t.Errorf("Expected 400 on path traversal attempt, got %d", recBad.Code)
+	}
+
+	// 3. POST /api/avatars/select - Reject selecting accessory as avatar
+	recAcc := httptest.NewRecorder()
+	reqAcc := httptest.NewRequest(http.MethodPost, "/api/avatars/select?avatar=accessories/hat.svg", nil)
+	srv.handleAPIAvatarSelect(recAcc, reqAcc)
+	if recAcc.Code != http.StatusBadRequest {
+		t.Errorf("Expected 400 on accessory avatar selection attempt, got %d", recAcc.Code)
 	}
 
 	// 3. POST /api/avatars/select - Valid switch to subdirectory avatar
