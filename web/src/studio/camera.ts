@@ -77,3 +77,40 @@ export function getCameraButtonState(
     title: "",
   };
 }
+
+export interface SessionBannerState {
+  showBanner: boolean;
+  message: string;
+  showTakeOver: boolean;
+  statusText?: string;
+  statusClass?: string;
+}
+
+export function computeSessionBannerState(
+  isActive: boolean,
+  connectedTabs: number
+): SessionBannerState {
+  if (connectedTabs <= 1) {
+    return {
+      showBanner: false,
+      message: "",
+      showTakeOver: false,
+    };
+  }
+
+  if (isActive) {
+    return {
+      showBanner: true,
+      message: `Multiple Studio tabs open (${connectedTabs} connected). Tracking is active in this tab.`,
+      showTakeOver: false,
+    };
+  }
+
+  return {
+    showBanner: true,
+    message: `Multiple Studio tabs open (${connectedTabs} connected). Tracking locked to another tab to prevent jitter.`,
+    showTakeOver: true,
+    statusText: "Tracking Inactive (Other Tab Active)",
+    statusClass: "status-warn",
+  };
+}

@@ -158,8 +158,37 @@ function getCameraButtonState(webcamRunning2, mode) {
     title: ""
   };
 }
+function computeSessionBannerState(isActive, connectedTabs) {
+  if (connectedTabs <= 1) {
+    return {
+      showBanner: false,
+      message: "",
+      showTakeOver: false
+    };
+  }
+  if (isActive) {
+    return {
+      showBanner: true,
+      message: `Multiple Studio tabs open (${connectedTabs} connected). Tracking is active in this tab.`,
+      showTakeOver: false
+    };
+  }
+  return {
+    showBanner: true,
+    message: `Multiple Studio tabs open (${connectedTabs} connected). Tracking locked to another tab to prevent jitter.`,
+    showTakeOver: true,
+    statusText: "Tracking Inactive (Other Tab Active)",
+    statusClass: "status-warn"
+  };
+}
 
 // web/src/studio/index.ts
+var multiTabBanner = document.getElementById("multi-tab-banner");
+var multiTabMessage = document.getElementById("multi-tab-message");
+var multiTabIcon = document.getElementById("multi-tab-icon");
+var btnTakeControl = document.getElementById("btn-take-control");
+var isSessionActive = true;
+var connectedTabsCount = 1;
 var video = document.getElementById("webcam");
 var canvas = document.getElementById("landmark-canvas");
 var canvasCtx = canvas ? canvas.getContext("2d") : null;
@@ -373,8 +402,13 @@ function updateCameraUI() {
       btnToggleCamera.classList.remove("btn-danger");
     }
   }
-  const status = getCameraStatus(webcamRunning, micRunning, mode);
-  updateStatus(status.text, status.className);
+  const bannerState = computeSessionBannerState(isSessionActive, connectedTabsCount);
+  if (bannerState.statusText && bannerState.statusClass) {
+    updateStatus(bannerState.statusText, bannerState.statusClass);
+  } else {
+    const status = getCameraStatus(webcamRunning, micRunning, mode);
+    updateStatus(status.text, status.className);
+  }
 }
 function applyMode(mode, save = true) {
   if (modeSelect) modeSelect.value = mode;
@@ -536,7 +570,7 @@ function processCameraOffFrame(renderUI = true) {
   if (renderUI && audioState) {
     updateAudioUI(audioState);
   }
-  if (socket && socket.readyState === WebSocket.OPEN) {
+  if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
     const frame = {
       timestamp: now,
       present: false,
@@ -575,6 +609,8 @@ function connectWebSocket() {
       } else if (msg.type === "rig_update") {
         loadExpressions();
         loadAccessories();
+      } else if (msg.type === "session_status") {
+        handleSessionStatus(Boolean(msg.isActive), Number(msg.connectedTabs) || 1);
       } else if (msg.type === "avatar_swapped") {
         loadAvatars();
         loadExpressions();
@@ -585,6 +621,7 @@ function connectWebSocket() {
     }
   };
   socket.onclose = () => {
+    handleSessionStatus(true, 1);
     updateStatus("Server Disconnected", "status-error");
     if (!reconnectTimer) {
       reconnectTimer = setTimeout(() => {
@@ -603,6 +640,29 @@ function updateStatus(text, className) {
     trackingStatus.textContent = text;
     trackingStatus.className = `status-badge ${className}`;
   }
+}
+function handleSessionStatus(isActive, connectedTabs) {
+  isSessionActive = isActive;
+  connectedTabsCount = connectedTabs;
+  const state = computeSessionBannerState(isActive, connectedTabs);
+  if (multiTabBanner) {
+    multiTabBanner.style.display = state.showBanner ? "flex" : "none";
+    if (isActive) {
+      multiTabBanner.classList.add("is-active");
+    } else {
+      multiTabBanner.classList.remove("is-active");
+    }
+  }
+  if (multiTabMessage) {
+    multiTabMessage.textContent = state.message;
+  }
+  if (multiTabIcon) {
+    multiTabIcon.textContent = isActive ? "\u2139\uFE0F" : "\u26A0\uFE0F";
+  }
+  if (btnTakeControl) {
+    btnTakeControl.style.display = state.showTakeOver ? "inline-block" : "none";
+  }
+  updateCameraUI();
 }
 function showCalibratedFlash() {
   if (btnCalibrate) {
@@ -914,7 +974,7 @@ function processFrame(renderUI = true) {
       if (renderUI) {
         updateAudioUI(audioState);
       }
-      if (socket && socket.readyState === WebSocket.OPEN) {
+      if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
         const frame = {
           timestamp: now,
           present: true,
@@ -940,7 +1000,7 @@ function processFrame(renderUI = true) {
       if (renderUI) {
         updateAudioUI(audioState);
       }
-      if (socket && socket.readyState === WebSocket.OPEN) {
+      if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
         const frame = {
           timestamp: now,
           present: false,
@@ -1026,6 +1086,13 @@ if (btnCalibrate) {
   btnCalibrate.addEventListener("click", () => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "calibrate" }));
+    }
+  });
+}
+if (btnTakeControl) {
+  btnTakeControl.addEventListener("click", () => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "take_control" }));
     }
   });
 }

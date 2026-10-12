@@ -5,6 +5,7 @@ import {
   shouldAutoStartCamera,
   getCameraStatus,
   getCameraButtonState,
+  computeSessionBannerState,
 } from "./camera.ts";
 
 describe("Studio Camera & Mode Logic", () => {
@@ -77,4 +78,35 @@ describe("Studio Camera & Mode Logic", () => {
     assert.equal(stoppedState.text, "Start Camera");
     assert.equal(stoppedState.isDanger, false);
   });
+
+  it("computes session banner state correctly for multi-tab sessions", () => {
+    // Single tab: no banner
+    assert.deepEqual(computeSessionBannerState(true, 1), {
+      showBanner: false,
+      message: "",
+      showTakeOver: false,
+    });
+    assert.deepEqual(computeSessionBannerState(false, 0), {
+      showBanner: false,
+      message: "",
+      showTakeOver: false,
+    });
+
+    // Multiple tabs: active tab
+    const activeMulti = computeSessionBannerState(true, 2);
+    assert.equal(activeMulti.showBanner, true);
+    assert.equal(activeMulti.showTakeOver, false);
+    assert.match(activeMulti.message, /Multiple Studio tabs open \(2 connected\)/);
+    assert.match(activeMulti.message, /Tracking is active in this tab/);
+
+    // Multiple tabs: inactive tab
+    const inactiveMulti = computeSessionBannerState(false, 3);
+    assert.equal(inactiveMulti.showBanner, true);
+    assert.equal(inactiveMulti.showTakeOver, true);
+    assert.match(inactiveMulti.message, /Multiple Studio tabs open \(3 connected\)/);
+    assert.match(inactiveMulti.message, /Tracking locked to another tab/);
+    assert.equal(inactiveMulti.statusText, "Tracking Inactive (Other Tab Active)");
+    assert.equal(inactiveMulti.statusClass, "status-warn");
+  });
 });
+

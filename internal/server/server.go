@@ -43,11 +43,12 @@ type Server struct {
 	version            string
 	commit             string
 	date               string
-	expMgr        *ExpressionManager
-	trackerMu     sync.RWMutex
-	trackerConns  map[*websocket.Conn]chan []byte
-	httpServer    *http.Server
-	listener      net.Listener
+	expMgr             *ExpressionManager
+	trackerMu          sync.RWMutex
+	trackerConns       map[*websocket.Conn]chan []byte
+	activeTrackerConn  *websocket.Conn
+	httpServer         *http.Server
+	listener           net.Listener
 }
 
 // New constructs an unstarted Server instance.
@@ -310,6 +311,38 @@ func (s *Server) handleOverlayWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// broadcastTrackerSessionStatusLocked sends the session status to all connected
+// tracker tabs, informing them whether they are the active tracking source and how
+// many studio tabs are currently connected. Must be called while holding s.trackerMu.
+func (s *Server) broadcastTrackerSessionStatusLocked() {
+	if len(s.trackerConns) == 0 {
+		s.activeTrackerConn = nil
+		return
+	}
+	if s.activeTrackerConn == nil {
+		for c := range s.trackerConns {
+			s.activeTrackerConn = c
+			break
+		}
+	}
+	total := len(s.trackerConns)
+	for c, ch := range s.trackerConns {
+		isActive := (c == s.activeTrackerConn)
+		msg, err := json.Marshal(map[string]any{
+			"type":          "session_status",
+			"isActive":      isActive,
+			"connectedTabs": total,
+		})
+		if err != nil {
+			continue
+		}
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
+}
+
 func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 	opts := &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
@@ -328,12 +361,20 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 		s.trackerConns = make(map[*websocket.Conn]chan []byte)
 	}
 	s.trackerConns[conn] = msgCh
+	if s.activeTrackerConn == nil {
+		s.activeTrackerConn = conn
+	}
+	s.broadcastTrackerSessionStatusLocked()
 	s.trackerMu.Unlock()
 
 	defer func() {
 		s.trackerMu.Lock()
 		delete(s.trackerConns, conn)
 		close(msgCh)
+		if s.activeTrackerConn == conn {
+			s.activeTrackerConn = nil
+		}
+		s.broadcastTrackerSessionStatusLocked()
 		s.trackerMu.Unlock()
 	}()
 
@@ -399,6 +440,12 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 					_ = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"calibration_reset"}`))
 				}
 				continue
+			case "take_control":
+				s.trackerMu.Lock()
+				s.activeTrackerConn = conn
+				s.broadcastTrackerSessionStatusLocked()
+				s.trackerMu.Unlock()
+				continue
 			case "expression_toggle":
 				var p struct {
 					Name string `json:"name"`
@@ -427,6 +474,15 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 		// Parse as FaceFrame and process through tracking engine
 		var face tracking.FaceFrame
 		if err := json.Unmarshal(data, &face); err == nil {
+			s.trackerMu.RLock()
+			isActive := (conn == s.activeTrackerConn)
+			s.trackerMu.RUnlock()
+
+			if !isActive {
+				// Drop tracking frames from secondary tabs to prevent jitter/thrashing
+				continue
+			}
+
 			if s.engine != nil {
 				params := s.engine.Process(face)
 				s.hub.BroadcastParams(params)

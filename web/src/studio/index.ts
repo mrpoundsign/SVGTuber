@@ -30,7 +30,16 @@ import {
   shouldAutoStartCamera,
   getCameraStatus,
   getCameraButtonState,
+  computeSessionBannerState,
 } from "./camera.ts";
+
+const multiTabBanner = document.getElementById("multi-tab-banner") as HTMLElement | null;
+const multiTabMessage = document.getElementById("multi-tab-message") as HTMLElement | null;
+const multiTabIcon = document.getElementById("multi-tab-icon") as HTMLElement | null;
+const btnTakeControl = document.getElementById("btn-take-control") as HTMLButtonElement | null;
+
+let isSessionActive = true;
+let connectedTabsCount = 1;
 
 const video = document.getElementById("webcam") as HTMLVideoElement | null;
 const canvas = document.getElementById("landmark-canvas") as HTMLCanvasElement | null;
@@ -278,8 +287,13 @@ function updateCameraUI() {
       btnToggleCamera.classList.remove("btn-danger");
     }
   }
-  const status = getCameraStatus(webcamRunning, micRunning, mode);
-  updateStatus(status.text, status.className);
+  const bannerState = computeSessionBannerState(isSessionActive, connectedTabsCount);
+  if (bannerState.statusText && bannerState.statusClass) {
+    updateStatus(bannerState.statusText, bannerState.statusClass);
+  } else {
+    const status = getCameraStatus(webcamRunning, micRunning, mode);
+    updateStatus(status.text, status.className);
+  }
 }
 
 function applyMode(mode: string, save = true) {
@@ -462,7 +476,7 @@ function processCameraOffFrame(renderUI = true) {
   if (renderUI && audioState) {
     updateAudioUI(audioState);
   }
-  if (socket && socket.readyState === WebSocket.OPEN) {
+  if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
     const frame = {
       timestamp: now,
       present: false,
@@ -505,6 +519,8 @@ function connectWebSocket() {
       } else if (msg.type === "rig_update") {
         loadExpressions();
         loadAccessories();
+      } else if (msg.type === "session_status") {
+        handleSessionStatus(Boolean(msg.isActive), Number(msg.connectedTabs) || 1);
       } else if (msg.type === "avatar_swapped") {
         loadAvatars();
         loadExpressions();
@@ -515,6 +531,7 @@ function connectWebSocket() {
   };
 
   socket.onclose = () => {
+    handleSessionStatus(true, 1);
     updateStatus("Server Disconnected", "status-error");
     if (!reconnectTimer) {
       reconnectTimer = setTimeout(() => {
@@ -535,6 +552,32 @@ function updateStatus(text: string, className: string) {
     trackingStatus.textContent = text;
     trackingStatus.className = `status-badge ${className}`;
   }
+}
+
+function handleSessionStatus(isActive: boolean, connectedTabs: number) {
+  isSessionActive = isActive;
+  connectedTabsCount = connectedTabs;
+
+  const state = computeSessionBannerState(isActive, connectedTabs);
+  if (multiTabBanner) {
+    multiTabBanner.style.display = state.showBanner ? "flex" : "none";
+    if (isActive) {
+      multiTabBanner.classList.add("is-active");
+    } else {
+      multiTabBanner.classList.remove("is-active");
+    }
+  }
+  if (multiTabMessage) {
+    multiTabMessage.textContent = state.message;
+  }
+  if (multiTabIcon) {
+    multiTabIcon.textContent = isActive ? "ℹ️" : "⚠️";
+  }
+  if (btnTakeControl) {
+    btnTakeControl.style.display = state.showTakeOver ? "inline-block" : "none";
+  }
+
+  updateCameraUI();
 }
 
 function showCalibratedFlash() {
@@ -885,7 +928,7 @@ function processFrame(renderUI = true) {
         updateAudioUI(audioState);
       }
 
-      if (socket && socket.readyState === WebSocket.OPEN) {
+      if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
         const frame: FaceFrame = {
           timestamp: now,
           present: true,
@@ -914,7 +957,7 @@ function processFrame(renderUI = true) {
         updateAudioUI(audioState);
       }
 
-      if (socket && socket.readyState === WebSocket.OPEN) {
+      if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
         const frame: FaceFrame = {
           timestamp: now,
           present: false,
@@ -1014,6 +1057,14 @@ if (btnCalibrate) {
   btnCalibrate.addEventListener("click", () => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "calibrate" }));
+    }
+  });
+}
+
+if (btnTakeControl) {
+  btnTakeControl.addEventListener("click", () => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "take_control" }));
     }
   });
 }

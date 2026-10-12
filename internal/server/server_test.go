@@ -480,5 +480,97 @@ func TestServer_APIVersion(t *testing.T) {
 	}
 }
 
+func TestServer_MultiTabTrackerSession(t *testing.T) {
+	tempDir := t.TempDir()
+	avatarPath := filepath.Join(tempDir, "avatar.svg")
+	_ = os.WriteFile(avatarPath, []byte("<svg></svg>"), 0644)
+
+	hub := NewHub()
+	srv := New(0, avatarPath, hub, tracking.NewEngine())
+
+	httpServer := httptest.NewServer(http.HandlerFunc(srv.handleTrackerWS))
+	defer httpServer.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	readSessionStatus := func(c *websocket.Conn) (bool, int) {
+		for {
+			typ, data, err := c.Read(ctx)
+			if err != nil {
+				t.Fatalf("failed to read from tracker ws: %v", err)
+			}
+			if typ != websocket.MessageText {
+				continue
+			}
+			var m struct {
+				Type          string `json:"type"`
+				IsActive      bool   `json:"isActive"`
+				ConnectedTabs int    `json:"connectedTabs"`
+			}
+			if err := json.Unmarshal(data, &m); err == nil && m.Type == "session_status" {
+				return m.IsActive, m.ConnectedTabs
+			}
+		}
+	}
+
+	// 1. Connect first tab
+	conn1, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial tracker 1: %v", err)
+	}
+	defer func() { _ = conn1.Close(websocket.StatusNormalClosure, "") }()
+
+	active1, tabs1 := readSessionStatus(conn1)
+	if !active1 || tabs1 != 1 {
+		t.Fatalf("expected tab 1 to be active with 1 tab, got active=%v, tabs=%d", active1, tabs1)
+	}
+
+	// 2. Connect second tab
+	conn2, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial tracker 2: %v", err)
+	}
+	defer func() { _ = conn2.Close(websocket.StatusNormalClosure, "") }()
+
+	// Both connections will receive update with connectedTabs: 2
+	active2, tabs2 := readSessionStatus(conn2)
+	if active2 || tabs2 != 2 {
+		t.Fatalf("expected tab 2 to be inactive with 2 tabs, got active=%v, tabs=%d", active2, tabs2)
+	}
+
+	active1Update, tabs1Update := readSessionStatus(conn1)
+	if !active1Update || tabs1Update != 2 {
+		t.Fatalf("expected tab 1 to remain active with 2 tabs, got active=%v, tabs=%d", active1Update, tabs1Update)
+	}
+
+	// 3. Tab 2 takes control
+	takeControlMsg := []byte(`{"type":"take_control"}`)
+	if err := conn2.Write(ctx, websocket.MessageText, takeControlMsg); err != nil {
+		t.Fatalf("failed to write take_control: %v", err)
+	}
+
+	// Tab 1 should receive session_status with isActive: false
+	active1AfterTake, tabs1AfterTake := readSessionStatus(conn1)
+	if active1AfterTake || tabs1AfterTake != 2 {
+		t.Fatalf("expected tab 1 to become inactive, got active=%v, tabs=%d", active1AfterTake, tabs1AfterTake)
+	}
+
+	// Tab 2 should receive session_status with isActive: true
+	active2AfterTake, tabs2AfterTake := readSessionStatus(conn2)
+	if !active2AfterTake || tabs2AfterTake != 2 {
+		t.Fatalf("expected tab 2 to become active, got active=%v, tabs=%d", active2AfterTake, tabs2AfterTake)
+	}
+
+	// 4. Tab 2 disconnects -> Tab 1 should be promoted back to active
+	_ = conn2.Close(websocket.StatusNormalClosure, "")
+	active1AfterClose, tabs1AfterClose := readSessionStatus(conn1)
+	if !active1AfterClose || tabs1AfterClose != 1 {
+		t.Fatalf("expected tab 1 to become active again with 1 tab, got active=%v, tabs=%d", active1AfterClose, tabs1AfterClose)
+	}
+}
+
+
 
 
