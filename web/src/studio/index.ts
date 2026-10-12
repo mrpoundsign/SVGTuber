@@ -25,6 +25,12 @@ import {
   computeLinkedScale,
   formatFittingMirrorUrl,
 } from "./dressing-room.ts";
+import {
+  isCameraAllowedInMode,
+  shouldAutoStartCamera,
+  getCameraStatus,
+  getCameraButtonState,
+} from "./camera.ts";
 
 const video = document.getElementById("webcam") as HTMLVideoElement | null;
 const canvas = document.getElementById("landmark-canvas") as HTMLCanvasElement | null;
@@ -118,6 +124,8 @@ const configPathDisplay = document.getElementById("config-path-display") as HTML
 
 let faceLandmarker: any = null;
 let webcamRunning = false;
+let currentVideoStream: MediaStream | null = null;
+let pendingLoadedDataHandler: (() => void) | null = null;
 let socket: WebSocket | null = null;
 let reconnectTimer: any = null;
 let lastVideoTime = -1;
@@ -251,6 +259,50 @@ async function populateAudioDevices() {
   }
 }
 
+function getCurrentMode(): "hybrid" | "camera" | "audio" {
+  const val = modeSelect?.value || settingsModeSelect?.value || activeSettings?.audio?.mode;
+  if (val === "camera" || val === "audio") return val;
+  return "hybrid";
+}
+
+function updateCameraUI() {
+  const mode = getCurrentMode();
+  const btnState = getCameraButtonState(webcamRunning, mode);
+  if (btnToggleCamera) {
+    btnToggleCamera.textContent = btnState.text;
+    btnToggleCamera.disabled = btnState.disabled;
+    btnToggleCamera.title = btnState.title;
+    if (btnState.isDanger) {
+      btnToggleCamera.classList.add("btn-danger");
+    } else {
+      btnToggleCamera.classList.remove("btn-danger");
+    }
+  }
+  const status = getCameraStatus(webcamRunning, micRunning, mode);
+  updateStatus(status.text, status.className);
+}
+
+function applyMode(mode: string, save = true) {
+  if (modeSelect) modeSelect.value = mode;
+  if (settingsModeSelect) settingsModeSelect.value = mode;
+  const isAudio = mode === "audio";
+  if (isAudio) {
+    if (webcamRunning) {
+      stopCamera();
+    } else {
+      updateCameraUI();
+    }
+    if (cameraSelect) cameraSelect.disabled = true;
+  } else {
+    if (cameraSelect) cameraSelect.disabled = false;
+    updateCameraUI();
+  }
+  if (save) {
+    const current = collectSettingsFromUI();
+    debouncedSaveSettings(current);
+  }
+}
+
 async function toggleMic() {
   if (micRunning) {
     stopMic();
@@ -305,6 +357,7 @@ async function startMic() {
     }
 
     if (!webcamRunning) {
+      updateCameraUI();
       startCameraOffLoop();
     }
   } catch (err: any) {
@@ -338,6 +391,7 @@ function stopMic() {
   if (valVuMeter) valVuMeter.textContent = "0%";
 
   if (!webcamRunning) {
+    updateCameraUI();
     startCameraOffLoop();
   }
 }
@@ -430,7 +484,7 @@ function connectWebSocket() {
   socket.onopen = () => {
     console.log("[Studio Tracker] Connected to Go server.");
     if (!webcamRunning) {
-      updateStatus(micRunning ? "Camera Off (Face Lost) - Audio Active" : "Camera Off (Face Lost)", "status-warn");
+      updateCameraUI();
       startCameraOffLoop();
     }
   };
@@ -541,16 +595,17 @@ async function initMediaPipe() {
     await populateCameraDevices();
     await populateAudioDevices();
 
+    const currentMode = getCurrentMode();
     const cameraActive = localStorage.getItem("svgtuber_camera_active");
-    if (cameraActive === "true" || cameraActive === null) {
+    if (shouldAutoStartCamera(currentMode, cameraActive)) {
       console.log("[Studio Tracker] Auto-starting camera stream on load...");
       startCamera().catch((e) => {
         console.warn("[Studio Tracker] Auto-start camera warning:", e);
-        updateStatus("Camera Off (Face Lost)", "status-warn");
+        updateCameraUI();
         startCameraOffLoop();
       });
     } else {
-      updateStatus("Camera Off (Face Lost)", "status-warn");
+      updateCameraUI();
       startCameraOffLoop();
     }
   } catch (err: any) {
@@ -594,8 +649,41 @@ async function populateCameraDevices() {
   }
 }
 
+async function switchCamera(deviceId: string) {
+  if (!webcamRunning) {
+    return;
+  }
+  updateStatus("Switching Camera...", "status-warn");
+  try {
+    await startCamera(deviceId);
+  } catch (err: any) {
+    console.error("[Studio Tracker] Error switching camera:", err);
+    stopCamera();
+    updateStatus(`Camera switch failed: ${err.message}`, "status-error");
+  }
+}
+
 async function startCamera(deviceId: string | null = null) {
   if (!video) return;
+  if (!isCameraAllowedInMode(getCurrentMode())) {
+    console.log("[Studio Tracker] Camera start ignored: Audio Only mode is active");
+    return;
+  }
+
+  if (pendingLoadedDataHandler && video) {
+    video.removeEventListener("loadeddata", pendingLoadedDataHandler);
+    pendingLoadedDataHandler = null;
+  }
+
+  if (currentVideoStream) {
+    currentVideoStream.getTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch (e) {}
+    });
+    currentVideoStream = null;
+  }
+
   if (video.srcObject) {
     try {
       (video.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
@@ -638,6 +726,7 @@ async function startCamera(deviceId: string | null = null) {
     }
   }
 
+  currentVideoStream = stream;
   video.srcObject = stream;
   try {
     await video.play();
@@ -646,6 +735,11 @@ async function startCamera(deviceId: string | null = null) {
   }
 
   const onLoaded = () => {
+    pendingLoadedDataHandler = null;
+    if (!currentVideoStream || !isCameraAllowedInMode(getCurrentMode())) {
+      return;
+    }
+
     webcamRunning = true;
     localStorage.setItem("svgtuber_camera_active", "true");
 
@@ -655,11 +749,7 @@ async function startCamera(deviceId: string | null = null) {
       if (cameraSelect) cameraSelect.value = effectiveId;
     }
 
-    if (btnToggleCamera) {
-      btnToggleCamera.textContent = "Stop Camera";
-      btnToggleCamera.classList.add("btn-danger");
-    }
-    updateStatus("Tracking Active", "status-ok");
+    updateCameraUI();
     if (canvas && video) {
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
@@ -690,6 +780,7 @@ async function startCamera(deviceId: string | null = null) {
   if (video.readyState >= 2 && video.videoWidth > 0) {
     onLoaded();
   } else {
+    pendingLoadedDataHandler = onLoaded;
     video.addEventListener("loadeddata", onLoaded, { once: true });
   }
 }
@@ -701,25 +792,54 @@ function stopCamera() {
     cancelAnimationFrame(animFrameId);
     animFrameId = null;
   }
+  if (pendingLoadedDataHandler && video) {
+    video.removeEventListener("loadeddata", pendingLoadedDataHandler);
+    pendingLoadedDataHandler = null;
+  }
   startCameraOffLoop();
 
-  if (video && video.srcObject) {
-    (video.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
-    video.srcObject = null;
+  if (currentVideoStream) {
+    currentVideoStream.getTracks().forEach((t) => {
+      try {
+        t.stop();
+      } catch (e) {}
+    });
+    currentVideoStream = null;
   }
-  if (btnToggleCamera) {
-    btnToggleCamera.textContent = "Start Camera";
-    btnToggleCamera.classList.remove("btn-danger");
+
+  if (video) {
+    try {
+      video.pause();
+    } catch (e) {}
+    if (video.srcObject) {
+      try {
+        (video.srcObject as MediaStream).getTracks().forEach((t) => t.stop());
+      } catch (e) {}
+      video.srcObject = null;
+    }
+    video.removeAttribute("src");
+    try {
+      video.load();
+    } catch (e) {}
   }
-  updateStatus(micRunning ? "Camera Off (Face Lost) - Audio Active" : "Camera Off (Face Lost)", "status-warn");
+
+  if (fpsDisplay) {
+    fpsDisplay.textContent = "0 FPS";
+  }
+  frameCount = 0;
+
+  updateCameraUI();
   if (canvasCtx && canvas) {
     canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
   }
   resetTrackingGauges();
-  sendTrackingLoss();
+  sendTrackingLoss(sampleAudio());
 }
 
 async function toggleCamera() {
+  if (!isCameraAllowedInMode(getCurrentMode())) {
+    return;
+  }
   if (webcamRunning) {
     stopCamera();
     return;
@@ -877,12 +997,13 @@ function resetTrackingGauges() {
   if (gaugeSmile) gaugeSmile.style.width = "0%";
 }
 
-function sendTrackingLoss() {
+function sendTrackingLoss(audioState?: AudioState | null) {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(
       JSON.stringify({
         timestamp: performance.now(),
         present: false,
+        audio: audioState !== undefined ? (audioState || undefined) : (sampleAudio() || undefined),
       })
     );
   }
@@ -908,7 +1029,12 @@ if (btnToggleMic) {
 if (cameraSelect) {
   cameraSelect.addEventListener("change", (e) => {
     const targetId = (e.target as HTMLSelectElement).value;
-    startCamera(targetId);
+    if (targetId) {
+      localStorage.setItem("svgtuber_camera_id", targetId);
+    }
+    if (webcamRunning) {
+      switchCamera(targetId);
+    }
   });
 }
 
@@ -993,8 +1119,7 @@ function syncSettingsToUI(s: SettingsPayload | null) {
   if (s.audio) {
     const a = s.audio;
     const mode = a.mode || "hybrid";
-    if (modeSelect) modeSelect.value = mode;
-    if (settingsModeSelect) settingsModeSelect.value = mode;
+    applyMode(mode, false);
     if (sliderMicGain) sliderMicGain.value = String(a.micGain || 1.5);
     if (sliderNoiseGate) sliderNoiseGate.value = String(a.noiseGate || 0.04);
     if (sliderDecaySmooth) sliderDecaySmooth.value = String(a.decaySmooth || 0.1);
@@ -1137,10 +1262,7 @@ function onSliderInput() {
 
 function onModeChange(e: Event) {
   const newMode = (e.target as HTMLSelectElement).value;
-  if (modeSelect) modeSelect.value = newMode;
-  if (settingsModeSelect) settingsModeSelect.value = newMode;
-  const current = collectSettingsFromUI();
-  debouncedSaveSettings(current);
+  applyMode(newMode, true);
 }
 
 if (modeSelect) modeSelect.addEventListener("change", onModeChange);
@@ -2478,8 +2600,9 @@ if (checkShowCrosshair) {
 
 // Initial Bootstrap
 connectWebSocket();
-initMediaPipe();
-loadSettings();
+loadSettings().finally(() => {
+  initMediaPipe();
+});
 loadExpressions();
 loadAvatars();
 loadAccessories();
