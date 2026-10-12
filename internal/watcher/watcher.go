@@ -178,6 +178,8 @@ func (aw *AvatarWatcher) triggerDebounced() {
 
 	if aw.timer != nil {
 		aw.timer.Stop()
+		aw.timer.Reset(aw.debounce)
+		return
 	}
 
 	aw.timer = time.AfterFunc(aw.debounce, func() {
