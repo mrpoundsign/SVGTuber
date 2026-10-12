@@ -21,14 +21,14 @@ bundle_accessories() {
 build_binary_linux() {
   echo "==> Building svgtuber binary..."
   mkdir -p build
-  CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.5-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber ./cmd/svgtuber
+  CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.6-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber ./cmd/svgtuber
   echo "==> Successfully built build/svgtuber"
 }
 
 build_binary_windows() {
   echo "==> Building svgtuber.exe (Windows amd64)..."
   mkdir -p build
-  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.5-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber.exe ./cmd/svgtuber
+  GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=0.0.6-dev -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber.exe ./cmd/svgtuber
   echo "==> Successfully built build/svgtuber.exe"
 }
 
