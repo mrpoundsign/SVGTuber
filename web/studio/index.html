@@ -744,7 +744,7 @@
   <header>
     <div class="brand">
       <h1>SVGTuber Studio</h1>
-      <span class="badge" id="app-version">v0.0.6</span>
+      <span class="badge" id="app-version">v0.0.7</span>
     </div>
     <div style="display: flex; align-items: center; gap: 12px;">
       <a href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/RIGGING_GUIDE.md" target="_blank" rel="noopener" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; text-decoration: none; display: flex; align-items: center; gap: 5px;" title="View Inkscape rigging instructions and directive cheat sheet">
@@ -854,6 +854,20 @@
             <div id="blink-threshold-marker-r" title="Right Eye Threshold" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #38bdf8; left: 45%; z-index: 2;"></div>
           </div>
           <span id="val-blink-r" class="gauge-value">0%</span>
+        </div>
+        <div class="gauge-item">
+          <label>Brow Left</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-brow-l" class="gauge-bar-fill" style="background: #818cf8; width: 50%;"></div>
+          </div>
+          <span id="val-brow-l" class="gauge-value">0%</span>
+        </div>
+        <div class="gauge-item">
+          <label>Brow Right</label>
+          <div class="gauge-bar-track">
+            <div id="gauge-brow-r" class="gauge-bar-fill" style="background: #818cf8; width: 50%;"></div>
+          </div>
+          <span id="val-brow-r" class="gauge-value">0%</span>
         </div>
         <div class="gauge-item">
           <label>Mouth Open</label>
@@ -1062,6 +1076,11 @@
             <label for="slider-eye-gain">Pupil Gaze Range</label>
             <input type="range" id="slider-eye-gain" min="0.5" max="2.5" step="0.1" value="1.0">
             <span id="val-eye-gain" class="slider-val">1.0x</span>
+          </div>
+          <div class="slider-item">
+            <label for="slider-brow-gain">Eyebrow Range</label>
+            <input type="range" id="slider-brow-gain" min="0.0" max="3.0" step="0.1" value="1.5">
+            <span id="val-brow-gain" class="slider-val">1.5x</span>
           </div>
           <div class="slider-item">
             <label for="slider-yaw-multiplier">Head Yaw (L/R)</label>

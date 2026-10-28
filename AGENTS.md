@@ -27,6 +27,5 @@
 
 - Always run `go fix ./...` (or verify with `go fix -diff ./...`), `golangci-lint-v2 run ./...`, `go vet ./...`, and `go test ./...` before finalizing changes or creating commits.
 - **Pre-commit hook**: Ensure pre-commit checks pass (`.githooks/pre-commit` and `.git/hooks/pre-commit`).
-- **Do not build the binary**: The user handles all binary building (`go build`, creating `.exe` files, etc.). Do not build binaries or overwrite executables in `build/`.
 - **Never modify user config files**: Never modify or overwrite the user's configuration files (`config.json`, `svgtuber.json`, etc.).
 
