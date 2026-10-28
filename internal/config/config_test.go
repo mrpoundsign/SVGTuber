@@ -79,11 +79,12 @@ func TestConfigManager_SaveAndLoad(t *testing.T) {
 	}
 
 	// Set and test AvatarPath
-	if err := mgr2.SetAvatarPath("/path/to/my_avatar.svg"); err != nil {
+	testAvatarPath := filepath.Join(tmpDir, "my_avatar.svg")
+	if err := mgr2.SetAvatarPath(testAvatarPath); err != nil {
 		t.Fatalf("SetAvatarPath failed: %v", err)
 	}
-	if mgr2.GetAvatarPath() != "/path/to/my_avatar.svg" {
-		t.Errorf("Expected AvatarPath '/path/to/my_avatar.svg', got %q", mgr2.GetAvatarPath())
+	if filepath.Clean(mgr2.GetAvatarPath()) != filepath.Clean(testAvatarPath) {
+		t.Errorf("Expected AvatarPath %q, got %q", testAvatarPath, mgr2.GetAvatarPath())
 	}
 
 	// Reset
@@ -94,7 +95,7 @@ func TestConfigManager_SaveAndLoad(t *testing.T) {
 	if reset.Tracking.MouthGain != 1.4 {
 		t.Errorf("Expected reset MouthGain 1.4, got %f", reset.Tracking.MouthGain)
 	}
-	if reset.AvatarPath != "/path/to/my_avatar.svg" {
+	if filepath.Clean(reset.AvatarPath) != filepath.Clean(testAvatarPath) {
 		t.Errorf("Expected AvatarPath to be preserved after reset, got %q", reset.AvatarPath)
 	}
 }
@@ -122,8 +123,8 @@ func TestConfig_AutoUpgrade(t *testing.T) {
 	if settings.Version != 2 {
 		t.Errorf("Expected auto-upgraded Version 2, got %d", settings.Version)
 	}
-	if settings.AvatarDir != "/home/user/stream" {
-		t.Errorf("Expected AvatarDir '/home/user/stream', got %q", settings.AvatarDir)
+	if filepath.Clean(settings.AvatarDir) != filepath.Clean("/home/user/stream") {
+		t.Errorf("Expected AvatarDir %q, got %q", filepath.Clean("/home/user/stream"), settings.AvatarDir)
 	}
 	if settings.CurrentAvatar != "avatar.svg" {
 		t.Errorf("Expected CurrentAvatar 'avatar.svg', got %q", settings.CurrentAvatar)

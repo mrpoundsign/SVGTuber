@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="800" height="800" viewBox="0 0 800 800">
+  <title>Untitled-3</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="Tail_Group" data-name="Tail_Group [Follow {yaw: -8; pitch: 4}] [Sway {pivot: top; range: 18; stiffness: 0.12; damping: 0.82}]" inkscape:label="Tail_Group [Follow {yaw: -8; pitch: 4}] [Sway {pivot: top; range: 18; stiffness: 0.12; damping: 0.82}]">
+      <path id="Tail" d="M265 605 C232 635 215 668 205 710 C215 710 238 672 272 625 Z" fill="#fffdfa" stroke="#292524" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path id="Tail_Tuft" d="M205 710 C190 735 180 755 175 775 C195 765 215 750 225 730 C220 720 210 715 205 710 Z" fill="#2a1e17"/>
+    </g>
+    <g id="Body_Group" data-name="Body_Group [Idle {breathe: 0.018; period: 3.8s; pivot: bottom}] [Bounce {height: 2.5; speed: 15; squash: 0.015; pivot: bottom}]" inkscape:label="Body_Group [Idle {breathe: 0.018; period: 3.8s; pivot: bottom}] [Bounce {height: 2.5; speed: 15; squash: 0.015; pivot: bottom}]">
+      <path id="Body" d="M330 450 L470 450 C472 495 490 520 525 538 C565 558 600 592 608 635 C618 688 608 748 572 775 C530 798 465 802 400 802 C335 802 270 798 228 775 C192 748 182 688 192 635 C200 592 235 558 275 538 C310 520 328 495 330 450 Z" fill="#fffdfa" stroke="#292524" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path id="Body_Spot_Left" d="M208 595 C245 588 282 612 288 654 C294 696 262 742 216 760 C188 732 180 678 194 635 C198 618 202 605 208 595 Z" fill="#2a1e17"/>
+      <path id="Body_Spot_Right" d="M592 595 C555 588 518 612 512 654 C506 696 538 742 584 760 C612 732 620 678 606 635 C602 618 598 605 592 595 Z" fill="#2a1e17"/>
+      <g id="Arm_Left_Group" data-name="Arm_Left_Group [Follow {yaw: 2; pitch: 1}] [Sway {pivot: top; range: 3.2; stiffness: 0.22; damping: 0.82}]" inkscape:label="Arm_Left_Group [Follow {yaw: 2; pitch: 1}] [Sway {pivot: top; range: 3.2; stiffness: 0.22; damping: 0.82}]">
+      <path id="Arm_Left" d="M272 562 C236 602 234 658 256 706 L312 694 C296 652 298 605 322 568" fill="#fffdfa" stroke="#292524" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <path id="Hand_Left" d="M252 698 C272 702 296 696 314 686 C322 705 322 726 315 738 C309 745 300 745 295 739 L288 716 L281 741 C274 746 263 744 257 735 C249 723 248 708 252 698 Z" fill="#44403c" stroke="#1c1917" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Arm_Right_Group" data-name="Arm_Right_Group [Follow {yaw: 2; pitch: 1}] [Sway {pivot: top; range: 3.2; stiffness: 0.22; damping: 0.82}]" inkscape:label="Arm_Right_Group [Follow {yaw: 2; pitch: 1}] [Sway {pivot: top; range: 3.2; stiffness: 0.22; damping: 0.82}]">
+      <path id="Arm_Right" d="M528 562 C564 602 566 658 544 706 L488 694 C504 652 502 605 478 568" fill="#fffdfa" stroke="#292524" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <path id="Hand_Right" d="M548 698 C528 702 504 696 486 686 C478 705 478 726 485 738 C491 745 500 745 505 739 L512 716 L519 741 C526 746 537 744 543 735 C551 723 552 708 548 698 Z" fill="#44403c" stroke="#1c1917" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Collar_Group" data-name="Collar_Group [Follow {yaw: 3; pitch: 2; roll: 1.5; pivot: center}]" inkscape:label="Collar_Group [Follow {yaw: 3; pitch: 2; roll: 1.5; pivot: center}]">
+      <path id="Collar" d="M326 476 C368 498 432 498 474 476 L488 506 C436 528 364 528 312 506 Z" fill="#16a34a" stroke="#14532d" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Chest_Accessory_Group" data-name="Chest_Accessory_Group [Follow {yaw: 10; pitch: 6}] [Sway {pivot: top; range: 16; stiffness: 0.22; damping: 0.78}] [Bounce {height: 8; speed: 18; squash: 0.04; pivot: top}]" inkscape:label="Chest_Accessory_Group [Follow {yaw: 10; pitch: 6}] [Sway {pivot: top; range: 16; stiffness: 0.22; damping: 0.78}] [Bounce {height: 8; speed: 18; squash: 0.04; pivot: top}]">
+      <path id="Chest_Accessory" d="M380 513 L420 513 L436 563 C436 572 420 578 400 578 C380 578 364 572 364 563 Z" fill="#fbbf24" stroke="#78350f" stroke-width="2.5" stroke-miterlimit="10"/>
+      <path id="Chest_Accessory_Rim" d="M364 563 C364 560.791 380.118 559 400 559 C419.882 559 436 560.791 436 563 C436 565.209 419.882 567 400 567 C380.118 567 364 565.209 364 563 Z" fill="#d97706" stroke="#78350f" stroke-width="2" stroke-miterlimit="10"/>
+      <path id="Chest_Accessory_Clapper" d="M393 576 C393 572.686 396.134 570 400 570 C403.866 570 407 572.686 407 576 C407 579.314 403.866 582 400 582 C396.134 582 393 579.314 393 576 Z" fill="#78350f"/>
+      </g>
+    </g>
+    <g id="Head_Group" data-name="Head_Group [Follow {yaw: 16; pitch: 12; roll: 8; pivot: center}]" inkscape:label="Head_Group [Follow {yaw: 16; pitch: 12; roll: 8; pivot: center}]">
+      <g id="Top_Accessory_Left_Group" data-name="Top_Accessory_Left_Group [Sway {pivot: bottom; range: 6; stiffness: 0.28; damping: 0.85}]" inkscape:label="Top_Accessory_Left_Group [Sway {pivot: bottom; range: 6; stiffness: 0.28; damping: 0.85}]">
+      <path id="Top_Accessory_Left" d="M265 255 C240 195 245 140 225 115 C253 118 290 155 305 225 Z" fill="#fef3c7" stroke="#78350f" stroke-width="2.8" stroke-miterlimit="10"/>
+      <path id="Top_Accessory_Left_Tip" d="M225 115 C235 130 245 140 250 145 C240 150 230 135 225 115 Z" fill="#d97706"/>
+      </g>
+      <g id="Top_Accessory_Right_Group" data-name="Top_Accessory_Right_Group [Sway {pivot: bottom; range: 6; stiffness: 0.28; damping: 0.85}]" inkscape:label="Top_Accessory_Right_Group [Sway {pivot: bottom; range: 6; stiffness: 0.28; damping: 0.85}]">
+      <path id="Top_Accessory_Right" d="M535 255 C560 195 555 140 575 115 C547 118 510 155 495 225 Z" fill="#fef3c7" stroke="#78350f" stroke-width="2.8" stroke-miterlimit="10"/>
+      <path id="Top_Accessory_Right_Tip" d="M575 115 C565 130 555 140 550 145 C560 150 570 135 575 115 Z" fill="#d97706"/>
+      </g>
+      <g id="Ear_Left_Group" data-name="Ear_Left_Group [Sway {pivot: right; range: 12; stiffness: 0.22; damping: 0.82}]" inkscape:label="Ear_Left_Group [Sway {pivot: right; range: 12; stiffness: 0.22; damping: 0.82}]">
+      <path id="Ear_Left" d="M265 295 C215 250 120 265 100 310 C110 355 200 370 255 335 Z" fill="#2a1e17" stroke="#1c1917" stroke-width="3" stroke-miterlimit="10"/>
+      <path id="Ear_Left_Inner" d="M250 302 C210 268 140 280 125 312 C135 342 200 352 240 328 Z" fill="#ffccd5"/>
+      <path id="Ear_Left_Tag" d="M155 342 L178 342 L182 374 L151 374 Z" fill="#eab308" stroke="#a16207" stroke-width="1.8" stroke-miterlimit="10"/>
+      </g>
+      <g id="Ear_Right_Group" data-name="Ear_Right_Group [Sway {pivot: left; range: 12; stiffness: 0.22; damping: 0.82}]" inkscape:label="Ear_Right_Group [Sway {pivot: left; range: 12; stiffness: 0.22; damping: 0.82}]">
+      <path id="Ear_Right" d="M535 295 C585 250 680 265 700 310 C690 355 600 370 545 335 Z" fill="#fffdfa" stroke="#292524" stroke-width="3" stroke-miterlimit="10"/>
+      <path id="Ear_Right_Inner" d="M550 302 C590 268 660 280 675 312 C665 342 600 352 560 328 Z" fill="#ffccd5"/>
+      </g>
+      <g id="Head_Base_Group" data-name="Head_Base_Group">
+      <path id="Head" d="M400 170 C515 170 580 225 585 330 C590 435 535 490 400 490 C265 490 210 435 215 330 C220 225 285 170 400 170 Z" fill="#fffdfa" stroke="#292524" stroke-width="3.5" stroke-miterlimit="10"/>
+      <path id="Head_Spot_Right" d="M400 170 C475 170 545 190 570 245 C588 290 572 355 532 388 C492 412 452 375 432 345 C412 305 422 255 396 210 Z" fill="#2a1e17"/>
+      </g>
+      <g id="Forelock_Group" data-name="Forelock_Group [Sway {pivot: top; range: 8; stiffness: 0.25; damping: 0.85}]" inkscape:label="Forelock_Group [Sway {pivot: top; range: 8; stiffness: 0.25; damping: 0.85}]">
+      <path id="Forelock" d="M368 175 C378 145 422 145 432 175 C442 190 436 210 416 215 C385 220 358 200 368 175 Z" fill="#fef9c3" stroke="#cbd5e1" stroke-width="2" stroke-miterlimit="10"/>
+      </g>
+      <g id="Eye_Open_Left_Group" data-name="Eye_Open_Left_Group [Hide {when: blinkL > 0.4}]" inkscape:label="Eye_Open_Left_Group [Hide {when: blinkL > 0.4}]">
+      <path id="Eye_Open_Left" d="M290 307 C290 289.327 305.67 275 325 275 C344.33 275 360 289.327 360 307 C360 324.673 344.33 339 325 339 C305.67 339 290 324.673 290 307 Z" fill="#ffffff" stroke="#292524" stroke-width="2.8" stroke-miterlimit="10"/>
+      <path id="Eyelid_Top_Left" d="M285 305 C310 274 340 274 365 305" fill="none" stroke="#1c1917" stroke-width="3.5" stroke-miterlimit="10"/>
+      <g id="Pupil_Left_Group" data-name="Pupil_Left_Group [Move {x: eyeX; y: eyeY; range: 6}]" inkscape:label="Pupil_Left_Group [Move {x: eyeX; y: eyeY; range: 6}]">
+      <path id="Pupil_Left" d="M306 307 C306 294.85 315.85 285 328 285 C340.15 285 350 294.85 350 307 C350 319.15 340.15 329 328 329 C315.85 329 306 319.15 306 307 Z" fill="#78350f" stroke="#451a03" stroke-width="2" stroke-miterlimit="10"/>
+      <path id="Pupil_Left_Center" d="M315 307 C315 299.82 320.82 294 328 294 C335.18 294 341 299.82 341 307 C341 314.18 335.18 320 328 320 C320.82 320 315 314.18 315 307 Z" fill="#1c1917"/>
+      <path id="Pupil_Left_Glint1" d="M314 295 C314 291.134 316.686 288 320 288 C323.314 288 326 291.134 326 295 C326 298.866 323.314 302 320 302 C316.686 302 314 298.866 314 295 Z" fill="#ffffff"/>
+      <path id="Pupil_Left_Glint2" d="M332 313.5 C332 311.567 333.567 310 335.5 310 C337.433 310 339 311.567 339 313.5 C339 315.433 337.433 317 335.5 317 C333.567 317 332 315.433 332 313.5 Z" fill="#ffffff"/>
+      </g>
+      </g>
+      <g id="Eye_Open_Right_Group" data-name="Eye_Open_Right_Group [Hide {when: blinkR > 0.4}]" inkscape:label="Eye_Open_Right_Group [Hide {when: blinkR > 0.4}]">
+      <path id="Eye_Open_Right" d="M440 307 C440 289.327 455.67 275 475 275 C494.33 275 510 289.327 510 307 C510 324.673 494.33 339 475 339 C455.67 339 440 324.673 440 307 Z" fill="#ffffff" stroke="#292524" stroke-width="2.8" stroke-miterlimit="10"/>
+      <path id="Eyelid_Top_Right" d="M435 305 C460 274 490 274 515 305" fill="none" stroke="#1c1917" stroke-width="3.5" stroke-miterlimit="10"/>
+      <g id="Pupil_Right_Group" data-name="Pupil_Right_Group [Move {x: eyeX; y: eyeY; range: 6}]" inkscape:label="Pupil_Right_Group [Move {x: eyeX; y: eyeY; range: 6}]">
+      <path id="Pupil_Right" d="M450 307 C450 294.85 459.85 285 472 285 C484.15 285 494 294.85 494 307 C494 319.15 484.15 329 472 329 C459.85 329 450 319.15 450 307 Z" fill="#78350f" stroke="#451a03" stroke-width="2" stroke-miterlimit="10"/>
+      <path id="Pupil_Right_Center" d="M459 307 C459 299.82 464.82 294 472 294 C479.18 294 485 299.82 485 307 C485 314.18 479.18 320 472 320 C464.82 320 459 314.18 459 307 Z" fill="#1c1917"/>
+      <path id="Pupil_Right_Glint1" d="M458 295 C458 291.134 460.686 288 464 288 C467.314 288 470 291.134 470 295 C470 298.866 467.314 302 464 302 C460.686 302 458 298.866 458 295 Z" fill="#ffffff"/>
+      <path id="Pupil_Right_Glint2" d="M476 313.5 C476 311.567 477.567 310 479.5 310 C481.433 310 483 311.567 483 313.5 C483 315.433 481.433 317 479.5 317 C477.567 317 476 315.433 476 313.5 Z" fill="#ffffff"/>
+      </g>
+      </g>
+      <g id="Eye_Closed_Left_Group" data-name="Eye_Closed_Left_Group [Show {when: blinkL > 0.4}]" inkscape:label="Eye_Closed_Left_Group [Show {when: blinkL > 0.4}]">
+      <path id="Eye_Closed_Left" d="M292 308 C315 330 340 330 362 308" fill="none" stroke="#1c1917" stroke-width="3.5" stroke-miterlimit="10"/>
+      </g>
+      <g id="Eye_Closed_Right_Group" data-name="Eye_Closed_Right_Group [Show {when: blinkR > 0.4}]" inkscape:label="Eye_Closed_Right_Group [Show {when: blinkR > 0.4}]">
+      <path id="Eye_Closed_Right" d="M438 308 C461 330 486 330 508 308" fill="none" stroke="#1c1917" stroke-width="3.5" stroke-miterlimit="10"/>
+      </g>
+      <g id="Brow_Left_Group" data-name="Brow_Left_Group [Move {y: browL; rangeY: -8}] [Rotate {param: browL; range: -6; pivot: center}]" inkscape:label="Brow_Left_Group [Move {y: browL; rangeY: -8}] [Rotate {param: browL; range: -6; pivot: center}]">
+      <path id="Brow_Left" d="M286 266 C308 250 338 250 362 262 C344 268 312 268 286 266 Z" fill="#432818" stroke="#1c1917" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Brow_Right_Group" data-name="Brow_Right_Group [Move {y: browR; rangeY: -8}] [Rotate {param: browR; range: 6; pivot: center}]" inkscape:label="Brow_Right_Group [Move {y: browR; rangeY: -8}] [Rotate {param: browR; range: 6; pivot: center}]">
+      <path id="Brow_Right" d="M514 266 C492 250 462 250 438 262 C456 268 488 268 514 266 Z" fill="#5c3a21" stroke="#1c1917" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+      <g id="Face_Center_Group" data-name="Face_Center_Group [Dist {factor: 0.14}]" inkscape:label="Face_Center_Group [Dist {factor: 0.14}]">
+      <path id="Face_Center" d="M270 420 C270 365 330 360 400 360 C470 360 530 365 530 420 C530 475 470 482 400 482 C330 482 270 475 270 420 Z" fill="#ffccd5" stroke="#db2777" stroke-width="3.2" stroke-miterlimit="10"/>
+      <path id="Nostril_Left" d="M342.409 424.106 C340.122 415.57 343.457 407.26 349.859 405.545 C356.26 403.83 363.304 409.359 365.591 417.894 C367.878 426.43 364.543 434.74 358.141 436.455 C351.74 438.17 344.696 432.641 342.409 424.106 Z" fill="#701a35"/>
+      <path id="Nostril_Right" d="M434.409 417.894 C436.696 409.359 443.74 403.83 450.141 405.545 C456.543 407.26 459.878 415.57 457.591 424.106 C455.304 432.641 448.26 438.17 441.859 436.455 C435.457 434.74 432.122 426.43 434.409 417.894 Z" fill="#701a35"/>
+      <g id="Mouth_Resting_Group" data-name="Mouth_Resting_Group [Hide {when: isMouthOpen || isSmiling}]" inkscape:label="Mouth_Resting_Group [Hide {when: isMouthOpen || isSmiling}]">
+      <path id="Mouth_Resting" d="M370 446 C385 450 400 448 400 444 C400 448 415 450 430 446" fill="none" stroke="#701a35" stroke-width="2.8" stroke-miterlimit="10"/>
+      </g>
+      <g id="Mouth_Smile_Group" data-name="Mouth_Smile_Group [Show {when: isSmiling &amp;&amp; !isMouthOpen}] [Scale {y: smile; from: 0.90; to: 1.15; x: smile; fromx: 0.95; tox: 1.10; pivot: top}]" inkscape:label="Mouth_Smile_Group [Show {when: isSmiling &amp;&amp; !isMouthOpen}] [Scale {y: smile; from: 0.90; to: 1.15; x: smile; fromx: 0.95; tox: 1.10; pivot: top}]">
+      <path id="Mouth_Smile" d="M365 444 C380 475 420 475 435 444 C418 450 382 450 365 444 Z" fill="#831843" stroke="#500724" stroke-width="2.5" stroke-miterlimit="10"/>
+      <path id="Mouth_Smile_Tongue" d="M382 462 C392 454 408 454 418 462 C412 472 388 472 382 462 Z" fill="#fda4af"/>
+      </g>
+      <g id="Mouth_Open_Group" data-name="Mouth_Open_Group [Show {when: isMouthOpen}] [Scale {y: mouthOpen; from: 0.30; to: 1.15; x: mouthOpen; fromx: 0.85; tox: 1.10; pivot: top}]" inkscape:label="Mouth_Open_Group [Show {when: isMouthOpen}] [Scale {y: mouthOpen; from: 0.30; to: 1.15; x: mouthOpen; fromx: 0.85; tox: 1.10; pivot: top}]">
+      <path id="Mouth_Open" d="M370 445 C370 485 430 485 430 445 C415 452 385 452 370 445 Z" fill="#500724" stroke="#500724" stroke-width="2.2" stroke-miterlimit="10"/>
+      <path id="Mouth_Tongue" d="M382 470 C392 462 408 462 418 470 C412 482 388 482 382 470 Z" fill="#fb7185"/>
+      </g>
+      </g>
+      <g id="Cheeks_Group" data-name="Cheeks_Group [Show {when: isBlush}]" inkscape:label="Cheeks_Group [Show {when: isBlush}]">
+      <path id="Cheeks_Blush_Left" d="M235 398 C235 390.82 245.297 385 258 385 C270.703 385 281 390.82 281 398 C281 405.18 270.703 411 258 411 C245.297 411 235 405.18 235 398 Z" fill="#f472b6" opacity="0.45"/>
+      <path id="Cheeks_Blush_Right" d="M519 398 C519 390.82 529.297 385 542 385 C554.703 385 565 390.82 565 398 C565 405.18 554.703 411 542 411 C529.297 411 519 405.18 519 398 Z" fill="#f472b6" opacity="0.45"/>
+      </g>
+    </g>
+  </g>
+</svg>
