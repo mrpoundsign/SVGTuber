@@ -41,8 +41,11 @@ archives:
         dst: accessories
       - LICENSE
       - README.md
+      - CHANGELOG.md
       - docs/RIGGING_GUIDE.md
       - docs/ACCESSORIES_GUIDE.md
+      - docs/MCP_GUIDE.md
+      - docs/OBS_QUICKSTART.md
 
 checksum:
   name_template: "checksums.txt"

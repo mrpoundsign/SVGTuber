@@ -28,6 +28,8 @@ describe("Directives Condition Evaluation", () => {
     assert.equal(evaluateCondition("mouthOpen >= 0.5", { mouthOpen: 0.2 }), false);
     assert.equal(evaluateCondition("headYaw > 10 || headYaw < -10", { headYaw: 15 }), true);
     assert.equal(evaluateCondition("headYaw > 10 || headYaw < -10", { headYaw: 0 }), false);
+    assert.equal(evaluateCondition("browL > 0.3", { browL: 0.6 }), true);
+    assert.equal(evaluateCondition("browR < -0.3", { browR: -0.5 }), true);
   });
 
   test("evaluates compound boolean expressions", () => {

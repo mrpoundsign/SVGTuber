@@ -129,7 +129,7 @@ Blush [Show {when: isBlush}]
 - `isMouthOpen`: `true` when speaking or opening jaw.
 - `isSmiling`: `true` when smiling.
 - `isSpeaking`: `true` when microphone volume exceeds noise gate.
-- Numeric parameters for thresholding: `blinkL`, `blinkR`, `mouthOpen`, `smile`, `browUp`.
+- Numeric parameters for thresholding: `blinkL`, `blinkR`, `mouthOpen`, `smile`, `browL`, `browR`, `browUp`.
 
 #### Boolean Expressions:
 You can combine variables using standard operators (`&&`, `||`, `!`, `>`, `<`):
@@ -191,13 +191,14 @@ Body [Idle {breathe: 0.02; period: 3.5s; pivot: bottom}]
 Rotates an element around its local pivot based on any face tracking parameter or custom expression (e.g., expressive eyebrows, animal ears twitching, or head accessories tilting).
 
 ```text
-Left Brow [Rotate {param: browInnerUp; range: 12; pivot: right}]
+Brow Left [Move {y: browL; rangeY: -8}] [Rotate {param: browL; range: -6; pivot: center}]
+Brow Right [Move {y: browR; rangeY: -8}] [Rotate {param: browR; range: 6; pivot: center}]
 Right Ear [Rotate {param: eyeBlinkR; from: 0; to: -10; pivot: bottom}]
 ```
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `param` | string | — | Tracking parameter or blendshape (e.g. `browInnerUp`, `smile`, `headRoll`) |
+| `param` | string | — | Tracking parameter or blendshape (e.g. `browL`, `browR`, `browInnerUp`, `smile`, `headRoll`) |
 | `range` | float | `15` | Total angular range in degrees multiplied by the parameter value |
 | `from` | float | `0` | Starting angle in degrees at parameter value `0.0` |
 | `to` | float | `0` | Target angle in degrees at parameter value `1.0` |

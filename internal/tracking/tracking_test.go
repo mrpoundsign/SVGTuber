@@ -649,3 +649,58 @@ func TestEngine_StreamBlinkCount(t *testing.T) {
 	t.Logf("Tracked with 0.45-0.47 noise: 10s of 60fps yielded %d blinks!", noiseBlinksCount)
 }
 
+func TestEngine_IndependentEyebrows(t *testing.T) {
+	eng := NewEngine()
+
+	// 1. Left eyebrow raised, Right eyebrow furrowed ("skeptical brow" expression)
+	f1 := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"browOuterUpLeft":  0.6,
+			"browDownLeft":     0.0,
+			"browOuterUpRight": 0.0,
+			"browDownRight":    0.5,
+			"browInnerUp":      0.0,
+		},
+	}
+	out1 := eng.Process(f1)
+	if out1.BrowL <= 0.5 {
+		t.Errorf("Expected BrowL > 0.5 when left eyebrow raised, got %f", out1.BrowL)
+	}
+	if out1.BrowR >= -0.4 {
+		t.Errorf("Expected BrowR < -0.4 when right eyebrow furrowed, got %f", out1.BrowR)
+	}
+
+	// 2. Both eyebrows raised via browInnerUp
+	eng2 := NewEngine()
+	f2 := FaceFrame{
+		Timestamp: 2000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"browInnerUp":      0.5,
+			"browOuterUpLeft":  0.4,
+			"browOuterUpRight": 0.4,
+		},
+	}
+	out2 := eng2.Process(f2)
+	if out2.BrowL <= 0.4 || out2.BrowR <= 0.4 {
+		t.Errorf("Expected both BrowL and BrowR > 0.4 when inner brows raised, got L=%f R=%f", out2.BrowL, out2.BrowR)
+	}
+
+	// 3. Calibration zeroes resting brow offset
+	eng2.Calibrate()
+	outCal := eng2.Process(FaceFrame{
+		Timestamp: 2016,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"browInnerUp":      0.5,
+			"browOuterUpLeft":  0.4,
+			"browOuterUpRight": 0.4,
+		},
+	})
+	if math.Abs(outCal.BrowL) > 0.05 || math.Abs(outCal.BrowR) > 0.05 {
+		t.Errorf("Expected BrowL and BrowR near 0 after calibration, got L=%f R=%f", outCal.BrowL, outCal.BrowR)
+	}
+}
+

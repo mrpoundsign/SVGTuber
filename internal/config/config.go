@@ -21,9 +21,10 @@ type TrackingSettings struct {
 	BlinkSyncDelayMs float64 `json:"blinkSyncDelayMs"` // Window to synchronize bilateral blinks in ms (default: 50.0)
 	WinkIsBlink      bool    `json:"winkIsBlink"`      // When true, closing either eye closes both eyes (default: false)
 	SmileThreshold   float64 `json:"smileThreshold"`   // Smile trigger threshold (default: 0.50)
-	EnableSmile      bool    `json:"enableSmile"`      // Enable smile expression tracking (default: true)
-	EyeGazeGain      float64 `json:"eyeGazeGain"`      // Multiplier on pupil gaze range (default: 1.0)
-	YawMultiplier    float64 `json:"yawMultiplier"`    // Head yaw rotation sensitivity (default: 1.0)
+	EnableSmile          bool    `json:"enableSmile"`          // Enable smile expression tracking (default: true)
+	EyeGazeGain          float64 `json:"eyeGazeGain"`          // Multiplier on pupil gaze range (default: 1.0)
+	BrowGain             float64 `json:"browGain"`             // Multiplier on eyebrow raise/furrow range (default: 1.5)
+	YawMultiplier        float64 `json:"yawMultiplier"`        // Head yaw rotation sensitivity (default: 1.0)
 	PitchMultiplier  float64 `json:"pitchMultiplier"`  // Head pitch rotation sensitivity (default: 1.0)
 	RollMultiplier       float64 `json:"rollMultiplier"`       // Head roll tilt sensitivity (default: 1.0)
 	PoseSmoothing        float64 `json:"poseSmoothing"`        // Smoothing strength multiplier (default: 1.0)
@@ -89,10 +90,11 @@ func DefaultSettings() Settings {
 			BlinkThresholdR:  0.45,
 			BlinkSyncDelayMs: 50.0,
 			WinkIsBlink:      false,
-			SmileThreshold:   0.50,
-			EnableSmile:      true,
-			EyeGazeGain:      1.0,
-			YawMultiplier:    1.0,
+			SmileThreshold:       0.50,
+			EnableSmile:          true,
+			EyeGazeGain:          1.0,
+			BrowGain:             1.5,
+			YawMultiplier:        1.0,
 			PitchMultiplier:  1.0,
 			RollMultiplier:       1.0,
 			PoseSmoothing:        1.0,
@@ -557,6 +559,9 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.EyeGazeGain <= 0 {
 		s.Tracking.EyeGazeGain = 1.0
+	}
+	if s.Tracking.BrowGain <= 0 {
+		s.Tracking.BrowGain = 1.5
 	}
 	if s.Tracking.YawMultiplier <= 0 {
 		s.Tracking.YawMultiplier = 1.0

@@ -1,12 +1,12 @@
 {
   "name": "svgtuber-web",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "SVGTuber Frontend Web Assets (Overlay & Studio Tracker)",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node esbuild.config.js",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit",
     "test": "node --test 'web/src/**/*.test.ts'",
     "watch": "node esbuild.config.js --watch"
   },

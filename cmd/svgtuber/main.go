@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mrpoundsign/SVGTuber/internal/config"
+	"github.com/mrpoundsign/SVGTuber/internal/mcp"
 	"github.com/mrpoundsign/SVGTuber/internal/server"
 	"github.com/mrpoundsign/SVGTuber/internal/tracking"
 	"github.com/mrpoundsign/SVGTuber/internal/watcher"
@@ -31,10 +32,20 @@ func main() {
 	port := flag.Int("port", 7420, "Port for the HTTP and WebSocket server")
 	openStudio := flag.Bool("open-studio", false, "Automatically open the Studio control page in default browser")
 	showVersion := flag.Bool("version", false, "Print version information and exit")
+	mcpFlag := flag.Bool("mcp", false, "Run as Model Context Protocol (MCP) stdio server for Vectorcraft rigging and control")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("svgtuber %s (commit: %s, built: %s)\n", version, commit, date)
+		return
+	}
+
+	if *mcpFlag {
+		log.SetOutput(os.Stderr)
+		mcpServer := mcp.NewServer(os.Stdin, os.Stdout)
+		if err := mcpServer.Run(); err != nil {
+			log.Fatalf("Error running SVGTuber MCP server: %v", err)
+		}
 		return
 	}
 

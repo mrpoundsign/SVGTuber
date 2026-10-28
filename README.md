@@ -68,6 +68,7 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 ## 🎨 Artist, Rigging & Accessories Guides
 
 - 📖 **[Artist & Rigging Guide](docs/RIGGING_GUIDE.md)**: Layer hierarchies and syntax for `[Follow]`, `[Dist]`, `[Show]`, `[Hide]`, `[Move]`, `[Scale]`, `[Bounce]`, `[Sway]`, `[Chain]`, and `[Idle]`.
+- 🤖 **[MCP Server & AI Rigging Guide (`svgtuber -mcp`)](docs/MCP_GUIDE.md)**: Complete setup, 5-step workflow, universal layer naming conventions, and tool reference for AI-assisted rigging with Vectorcraft or Inkscape.
 - 📖 **[Modular Accessories & Dressing Room Guide](docs/ACCESSORIES_GUIDE.md)**: Attaching external SVG props, using the interactive Studio Dressing Room, setting expression triggers, and per-avatar anchor persistence.
 
 ---
@@ -98,6 +99,7 @@ SVGTuber exposes a REST API for remote expression triggers, accessories, and sce
 | `-avatar` | `avatar.svg` or saved in config | Path to the Inkscape SVG avatar file (persisted to config) |
 | `-port` | `7420` | HTTP & WebSocket server port |
 | `-open-studio` | `false` | Automatically launch Studio in default web browser |
+| `-mcp` | `false` | Run as a Model Context Protocol (MCP) stdio server for AI-assisted rigging and validation |
 | `-version` | `false` | Print version and build info |
 
 ---

@@ -36,9 +36,11 @@ type ParamFrame struct {
 	EyeY           float64            `json:"eyeY"`      // -1.0 (up) to 1.0 (down)
 	BlinkL         float64            `json:"blinkL"`    // 0.0 (open) to 1.0 (closed)
 	BlinkR         float64            `json:"blinkR"`    // 0.0 (open) to 1.0 (closed)
-	MouthOpen      float64            `json:"mouthOpen"` // 0.0 to 1.0
-	Smile          float64            `json:"smile"`     // 0.0 to 1.0
-	BrowUp         float64            `json:"browUp"`    // 0.0 to 1.0
+	MouthOpen        float64            `json:"mouthOpen"` // 0.0 to 1.0
+	Smile            float64            `json:"smile"`     // 0.0 to 1.0
+	BrowUp           float64            `json:"browUp"`    // 0.0 to 1.0
+	BrowL            float64            `json:"browL"`     // -1.0 (furrowed) to 1.0 (raised)
+	BrowR            float64            `json:"browR"`     // -1.0 (furrowed) to 1.0 (raised)
 	MouthThreshold   float64            `json:"mouthThreshold"`
 	BlinkThreshold   float64            `json:"blinkThreshold"`
 	BlinkThresholdL  float64            `json:"blinkThresholdL"`

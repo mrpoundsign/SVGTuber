@@ -112,6 +112,8 @@ type PoseFilter struct {
 	mouthOpen *OneEuroFilter
 	smile     *OneEuroFilter
 	browUp    *OneEuroFilter
+	browL     *OneEuroFilter
+	browR     *OneEuroFilter
 }
 
 // NewPoseFilter initializes a full set of filters tuned for avatar animation.
@@ -130,6 +132,8 @@ func NewPoseFilter() *PoseFilter {
 		mouthOpen: NewOneEuroFilter(1.2, 0.01, 1.0),
 		smile:     NewOneEuroFilter(1.0, 0.007, 1.0),
 		browUp:    NewOneEuroFilter(1.0, 0.007, 1.0),
+		browL:     NewOneEuroFilter(1.2, 0.01, 1.0),
+		browR:     NewOneEuroFilter(1.2, 0.01, 1.0),
 	}
 }
 
@@ -148,4 +152,6 @@ func (pf *PoseFilter) Reset() {
 	pf.mouthOpen.Reset()
 	pf.smile.Reset()
 	pf.browUp.Reset()
+	pf.browL.Reset()
+	pf.browR.Reset()
 }

@@ -216,6 +216,10 @@ var valBlinkL = document.getElementById("val-blink-l");
 var valBlinkR = document.getElementById("val-blink-r");
 var blinkThresholdMarkerL = document.getElementById("blink-threshold-marker-l");
 var blinkThresholdMarkerR = document.getElementById("blink-threshold-marker-r");
+var gaugeBrowL = document.getElementById("gauge-brow-l");
+var gaugeBrowR = document.getElementById("gauge-brow-r");
+var valBrowL = document.getElementById("val-brow-l");
+var valBrowR = document.getElementById("val-brow-r");
 var gaugeMouthOpen = document.getElementById("gauge-mouth-open");
 var gaugeSmile = document.getElementById("gauge-smile");
 var valSmile = document.getElementById("val-smile");
@@ -244,6 +248,7 @@ var sliderBlinkThresholdL = document.getElementById("slider-blink-threshold-l");
 var sliderBlinkThresholdR = document.getElementById("slider-blink-threshold-r");
 var sliderBlinkSyncDelay = document.getElementById("slider-blink-sync-delay");
 var sliderEyeGain = document.getElementById("slider-eye-gain");
+var sliderBrowGain = document.getElementById("slider-brow-gain");
 var sliderYawMultiplier = document.getElementById("slider-yaw-multiplier");
 var sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier");
 var sliderMicGain = document.getElementById("slider-mic-gain");
@@ -261,6 +266,7 @@ var valBlinkThresholdL = document.getElementById("val-blink-threshold-l");
 var valBlinkThresholdR = document.getElementById("val-blink-threshold-r");
 var valBlinkSyncDelay = document.getElementById("val-blink-sync-delay");
 var valEyeGain = document.getElementById("val-eye-gain");
+var valBrowGain = document.getElementById("val-brow-gain");
 var valYawMultiplier = document.getElementById("val-yaw-multiplier");
 var valPitchMultiplier = document.getElementById("val-pitch-multiplier");
 var btnSaveSettings = document.getElementById("btn-save-settings");
@@ -1053,6 +1059,18 @@ function updateTrackingGauges(pose, blendshapes) {
   if (valBlinkR) valBlinkR.textContent = `${Math.round(blinkR * 100)}%`;
   if (gaugeBlinkL) gaugeBlinkL.style.width = `${Math.min(100, Math.round(blinkL * 100))}%`;
   if (gaugeBlinkR) gaugeBlinkR.style.width = `${Math.min(100, Math.round(blinkR * 100))}%`;
+  const browInner = blendshapes.browInnerUp || 0;
+  const browUpL = Math.max(blendshapes.browOuterUpLeft || 0, browInner);
+  const browUpR = Math.max(blendshapes.browOuterUpRight || 0, browInner);
+  const browGain = parseFloat(sliderBrowGain?.value || "1.5");
+  const browL = Math.max(-1, Math.min(1, (browUpL - (blendshapes.browDownLeft || 0)) * browGain));
+  const browR = Math.max(-1, Math.min(1, (browUpR - (blendshapes.browDownRight || 0)) * browGain));
+  const browLPct = Math.round(browL * 100);
+  const browRPct = Math.round(browR * 100);
+  if (valBrowL) valBrowL.textContent = `${browLPct > 0 ? "+" : ""}${browLPct}%`;
+  if (valBrowR) valBrowR.textContent = `${browRPct > 0 ? "+" : ""}${browRPct}%`;
+  if (gaugeBrowL) gaugeBrowL.style.width = `${Math.min(100, Math.max(0, Math.round((browL + 1) * 50)))}%`;
+  if (gaugeBrowR) gaugeBrowR.style.width = `${Math.min(100, Math.max(0, Math.round((browR + 1) * 50)))}%`;
   const jawOpen = blendshapes.jawOpen || 0;
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = `${Math.min(100, Math.round(jawOpen * 100))}%`;
   const smile = Math.max(blendshapes.mouthSmileLeft || 0, blendshapes.mouthSmileRight || 0);
@@ -1067,6 +1085,10 @@ function resetTrackingGauges() {
   if (valBlinkR) valBlinkR.textContent = "0%";
   if (gaugeBlinkL) gaugeBlinkL.style.width = "0%";
   if (gaugeBlinkR) gaugeBlinkR.style.width = "0%";
+  if (valBrowL) valBrowL.textContent = "0%";
+  if (valBrowR) valBrowR.textContent = "0%";
+  if (gaugeBrowL) gaugeBrowL.style.width = "50%";
+  if (gaugeBrowR) gaugeBrowR.style.width = "50%";
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = "0%";
   if (valSmile) valSmile.textContent = "0%";
   if (gaugeSmile) gaugeSmile.style.width = "0%";
@@ -1184,6 +1206,8 @@ function syncSettingsToUI(s) {
     if (sliderBlinkSyncDelay)
       sliderBlinkSyncDelay.value = String(t.blinkSyncDelayMs !== void 0 ? t.blinkSyncDelayMs : 50);
     if (sliderEyeGain) sliderEyeGain.value = String(t.eyeGazeGain || 1);
+    if (sliderBrowGain)
+      sliderBrowGain.value = String(t.browGain !== void 0 ? t.browGain : 1.5);
     if (sliderYawMultiplier) sliderYawMultiplier.value = String(t.yawMultiplier || 1);
     if (sliderPitchMultiplier) sliderPitchMultiplier.value = String(t.pitchMultiplier || 1);
   }
@@ -1222,6 +1246,8 @@ function updateSliderLabels() {
     valPhysicsAmount.textContent = `${parseFloat(sliderPhysicsAmount.value).toFixed(1)}x`;
   if (valEyeGain && sliderEyeGain)
     valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
+  if (valBrowGain && sliderBrowGain)
+    valBrowGain.textContent = `${parseFloat(sliderBrowGain.value).toFixed(1)}x`;
   if (valYawMultiplier && sliderYawMultiplier)
     valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier)
@@ -1278,6 +1304,9 @@ function collectSettingsFromUI() {
         sliderPhysicsAmount?.value !== void 0 ? sliderPhysicsAmount.value : "1.0"
       ),
       eyeGazeGain: parseFloat(sliderEyeGain?.value || "1.0"),
+      browGain: parseFloat(
+        sliderBrowGain?.value !== void 0 ? sliderBrowGain.value : "1.5"
+      ),
       yawMultiplier: parseFloat(sliderYawMultiplier?.value || "1.0"),
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || "1.0"),
       rollMultiplier: 1,
@@ -1310,6 +1339,7 @@ function onSliderInput() {
   sliderAutoGazeRange,
   sliderAutoTiltAmount,
   sliderEyeGain,
+  sliderBrowGain,
   sliderYawMultiplier,
   sliderPitchMultiplier,
   sliderMicGain,
