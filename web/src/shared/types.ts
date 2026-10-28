@@ -19,6 +19,8 @@ export interface ParamFrame {
   mouthOpen: number;
   smile: number;
   browUp: number;
+  browL?: number;
+  browR?: number;
   mouthThreshold?: number;
   blinkThreshold?: number;
   blinkThresholdL?: number;
@@ -108,6 +110,7 @@ export interface TrackingSettings {
   rollMultiplier: number;
   poseSmoothing: number;
   eyeGazeGain: number;
+  browGain?: number;
   autoBlink: boolean;
   autoBlinkMode: string;
   autoBlinkIntervalSec: number;

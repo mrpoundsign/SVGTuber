@@ -73,6 +73,10 @@ const valBlinkL = document.getElementById("val-blink-l") as HTMLElement | null;
 const valBlinkR = document.getElementById("val-blink-r") as HTMLElement | null;
 const blinkThresholdMarkerL = document.getElementById("blink-threshold-marker-l") as HTMLElement | null;
 const blinkThresholdMarkerR = document.getElementById("blink-threshold-marker-r") as HTMLElement | null;
+const gaugeBrowL = document.getElementById("gauge-brow-l") as HTMLElement | null;
+const gaugeBrowR = document.getElementById("gauge-brow-r") as HTMLElement | null;
+const valBrowL = document.getElementById("val-brow-l") as HTMLElement | null;
+const valBrowR = document.getElementById("val-brow-r") as HTMLElement | null;
 const gaugeMouthOpen = document.getElementById("gauge-mouth-open") as HTMLElement | null;
 const gaugeSmile = document.getElementById("gauge-smile") as HTMLElement | null;
 const valSmile = document.getElementById("val-smile") as HTMLElement | null;
@@ -104,6 +108,7 @@ const sliderBlinkThresholdL = document.getElementById("slider-blink-threshold-l"
 const sliderBlinkThresholdR = document.getElementById("slider-blink-threshold-r") as HTMLInputElement | null;
 const sliderBlinkSyncDelay = document.getElementById("slider-blink-sync-delay") as HTMLInputElement | null;
 const sliderEyeGain = document.getElementById("slider-eye-gain") as HTMLInputElement | null;
+const sliderBrowGain = document.getElementById("slider-brow-gain") as HTMLInputElement | null;
 const sliderYawMultiplier = document.getElementById("slider-yaw-multiplier") as HTMLInputElement | null;
 const sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier") as HTMLInputElement | null;
 
@@ -123,6 +128,7 @@ const valBlinkThresholdL = document.getElementById("val-blink-threshold-l") as H
 const valBlinkThresholdR = document.getElementById("val-blink-threshold-r") as HTMLElement | null;
 const valBlinkSyncDelay = document.getElementById("val-blink-sync-delay") as HTMLElement | null;
 const valEyeGain = document.getElementById("val-eye-gain") as HTMLElement | null;
+const valBrowGain = document.getElementById("val-brow-gain") as HTMLElement | null;
 const valYawMultiplier = document.getElementById("val-yaw-multiplier") as HTMLElement | null;
 const valPitchMultiplier = document.getElementById("val-pitch-multiplier") as HTMLElement | null;
 
@@ -1019,6 +1025,19 @@ function updateTrackingGauges(pose: any, blendshapes: Record<string, number>) {
   if (gaugeBlinkL) gaugeBlinkL.style.width = `${Math.min(100, Math.round(blinkL * 100))}%`;
   if (gaugeBlinkR) gaugeBlinkR.style.width = `${Math.min(100, Math.round(blinkR * 100))}%`;
 
+  const browInner = blendshapes.browInnerUp || 0;
+  const browUpL = Math.max(blendshapes.browOuterUpLeft || 0, browInner);
+  const browUpR = Math.max(blendshapes.browOuterUpRight || 0, browInner);
+  const browGain = parseFloat(sliderBrowGain?.value || "1.5");
+  const browL = Math.max(-1, Math.min(1, (browUpL - (blendshapes.browDownLeft || 0)) * browGain));
+  const browR = Math.max(-1, Math.min(1, (browUpR - (blendshapes.browDownRight || 0)) * browGain));
+  const browLPct = Math.round(browL * 100);
+  const browRPct = Math.round(browR * 100);
+  if (valBrowL) valBrowL.textContent = `${browLPct > 0 ? "+" : ""}${browLPct}%`;
+  if (valBrowR) valBrowR.textContent = `${browRPct > 0 ? "+" : ""}${browRPct}%`;
+  if (gaugeBrowL) gaugeBrowL.style.width = `${Math.min(100, Math.max(0, Math.round((browL + 1) * 50)))}%`;
+  if (gaugeBrowR) gaugeBrowR.style.width = `${Math.min(100, Math.max(0, Math.round((browR + 1) * 50)))}%`;
+
   const jawOpen = blendshapes.jawOpen || 0;
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = `${Math.min(100, Math.round(jawOpen * 100))}%`;
 
@@ -1035,6 +1054,10 @@ function resetTrackingGauges() {
   if (valBlinkR) valBlinkR.textContent = "0%";
   if (gaugeBlinkL) gaugeBlinkL.style.width = "0%";
   if (gaugeBlinkR) gaugeBlinkR.style.width = "0%";
+  if (valBrowL) valBrowL.textContent = "0%";
+  if (valBrowR) valBrowR.textContent = "0%";
+  if (gaugeBrowL) gaugeBrowL.style.width = "50%";
+  if (gaugeBrowR) gaugeBrowR.style.width = "50%";
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = "0%";
   if (valSmile) valSmile.textContent = "0%";
   if (gaugeSmile) gaugeSmile.style.width = "0%";
@@ -1164,6 +1187,8 @@ function syncSettingsToUI(s: SettingsPayload | null) {
     if (sliderBlinkSyncDelay)
       sliderBlinkSyncDelay.value = String(t.blinkSyncDelayMs !== undefined ? t.blinkSyncDelayMs : 50);
     if (sliderEyeGain) sliderEyeGain.value = String(t.eyeGazeGain || 1.0);
+    if (sliderBrowGain)
+      sliderBrowGain.value = String(t.browGain !== undefined ? t.browGain : 1.5);
     if (sliderYawMultiplier) sliderYawMultiplier.value = String(t.yawMultiplier || 1.0);
     if (sliderPitchMultiplier) sliderPitchMultiplier.value = String(t.pitchMultiplier || 1.0);
   }
@@ -1204,6 +1229,8 @@ function updateSliderLabels() {
     valPhysicsAmount.textContent = `${parseFloat(sliderPhysicsAmount.value).toFixed(1)}x`;
   if (valEyeGain && sliderEyeGain)
     valEyeGain.textContent = `${parseFloat(sliderEyeGain.value).toFixed(1)}x`;
+  if (valBrowGain && sliderBrowGain)
+    valBrowGain.textContent = `${parseFloat(sliderBrowGain.value).toFixed(1)}x`;
   if (valYawMultiplier && sliderYawMultiplier)
     valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier)
@@ -1264,6 +1291,9 @@ function collectSettingsFromUI(): SettingsPayload {
         sliderPhysicsAmount?.value !== undefined ? sliderPhysicsAmount.value : "1.0"
       ),
       eyeGazeGain: parseFloat(sliderEyeGain?.value || "1.0"),
+      browGain: parseFloat(
+        sliderBrowGain?.value !== undefined ? sliderBrowGain.value : "1.5"
+      ),
       yawMultiplier: parseFloat(sliderYawMultiplier?.value || "1.0"),
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || "1.0"),
       rollMultiplier: 1.0,
@@ -1298,6 +1328,7 @@ function onSliderInput() {
   sliderAutoGazeRange,
   sliderAutoTiltAmount,
   sliderEyeGain,
+  sliderBrowGain,
   sliderYawMultiplier,
   sliderPitchMultiplier,
   sliderMicGain,

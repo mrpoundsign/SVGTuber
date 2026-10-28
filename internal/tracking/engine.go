@@ -20,6 +20,8 @@ type Engine struct {
 	neutralZ     float64
 	neutralSmile float64
 	neutralMouth float64
+	neutralBrowL float64
+	neutralBrowR float64
 	filter       *PoseFilter
 	lastRaw      FaceFrame
 	configMgr    *config.Manager
@@ -103,9 +105,29 @@ func (e *Engine) Calibrate() {
 	if bs := e.lastRaw.Blendshapes; bs != nil {
 		e.neutralSmile = (bs["mouthSmileLeft"] + bs["mouthSmileRight"]) / 2.0
 		e.neutralMouth = bs["jawOpen"]
+		e.neutralBrowL, e.neutralBrowR, _ = extractRawBrows(bs)
 	}
 	e.calibrated = true
 	e.filter.Reset()
+}
+
+// extractRawBrows computes signed left/right brow signals (-1.0 furrowed to +1.0 raised)
+// and combined upward brow lift from standard ARKit blendshapes.
+func extractRawBrows(bs map[string]float64) (rawL, rawR, rawUp float64) {
+	if bs == nil {
+		return 0, 0, 0
+	}
+	browInner := bs["browInnerUp"]
+	browOuterL := bs["browOuterUpLeft"]
+	browOuterR := bs["browOuterUpRight"]
+	browDownL := bs["browDownLeft"]
+	browDownR := bs["browDownRight"]
+	rawUp = (browInner + browOuterL + browOuterR) / 3.0
+	upL := math.Max(browOuterL, browInner)
+	upR := math.Max(browOuterR, browInner)
+	rawL = upL - browDownL
+	rawR = upR - browDownR
+	return rawL, rawR, rawUp
 }
 
 // ResetCalibration clears calibrated neutral offsets.
@@ -121,6 +143,8 @@ func (e *Engine) ResetCalibration() {
 	e.neutralZ = 0
 	e.neutralSmile = 0
 	e.neutralMouth = 0
+	e.neutralBrowL = 0
+	e.neutralBrowR = 0
 	e.calibrated = false
 	e.pendingCloseL = false
 	e.pendingCloseR = false
@@ -269,6 +293,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			MouthOpen:        filtMouth,
 			Smile:            e.filter.smile.Filter(0, tSec),
 			BrowUp:           e.filter.browUp.Filter(0, tSec),
+			BrowL:            e.filter.browL.Filter(0, tSec),
+			BrowR:            e.filter.browR.Filter(0, tSec),
 			MouthThreshold:   ts.MouthThreshold,
 			BlinkThreshold:   ts.BlinkThreshold,
 			BlinkThresholdL:  threshL,
@@ -323,6 +349,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			MouthOpen:        filtMouth,
 			Smile:            filtSmile,
 			BrowUp:           e.filter.browUp.Filter(0, tSec),
+			BrowL:            e.filter.browL.Filter(0, tSec),
+			BrowR:            e.filter.browR.Filter(0, tSec),
 			MouthThreshold:   ts.MouthThreshold,
 			BlinkThreshold:   ts.BlinkThreshold,
 			BlinkThresholdL:  threshL,
@@ -353,7 +381,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	z := raw.Z - e.neutralZ
 
 	// Extract standard ARKit facial blendshapes
-	var blinkL, blinkR, opticalMouth, smile, browUp, eyeX, eyeY float64
+	var blinkL, blinkR, opticalMouth, smile, browUp, browL, browR, eyeX, eyeY float64
 	if bs := raw.Blendshapes; bs != nil {
 		blinkL = bs["eyeBlinkLeft"]
 		blinkR = bs["eyeBlinkRight"]
@@ -391,10 +419,20 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			smile = 0.0
 		}
 
-		browInner := bs["browInnerUp"]
-		browOuterL := bs["browOuterUpLeft"]
-		browOuterR := bs["browOuterUpRight"]
-		browUp = (browInner + browOuterL + browOuterR) / 3.0
+		rawBrowL, rawBrowR, rawBrowUp := extractRawBrows(bs)
+		browUp = rawBrowUp
+		if e.calibrated {
+			rawBrowL -= e.neutralBrowL
+			rawBrowR -= e.neutralBrowR
+		}
+		browGain := ts.BrowGain
+		if browGain < 0 {
+			browGain = 1.5
+		} else if browGain == 0 && ts.EyeGazeGain <= 0 {
+			browGain = 1.5
+		}
+		browL = math.Max(-1.0, math.Min(1.0, rawBrowL*browGain))
+		browR = math.Max(-1.0, math.Min(1.0, rawBrowR*browGain))
 
 		// Gaze horizontal (mirrored for VTuber / webcam perspective):
 		// When user looks left, pupils move screen-left (-X).
@@ -484,6 +522,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		MouthOpen:        filtMouth,
 		Smile:            filtSmile,
 		BrowUp:           e.filter.browUp.Filter(browUp, tSec),
+		BrowL:            e.filter.browL.Filter(browL, tSec),
+		BrowR:            e.filter.browR.Filter(browR, tSec),
 		MouthThreshold:   ts.MouthThreshold,
 		BlinkThreshold:   ts.BlinkThreshold,
 		BlinkThresholdL:  threshL,

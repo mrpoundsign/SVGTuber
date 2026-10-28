@@ -249,6 +249,8 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
     mouthOpen: 0,
     smile: 0,
     browUp: 0,
+    browL: 0,
+    browR: 0,
     mouthThreshold: 0.08,
     blinkThreshold: 0.45,
     blinkThresholdL: 0.45,
@@ -692,6 +694,12 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
       for (const key of Object.keys(latestParams.raw)) {
         if (key.toLowerCase() === lower) return latestParams.raw[key];
       }
+    }
+    if ((lower === "browl" || lower === "browr") && typeof latestParams.browUp === "number") {
+      return latestParams.browUp;
+    }
+    if ((lower === "browinnerup" || lower === "browup") && (typeof latestParams.browL === "number" || typeof latestParams.browR === "number")) {
+      return Math.max(0, ((latestParams.browL || 0) + (latestParams.browR || 0)) / 2);
     }
     return def;
   }
