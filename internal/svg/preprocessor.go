@@ -125,6 +125,20 @@ func ParseTransform(str string) Matrix2D {
 			} else {
 				continue
 			}
+		case "skewx":
+			if len(args) >= 1 {
+				rad := args[0] * math.Pi / 180.0
+				m = Matrix2D{A: 1, B: 0, C: math.Tan(rad), D: 1, E: 0, F: 0}
+			} else {
+				continue
+			}
+		case "skewy":
+			if len(args) >= 1 {
+				rad := args[0] * math.Pi / 180.0
+				m = Matrix2D{A: 1, B: math.Tan(rad), C: 0, D: 1, E: 0, F: 0}
+			} else {
+				continue
+			}
 		default:
 			continue
 		}
@@ -351,10 +365,44 @@ func TransformPathD(d string, m Matrix2D) string {
 					tx, ty := m.TransformVector(dx, dy)
 					out = append(out, formatFloat(tx), formatFloat(ty))
 				}
+			case 'A':
+				for i+6 < len(tokens) && !isPathCmd(tokens[i][0]) {
+					rx, _ := strconv.ParseFloat(tokens[i], 64)
+					ry, _ := strconv.ParseFloat(tokens[i+1], 64)
+					rot, _ := strconv.ParseFloat(tokens[i+2], 64)
+					largeArc := tokens[i+3]
+					sweep := tokens[i+4]
+					x, _ := strconv.ParseFloat(tokens[i+5], 64)
+					y, _ := strconv.ParseFloat(tokens[i+6], 64)
+					i += 7
+
+					newRx, newRy, newRot, sweepVal := transformArcParams(rx, ry, rot, sweep, m)
+					tx, ty := m.TransformPoint(x, y)
+					out = append(out, formatFloat(newRx), formatFloat(newRy), formatFloat(newRot), largeArc, sweepVal, formatFloat(tx), formatFloat(ty))
+				}
+			case 'a':
+				for i+6 < len(tokens) && !isPathCmd(tokens[i][0]) {
+					rx, _ := strconv.ParseFloat(tokens[i], 64)
+					ry, _ := strconv.ParseFloat(tokens[i+1], 64)
+					rot, _ := strconv.ParseFloat(tokens[i+2], 64)
+					largeArc := tokens[i+3]
+					sweep := tokens[i+4]
+					dx, _ := strconv.ParseFloat(tokens[i+5], 64)
+					dy, _ := strconv.ParseFloat(tokens[i+6], 64)
+					i += 7
+
+					newRx, newRy, newRot, sweepVal := transformArcParams(rx, ry, rot, sweep, m)
+					tx, ty := m.TransformVector(dx, dy)
+					out = append(out, formatFloat(newRx), formatFloat(newRy), formatFloat(newRot), largeArc, sweepVal, formatFloat(tx), formatFloat(ty))
+				}
 			case 'Z', 'z':
 				// No parameters
 			default:
-				// Pass through
+				// Pass through unhandled command arguments without dropping them
+				for i < len(tokens) && !isPathCmd(tokens[i][0]) {
+					out = append(out, tokens[i])
+					i++
+				}
 			}
 		} else {
 			i++
@@ -362,6 +410,58 @@ func TransformPathD(d string, m Matrix2D) string {
 	}
 
 	return strings.Join(out, " ")
+}
+
+func transformArcParams(rx, ry, phiDeg float64, sweepStr string, m Matrix2D) (float64, float64, float64, string) {
+	if rx == 0 || ry == 0 {
+		return 0, 0, 0, sweepStr
+	}
+	rx = math.Abs(rx)
+	ry = math.Abs(ry)
+
+	phiRad := phiDeg * math.Pi / 180.0
+	cosPhi := math.Cos(phiRad)
+	sinPhi := math.Sin(phiRad)
+
+	n11 := m.A*rx*cosPhi + m.C*rx*sinPhi
+	n12 := -m.A*ry*sinPhi + m.C*ry*cosPhi
+	n21 := m.B*rx*cosPhi + m.D*rx*sinPhi
+	n22 := -m.B*ry*sinPhi + m.D*ry*cosPhi
+
+	E := n11*n11 + n12*n12
+	F := n11*n21 + n12*n22
+	G := n21*n21 + n22*n22
+
+	disc := math.Sqrt((E-G)*(E-G) + 4*F*F)
+	lam1 := (E + G + disc) / 2.0
+	lam2 := (E + G - disc) / 2.0
+	if lam2 < 0 {
+		lam2 = 0
+	}
+
+	newRx := math.Sqrt(lam1)
+	newRy := math.Sqrt(lam2)
+
+	var theta float64
+	if math.Abs(F) < 1e-9 && math.Abs(E-G) < 1e-9 {
+		theta = 0
+	} else {
+		theta = 0.5 * math.Atan2(2*F, E-G)
+	}
+	newPhiDeg := theta * 180.0 / math.Pi
+
+	det := m.A*m.D - m.B*m.C
+	sweepVal := sweepStr
+	if det < 0 {
+		switch sweepStr {
+		case "1":
+			sweepVal = "0"
+		case "0":
+			sweepVal = "1"
+		}
+	}
+
+	return newRx, newRy, newPhiDeg, sweepVal
 }
 
 func isPathCmd(b byte) bool {
