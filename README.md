@@ -2,6 +2,7 @@
 
 **Real-Time Vector VTuber Engine for Inkscape & OBS Studio**
 
+[![Latest Release](https://img.shields.io/github/v/release/mrpoundsign/SVGTuber?include_prereleases&label=release)](https://github.com/mrpoundsign/SVGTuber/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/mrpoundsign/SVGTuber)](https://goreportcard.com/report/github.com/mrpoundsign/SVGTuber)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
@@ -36,22 +37,40 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 
 ## 🚀 Quick Start
 
-### 1. Build from Source
+### 1. Download Latest Release (Recommended)
+
+Download the pre-compiled archive for your OS from **[GitHub Releases](https://github.com/mrpoundsign/SVGTuber/releases)**.
+
+Each release includes ready-to-run binaries, starter accessories, and a sample `avatar.svg`:
+
+- **Windows:** Extract the `.zip` archive and double-click `svgtuber.exe` (or in terminal: `.\svgtuber.exe -open-studio`).
+- **macOS / Linux:** Extract the `.tar.gz` archive and run `./svgtuber -open-studio`.
+
+<details>
+<summary><b>🛠️ Or Build from Source</b></summary>
+
+Requires **Go 1.24+** and **Node.js 22+**:
 ```bash
+# Clone the repository:
+git clone https://github.com/mrpoundsign/SVGTuber.git
+cd SVGTuber
+
 # Build binary for your current OS:
 ./build.sh build
 
 # Or cross-compile for Windows (.exe):
 ./build.sh windows
 ```
+When built from source, the executable is placed in `./build/` (e.g. `./build/svgtuber` or `.\build\svgtuber.exe`).
+</details>
 
 ### 2. Run SVGTuber
 ```bash
-# Simply place 'avatar.svg' in the current folder and run:
-./build/svgtuber -open-studio
+# Place your 'avatar.svg' in the same folder and run:
+svgtuber -open-studio   # On Windows: .\svgtuber.exe -open-studio
 
 # Or specify a custom avatar file (persisted to settings for future launches):
-./build/svgtuber -avatar path/to/my_avatar.svg -open-studio
+svgtuber -avatar path/to/my_avatar.svg -open-studio
 ```
 
 ### 3. Add to OBS Studio
