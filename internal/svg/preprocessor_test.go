@@ -1,6 +1,8 @@
 package svg
 
 import (
+	"bytes"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -33,6 +35,14 @@ func TestParseTransform(t *testing.T) {
 			t.Errorf("Expected (-100, 50), got (%v, %v)", x, y)
 		}
 	})
+
+	t.Run("skewX", func(t *testing.T) {
+		m := ParseTransform("skewX(45)")
+		x, y := m.TransformPoint(0, 10)
+		if math.Abs(x-10) > 1e-4 || math.Abs(y-10) > 1e-4 {
+			t.Errorf("Expected (10, 10), got (%v, %v)", x, y)
+		}
+	})
 }
 
 func TestTransformPathD(t *testing.T) {
@@ -47,6 +57,30 @@ func TestTransformPathD(t *testing.T) {
 	}
 	if !strings.Contains(out, "10") {
 		t.Errorf("Expected relative dx to be inverted to 10, got: %s", out)
+	}
+
+	// Test elliptical arc command 'a' (like duck eye)
+	mArc := ParseTransform("matrix(1.2884617,0,0,1.2884617,-83.076961,-86.538501)")
+	dArc := "m 236,328 a 26,28 0 1 0 52,0 26,28 0 1 0 -52,0 z"
+	outArc := TransformPathD(dArc, mArc)
+	if strings.Contains(outArc, "a z") {
+		t.Fatalf("Arc arguments were eaten: %s", outArc)
+	}
+	if !strings.Contains(outArc, " 1 0 67 0") {
+		t.Errorf("Expected arc flags and endpoints to be preserved, got: %s", outArc)
+	}
+
+	// Test preprocessing duck SVG with arc commands
+	duckData, err := os.ReadFile(`C:\Users\mrpou\.gemini\antigravity\brain\ac19f5a1-7f54-4cdd-a09f-19cc225ecb92\scratch\duck.svg`)
+	if err == nil {
+		preprocessed, err := PreprocessSVG(duckData)
+		if err != nil {
+			t.Fatalf("Failed to preprocess duck SVG: %v", err)
+		}
+		if bytes.Contains(preprocessed, []byte("a z")) {
+			t.Fatalf("Preprocessed output still contains corrupted 'a z'!")
+		}
+		_ = os.WriteFile(`C:\Users\mrpou\.gemini\antigravity\brain\ac19f5a1-7f54-4cdd-a09f-19cc225ecb92\scratch\duck_preprocessed_fixed.svg`, preprocessed, 0644)
 	}
 }
 
