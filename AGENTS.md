@@ -29,3 +29,12 @@
 - **Pre-commit hook**: Ensure pre-commit checks pass (`.githooks/pre-commit` and `.git/hooks/pre-commit`).
 - **Never modify user config files**: Never modify or overwrite the user's configuration files (`config.json`, `svgtuber.json`, etc.).
 
+---
+
+## 4. Unified Installer & Self-Updater (`@skill:goreleaser-installer-updater`)
+
+- Uses `github.com/mrpoundsign/appinstaller` (`../appinstaller`), GoReleaser v2 OSS (`.goreleaser.yaml`), and the global Antigravity skill `@skill:goreleaser-installer-updater`.
+- Keep `cmd/svgtuber` 100% `CGO_ENABLED=0` by importing only `appinstaller/pkg/updater` (`GET /api/update/check` and `POST /api/update/apply` for the Studio Web UI).
+- `cmd/installer` builds a standalone Fyne GUI setup wizard (`SVGTuber-Setup.exe`) with `CGO_ENABLED=1` and registers `svgtuber` in the user `PATH` (`RegisterInPath: true`).
+
+

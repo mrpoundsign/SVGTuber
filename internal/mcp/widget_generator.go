@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/mrpoundsign/SVGTuber/internal/rig"
+	"github.com/mrpoundsign/SVGTuber/internal/svg"
 )
 
 func titleCase(s string) string {
@@ -27,6 +28,10 @@ func GenerateStudioWidget(svgPath string, title string, outputPath string) (stri
 	data, err := os.ReadFile(svgPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read svg file: %w", err)
+	}
+
+	if preprocessed, pErr := svg.PreprocessSVG(data); pErr == nil {
+		data = preprocessed
 	}
 
 	rawSVG := string(data)
