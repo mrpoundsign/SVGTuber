@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+for dir in "$HOME/go/bin" "/usr/local/go/bin" "$HOME/.asdf/shims" "$HOME/.asdf/bin" "/home/linuxbrew/.linuxbrew/bin" "/home/linuxbrew/.linuxbrew/sbin"; do
+    if [ -d "$dir" ]; then
+        export PATH="$dir:$PATH"
+    fi
+done
+
 # Resolve go if not in default PATH
 if ! command -v go >/dev/null 2>&1; then
     if [ -f "/c/Program Files/Go/bin/go.exe" ]; then

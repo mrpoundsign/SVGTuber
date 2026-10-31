@@ -32,6 +32,15 @@ import {
   getCameraButtonState,
   computeSessionBannerState,
 } from "./camera.ts";
+import {
+  normalizeVersionTag,
+  formatUpdateBadgeText,
+  formatAssetSize,
+  formatInstallModeLabel,
+  computeDownloadPercent,
+  type UpdateCheckPayload,
+  type UpdateProgressMessage,
+} from "./updater.ts";
 
 const multiTabBanner = document.getElementById("multi-tab-banner") as HTMLElement | null;
 const multiTabMessage = document.getElementById("multi-tab-message") as HTMLElement | null;
@@ -532,6 +541,8 @@ function connectWebSocket() {
         loadExpressions();
         loadAccessories();
         reloadAvatarFrame();
+      } else if (msg.type === "update_progress") {
+        handleUpdateProgress(msg as UpdateProgressMessage);
       }
     } catch (e) {}
   };
@@ -613,6 +624,188 @@ async function fetchAppVersion() {
   } catch (err) {
     console.debug("[Studio] Could not fetch /api/version:", err);
   }
+  checkForUpdates(true);
+}
+
+const btnUpdateBadge = document.getElementById("btn-update-badge") as HTMLButtonElement | null;
+const btnCheckUpdate = document.getElementById("btn-check-update") as HTMLButtonElement | null;
+const updateModal = document.getElementById("update-modal") as HTMLElement | null;
+const btnCloseUpdateModal = document.getElementById("btn-close-update-modal") as HTMLButtonElement | null;
+const btnCancelUpdate = document.getElementById("btn-cancel-update") as HTMLButtonElement | null;
+const btnApplyUpdate = document.getElementById("btn-apply-update") as HTMLButtonElement | null;
+const updateModalTitle = document.getElementById("update-modal-title") as HTMLElement | null;
+const updateVersionCompare = document.getElementById("update-version-compare") as HTMLElement | null;
+const updateModeBadge = document.getElementById("update-mode-badge") as HTMLElement | null;
+const updateAssetInfo = document.getElementById("update-asset-info") as HTMLElement | null;
+const updateReleaseNotes = document.getElementById("update-release-notes") as HTMLElement | null;
+const updateGithubLink = document.getElementById("update-github-link") as HTMLAnchorElement | null;
+const updateProgressContainer = document.getElementById("update-progress-container") as HTMLElement | null;
+const updateProgressStatus = document.getElementById("update-progress-status") as HTMLElement | null;
+const updateProgressPercent = document.getElementById("update-progress-percent") as HTMLElement | null;
+const updateProgressBar = document.getElementById("update-progress-bar") as HTMLElement | null;
+
+let cachedUpdateInfo: UpdateCheckPayload | null = null;
+
+async function checkForUpdates(silent = false) {
+  if (!silent && btnCheckUpdate) {
+    btnCheckUpdate.disabled = true;
+    btnCheckUpdate.textContent = "⏳ Checking...";
+  }
+  try {
+    const res = await fetch("/api/update/check");
+    if (!res.ok) {
+      if (!silent) {
+        const errData = await res.json().catch(() => ({}));
+        alert(`Update check failed: ${errData.error || res.statusText}`);
+      }
+      return;
+    }
+    const info: UpdateCheckPayload = await res.json();
+    cachedUpdateInfo = info;
+    if (info.updateAvailable && btnUpdateBadge) {
+      btnUpdateBadge.textContent = formatUpdateBadgeText(info.latestVersion);
+      btnUpdateBadge.style.display = "inline-flex";
+    } else if (btnUpdateBadge) {
+      btnUpdateBadge.style.display = "none";
+    }
+    if (!silent) {
+      openUpdateModal(info);
+    }
+  } catch (err: any) {
+    if (!silent) {
+      alert(`Could not check for updates: ${err?.message || err}`);
+    }
+  } finally {
+    if (!silent && btnCheckUpdate) {
+      btnCheckUpdate.disabled = false;
+      btnCheckUpdate.textContent = "🔄 Check for Updates";
+    }
+  }
+}
+
+function openUpdateModal(info: UpdateCheckPayload) {
+  if (!updateModal) return;
+  const curVer = normalizeVersionTag(info.currentVersion);
+  const latVer = normalizeVersionTag(info.latestVersion);
+
+  if (updateModalTitle) {
+    updateModalTitle.textContent = info.updateAvailable
+      ? `Update Available: SVGTuber ${latVer}`
+      : `SVGTuber ${curVer} is Up to Date`;
+  }
+  if (updateVersionCompare) {
+    updateVersionCompare.textContent = info.updateAvailable ? `${curVer} → ${latVer}` : `${curVer} (Latest)`;
+  }
+  if (updateModeBadge) {
+    updateModeBadge.textContent = formatInstallModeLabel(info.installMode);
+  }
+  if (updateAssetInfo) {
+    if (info.assetName) {
+      updateAssetInfo.textContent = `Asset: ${info.assetName} (${formatAssetSize(info.assetSize)})`;
+      updateAssetInfo.style.display = "block";
+    } else {
+      updateAssetInfo.style.display = "none";
+    }
+  }
+  if (updateReleaseNotes) {
+    updateReleaseNotes.textContent = info.releaseNotes || "No release notes provided for this version.";
+  }
+  if (updateGithubLink && info.htmlUrl) {
+    updateGithubLink.href = info.htmlUrl;
+  }
+  if (updateProgressContainer) {
+    updateProgressContainer.style.display = "none";
+  }
+  if (btnApplyUpdate) {
+    btnApplyUpdate.disabled = !info.updateAvailable;
+    btnApplyUpdate.textContent = info.updateAvailable ? "⬇ Install Update & Restart" : "✓ Already Up to Date";
+    btnApplyUpdate.style.display = info.updateAvailable ? "inline-block" : "none";
+  }
+  updateModal.style.display = "flex";
+}
+
+function closeUpdateModal() {
+  if (updateModal) {
+    updateModal.style.display = "none";
+  }
+}
+
+function handleUpdateProgress(msg: UpdateProgressMessage) {
+  if (!updateProgressContainer) return;
+  updateProgressContainer.style.display = "flex";
+  if (msg.stage === "applying") {
+    if (updateProgressStatus) {
+      updateProgressStatus.textContent = "✓ SHA-256 verified! Applying update & restarting...";
+    }
+    if (updateProgressPercent) updateProgressPercent.textContent = "100%";
+    if (updateProgressBar) updateProgressBar.style.width = "100%";
+    return;
+  }
+  const pct = computeDownloadPercent(msg.downloaded, msg.total);
+  if (updateProgressStatus) {
+    updateProgressStatus.textContent = `Downloading & verifying SHA-256 (${formatAssetSize(msg.downloaded)} / ${formatAssetSize(msg.total)})...`;
+  }
+  if (updateProgressPercent) updateProgressPercent.textContent = `${pct}%`;
+  if (updateProgressBar) updateProgressBar.style.width = `${pct}%`;
+}
+
+async function applyVerifiedUpdate() {
+  if (!btnApplyUpdate) return;
+  btnApplyUpdate.disabled = true;
+  btnApplyUpdate.textContent = "⏳ Downloading & Verifying...";
+  if (updateProgressContainer) {
+    updateProgressContainer.style.display = "flex";
+  }
+  if (updateProgressStatus) {
+    updateProgressStatus.textContent = "Fetching checksums.txt & release asset...";
+  }
+  if (updateProgressPercent) updateProgressPercent.textContent = "0%";
+  if (updateProgressBar) updateProgressBar.style.width = "0%";
+
+  try {
+    const res = await fetch("/api/update/apply", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || res.statusText);
+    }
+    if (updateProgressStatus) {
+      updateProgressStatus.textContent = "✓ Update applied! Waiting for SVGTuber server to restart...";
+    }
+    if (updateProgressPercent) updateProgressPercent.textContent = "100%";
+    if (updateProgressBar) updateProgressBar.style.width = "100%";
+    btnApplyUpdate.textContent = "✓ Restarting...";
+    setTimeout(() => {
+      window.location.reload();
+    }, 3500);
+  } catch (err: any) {
+    if (updateProgressStatus) {
+      updateProgressStatus.textContent = `❌ Update failed: ${err?.message || err}`;
+    }
+    btnApplyUpdate.disabled = false;
+    btnApplyUpdate.textContent = "Retry Update";
+  }
+}
+
+if (btnUpdateBadge) {
+  btnUpdateBadge.addEventListener("click", () => {
+    if (cachedUpdateInfo) {
+      openUpdateModal(cachedUpdateInfo);
+    } else {
+      checkForUpdates(false);
+    }
+  });
+}
+if (btnCheckUpdate) {
+  btnCheckUpdate.addEventListener("click", () => checkForUpdates(false));
+}
+if (btnCloseUpdateModal) {
+  btnCloseUpdateModal.addEventListener("click", closeUpdateModal);
+}
+if (btnCancelUpdate) {
+  btnCancelUpdate.addEventListener("click", closeUpdateModal);
+}
+if (btnApplyUpdate) {
+  btnApplyUpdate.addEventListener("click", applyVerifiedUpdate);
 }
 
 async function initMediaPipe() {
@@ -1645,6 +1838,25 @@ if (btnRefreshAvatars) {
     } finally {
       btnRefreshAvatars.disabled = false;
       btnRefreshAvatars.textContent = "↻ Scan Folder";
+    }
+  });
+}
+
+const btnOpenAvatarDir = document.getElementById("btn-open-avatar-dir") as HTMLButtonElement | null;
+if (btnOpenAvatarDir) {
+  btnOpenAvatarDir.addEventListener("click", async () => {
+    btnOpenAvatarDir.disabled = true;
+    try {
+      const res = await fetch("/api/avatars/open-dir", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || res.statusText);
+      }
+    } catch (err: any) {
+      console.error("[Studio Tracker] Error opening avatar directory:", err);
+      alert(`Could not open avatar directory: ${err?.message || err}`);
+    } finally {
+      btnOpenAvatarDir.disabled = false;
     }
   });
 }

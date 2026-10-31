@@ -35,8 +35,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.27'
           cache: true
+
+      - name: Install Linux GUI & MinGW Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
+            libgl1-mesa-dev xorg-dev libxcursor-dev libxrandr-dev \
+            libxinerama-dev libxi-dev libxxf86vm-dev libwayland-dev \
+            libxkbcommon-dev
 
       - name: Run Vet
         run: go vet ./...
@@ -44,11 +53,16 @@ jobs:
       - name: Run Unit Tests
         run: go test -v -count=1 ./...
 
-      - name: Verify Linux Static Build
+      - name: Verify Linux Static Build (CGO_ENABLED=0)
         run: CGO_ENABLED=0 go build -v ./cmd/svgtuber
 
-      - name: Verify Windows Static Build
+      - name: Verify Windows Static Build (CGO_ENABLED=0)
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -v ./cmd/svgtuber
 
-      - name: Verify macOS Static Build
+      - name: Verify macOS Static Build (CGO_ENABLED=0)
         run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -v ./cmd/svgtuber
+
+      - name: Verify Windows Setup Installer Build (CGO_ENABLED=1)
+        run: |
+          chmod +x ./build.sh
+          ./build.sh installer
