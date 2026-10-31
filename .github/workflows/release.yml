@@ -5,13 +5,14 @@ on:
     tags:
       - 'v*'
       - '[0-9]*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   goreleaser:
-    name: GoReleaser
+    name: Build & Publish Release (GoReleaser + Windows Setup Installer)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -34,14 +35,61 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.27'
           cache: true
+
+      - name: Install MinGW & Linux GUI Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 \
+            libgl1-mesa-dev xorg-dev libxcursor-dev libxrandr-dev \
+            libxinerama-dev libxi-dev libxxf86vm-dev libwayland-dev \
+            libxkbcommon-dev
+
+      - name: Verify Clean Git State Before GoReleaser
+        run: |
+          git checkout -- web/overlay/overlay.js web/studio/tracker.js 2>/dev/null || true
+          npm run build
+          git diff --quiet || git commit -am "chore: update bundled web assets" || true
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: '~> v2'
-          args: release --clean
+          args: ${{ startsWith(github.ref, 'refs/tags/') && 'release --clean' || 'release --clean --snapshot' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Standalone Windows Setup Installer
+        run: |
+          RAW_VER="${GITHUB_REF_NAME#v}"
+          if [ -z "$RAW_VER" ] || [ "$RAW_VER" = "main" ]; then
+            RAW_VER="0.0.7"
+          fi
+          chmod +x ./build.sh
+          VERSION="$RAW_VER" ./build.sh installer
+          echo "=== Verifying Setup.exe DLL Dependencies ==="
+          x86_64-w64-mingw32-objdump -p "dist/SVGTuber-v${RAW_VER}-windows-amd64-setup.exe" | grep "DLL Name"
+
+      - name: Consolidate Checksums (checksums.txt & SHA256SUMS.txt)
+        run: |
+          cd dist
+          rm -f checksums.txt SHA256SUMS.txt
+          for f in *.zip *.tar.gz *-setup.exe; do
+            if [ -f "$f" ]; then
+              sha256sum "$f" >> checksums.txt
+            fi
+          done
+          sort -k2 -o checksums.txt checksums.txt
+          cp -f checksums.txt SHA256SUMS.txt
+          echo "=== Final Consolidated Checksums ==="
+          cat checksums.txt
+
+      - name: Upload Setup Installer & Consolidated Checksums to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" dist/*-setup.exe dist/checksums.txt dist/SHA256SUMS.txt --clobber

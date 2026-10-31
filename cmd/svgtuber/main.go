@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mrpoundsign/appinstaller/pkg/updater"
 	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/mcp"
 	"github.com/mrpoundsign/SVGTuber/internal/server"
@@ -28,15 +29,30 @@ var (
 )
 
 func main() {
+	// Clean up any leftover .old executable from a previous portable self-update
+	if selfExe := updater.ResolveTargetExecutable(""); selfExe != "" {
+		_ = os.Remove(selfExe + ".old")
+	}
+
 	avatarFlag := flag.String("avatar", "", "Path to the Inkscape SVG avatar file (saved to config when specified)")
 	port := flag.Int("port", 7420, "Port for the HTTP and WebSocket server")
 	openStudio := flag.Bool("open-studio", false, "Automatically open the Studio control page in default browser")
+	headlessFlag := flag.Bool("headless", false, "Run without the desktop control window (console mode)")
 	showVersion := flag.Bool("version", false, "Print version information and exit")
+	checkUpdate := flag.Bool("check-update", false, "Check GitHub Releases for a newer version and exit")
+	applyUpdate := flag.Bool("update", false, "Download, verify (SHA-256), and install the latest SVGTuber update")
 	mcpFlag := flag.Bool("mcp", false, "Run as Model Context Protocol (MCP) stdio server for Vectorcraft rigging and control")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("svgtuber %s (commit: %s, built: %s)\n", version, commit, date)
+		return
+	}
+
+	if *checkUpdate || *applyUpdate {
+		if err := runCLIUpdate(*applyUpdate); err != nil {
+			log.Fatalf("Update failed: %v", err)
+		}
 		return
 	}
 
@@ -58,7 +74,7 @@ func main() {
 	// 1. Explicit -avatar flag (persisted to config)
 	// 2. avatar.svg in current working directory (persisted to config)
 	// 3. Previously saved avatar path in config
-	// 4. Fallback to testdata/test_avatar.svg
+	// 4. Fallback to Documents\SVGTuber\avatar.svg, installed avatar.svg, or testdata/test_avatar.svg
 	var avatarPath string
 	if *avatarFlag != "" {
 		absPath, err := filepath.Abs(*avatarFlag)
@@ -97,15 +113,18 @@ func main() {
 		}
 
 		if avatarPath == "" {
-			fallback := "testdata/test_avatar.svg"
-			if _, err := os.Stat(fallback); err == nil {
-				if abs, err := filepath.Abs(fallback); err == nil {
-					avatarPath = abs
-				} else {
-					avatarPath = fallback
+			for _, candidate := range defaultAvatarCandidates() {
+				if _, err := os.Stat(candidate); err == nil {
+					if abs, err := filepath.Abs(candidate); err == nil {
+						avatarPath = abs
+					} else {
+						avatarPath = candidate
+					}
+					log.Printf("[Config] No avatar specified or found; using sample avatar: %s", avatarPath)
+					break
 				}
-				log.Printf("[Config] No avatar specified or found; using sample avatar: %s", avatarPath)
-			} else {
+			}
+			if avatarPath == "" {
 				log.Fatalf("No avatar SVG found! Place an 'avatar.svg' in the current directory or specify with -avatar <path>.")
 			}
 		}
@@ -138,11 +157,15 @@ func main() {
 	studioURL := fmt.Sprintf("http://localhost:%d/studio", *port)
 	overlayURL := fmt.Sprintf("http://localhost:%d/overlay", *port)
 
+	runAppUI(srv, cfgMgr, studioURL, overlayURL, *openStudio, *headlessFlag)
+}
+
+func runHeadlessLoop(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL string, openStudio bool) {
 	fmt.Println("====================================================")
 	fmt.Printf("  SVGTuber %s - Vector VTuber Engine\n", version)
 	fmt.Println("====================================================")
-	fmt.Printf("  Avatar:      %s\n", avatarPath)
-	fmt.Printf("  Avatar Dir:  %s\n", filepath.Dir(avatarPath))
+	fmt.Printf("  Avatar:      %s\n", srv.AvatarPath())
+	fmt.Printf("  Avatar Dir:  %s\n", srv.AvatarDir())
 	fmt.Printf("  Studio:      %s\n", studioURL)
 	fmt.Printf("  OBS Overlay: %s\n", overlayURL)
 	if cfgMgr != nil {
@@ -155,23 +178,23 @@ func main() {
 	fmt.Println("  Press Ctrl+C to stop.")
 	fmt.Println("====================================================")
 
-	if *openStudio {
+	if openStudio {
 		go openBrowser(studioURL)
 	}
 
-	// Wait for termination signal
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 
-	fmt.Println("\nShutting down SVGTuber...")
+	shutdownServer(srv)
+}
+
+func shutdownServer(srv *server.Server) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-
 	if err := srv.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
 		log.Printf("Shutdown error: %v", err)
 	}
-	fmt.Println("SVGTuber stopped.")
 }
 
 func openBrowser(url string) {
@@ -183,7 +206,6 @@ func openBrowser(url string) {
 	case "darwin":
 		cmd = exec.Command("open", url)
 	default:
-		// Check for WSL or Linux desktop utilities
 		if _, err := exec.LookPath("wslview"); err == nil {
 			cmd = exec.Command("wslview", url)
 		} else if _, err := exec.LookPath("cmd.exe"); err == nil {
@@ -193,4 +215,68 @@ func openBrowser(url string) {
 		}
 	}
 	_ = cmd.Start()
+}
+
+func defaultAvatarCandidates() []string {
+	var candidates []string
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, "Documents", "SVGTuber", "avatar.svg"))
+	}
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		exeDir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "avatar.svg"),
+			filepath.Join(exeDir, "testdata", "test_avatar.svg"),
+		)
+	}
+	candidates = append(candidates, "testdata/test_avatar.svg")
+	return candidates
+}
+
+func currentNormalizedVersion() string {
+	curVer := version
+	if curVer == "" || curVer == "dev" {
+		return "0.0.7"
+	}
+	return updater.NormalizeVersion(curVer)
+}
+
+func runCLIUpdate(apply bool) error {
+	curVer := currentNormalizedVersion()
+	chk := updater.NewChecker("mrpoundsign", "SVGTuber")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	rel, isNewer, err := chk.CheckLatest(ctx, curVer)
+	if err != nil {
+		return err
+	}
+	if !isNewer {
+		fmt.Printf("SVGTuber is already up to date (current: %s, latest: %s).\n", curVer, rel.Version)
+		return nil
+	}
+
+	fmt.Printf("Update available: %s -> %s (%s)\n", curVer, rel.Version, rel.HTMLURL)
+	if !apply {
+		fmt.Println("Run 'svgtuber -update' to download, verify SHA-256, and install the update.")
+		return nil
+	}
+
+	exePath := updater.ResolveTargetExecutable("")
+	mode := updater.DetectInstallMode(exePath)
+	asset, err := updater.SelectAsset(rel, mode, runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+
+	destDir := filepath.Join(os.TempDir(), "svgtuber-update")
+	fmt.Printf("Downloading and verifying %s (%s)...\n", asset.Name, mode)
+	verifiedPath, err := chk.DownloadAndVerify(ctx, rel, asset, destDir, nil)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("✓ SHA-256 verified: %s\n", verifiedPath)
+	return updater.ApplyAndRestart(verifiedPath, exePath, mode, func() {
+		os.Exit(0)
+	})
 }

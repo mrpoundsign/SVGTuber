@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/mrpoundsign/appinstaller/pkg/updater"
 	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/rig"
 	"github.com/mrpoundsign/SVGTuber/internal/svg"
@@ -43,6 +44,10 @@ type Server struct {
 	version            string
 	commit             string
 	date               string
+	updateChecker      *updater.Checker
+	updateTargetExe    string
+	updateApplyFn      func(verifiedAssetPath, targetExePath string, mode updater.InstallMode) error
+	openDirFn          func(dir string) error
 	expMgr             *ExpressionManager
 	trackerMu          sync.RWMutex
 	trackerConns       map[*websocket.Conn]chan []byte
@@ -89,6 +94,7 @@ func New(port int, avatarPath string, hub *Hub, engine *tracking.Engine, cfg ...
 		engine:         engine,
 		configMgr:      cm,
 		rigParser:      rig.DefaultParser,
+		updateChecker:  updater.NewChecker("mrpoundsign", "SVGTuber"),
 		trackerConns:   make(map[*websocket.Conn]chan []byte),
 	}
 
@@ -173,6 +179,8 @@ func (s *Server) Start() error {
 
 	// REST API control endpoints
 	mux.HandleFunc("/api/version", s.handleAPIVersion)
+	mux.HandleFunc("/api/update/check", s.handleAPIUpdateCheck)
+	mux.HandleFunc("/api/update/apply", s.handleAPIUpdateApply)
 	mux.HandleFunc("/api/calibrate", s.handleAPICalibrate)
 	mux.HandleFunc("/api/settings", s.handleAPISettings)
 	mux.HandleFunc("/api/settings/reset", s.handleAPISettingsReset)
@@ -186,6 +194,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/avatar/reload", s.handleAPIAvatarReload)
 	mux.HandleFunc("/api/avatars", s.handleAPIAvatars)
 	mux.HandleFunc("/api/avatars/select", s.handleAPIAvatarSelect)
+	mux.HandleFunc("/api/avatars/open-dir", s.handleAPIAvatarOpenDir)
 
 	// Accessories REST endpoints & static file server
 	mux.HandleFunc("/accessories/", s.handleAccessoryFile)

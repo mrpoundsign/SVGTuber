@@ -182,6 +182,46 @@ function computeSessionBannerState(isActive, connectedTabs) {
   };
 }
 
+// web/src/studio/updater.ts
+function normalizeVersionTag(ver) {
+  const clean = (ver || "").trim();
+  if (!clean) return "v0.0.7";
+  return clean.startsWith("v") || clean.startsWith("V") ? `v${clean.slice(1)}` : `v${clean}`;
+}
+function formatUpdateBadgeText(latestVersion) {
+  return `\u2B06 Update ${normalizeVersionTag(latestVersion)}`;
+}
+function formatAssetSize(bytes) {
+  if (!bytes || bytes <= 0 || !Number.isFinite(bytes)) {
+    return "Unknown size";
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+  return `${bytes} B`;
+}
+function formatInstallModeLabel(mode) {
+  switch (mode) {
+    case "installed_windows":
+      return "Windows Setup Installer (Silent Upgrade)";
+    case "portable_windows":
+      return "Portable Binary (Atomic Swap)";
+    case "portable_unix":
+      return "Portable Archive (Atomic Swap)";
+    default:
+      return "Automatic Verified Update";
+  }
+}
+function computeDownloadPercent(downloaded, total) {
+  const cur = Number(downloaded) || 0;
+  const max = Number(total) || 0;
+  if (cur <= 0 || max <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round(cur / max * 100)));
+}
+
 // web/src/studio/index.ts
 var multiTabBanner = document.getElementById("multi-tab-banner");
 var multiTabMessage = document.getElementById("multi-tab-message");
@@ -622,6 +662,8 @@ function connectWebSocket() {
         loadExpressions();
         loadAccessories();
         reloadAvatarFrame();
+      } else if (msg.type === "update_progress") {
+        handleUpdateProgress(msg);
       }
     } catch (e) {
     }
@@ -697,6 +739,176 @@ Built: ${data.date || "unknown"}`;
   } catch (err) {
     console.debug("[Studio] Could not fetch /api/version:", err);
   }
+  checkForUpdates(true);
+}
+var btnUpdateBadge = document.getElementById("btn-update-badge");
+var btnCheckUpdate = document.getElementById("btn-check-update");
+var updateModal = document.getElementById("update-modal");
+var btnCloseUpdateModal = document.getElementById("btn-close-update-modal");
+var btnCancelUpdate = document.getElementById("btn-cancel-update");
+var btnApplyUpdate = document.getElementById("btn-apply-update");
+var updateModalTitle = document.getElementById("update-modal-title");
+var updateVersionCompare = document.getElementById("update-version-compare");
+var updateModeBadge = document.getElementById("update-mode-badge");
+var updateAssetInfo = document.getElementById("update-asset-info");
+var updateReleaseNotes = document.getElementById("update-release-notes");
+var updateGithubLink = document.getElementById("update-github-link");
+var updateProgressContainer = document.getElementById("update-progress-container");
+var updateProgressStatus = document.getElementById("update-progress-status");
+var updateProgressPercent = document.getElementById("update-progress-percent");
+var updateProgressBar = document.getElementById("update-progress-bar");
+var cachedUpdateInfo = null;
+async function checkForUpdates(silent = false) {
+  if (!silent && btnCheckUpdate) {
+    btnCheckUpdate.disabled = true;
+    btnCheckUpdate.textContent = "\u23F3 Checking...";
+  }
+  try {
+    const res = await fetch("/api/update/check");
+    if (!res.ok) {
+      if (!silent) {
+        const errData = await res.json().catch(() => ({}));
+        alert(`Update check failed: ${errData.error || res.statusText}`);
+      }
+      return;
+    }
+    const info = await res.json();
+    cachedUpdateInfo = info;
+    if (info.updateAvailable && btnUpdateBadge) {
+      btnUpdateBadge.textContent = formatUpdateBadgeText(info.latestVersion);
+      btnUpdateBadge.style.display = "inline-flex";
+    } else if (btnUpdateBadge) {
+      btnUpdateBadge.style.display = "none";
+    }
+    if (!silent) {
+      openUpdateModal(info);
+    }
+  } catch (err) {
+    if (!silent) {
+      alert(`Could not check for updates: ${err?.message || err}`);
+    }
+  } finally {
+    if (!silent && btnCheckUpdate) {
+      btnCheckUpdate.disabled = false;
+      btnCheckUpdate.textContent = "\u{1F504} Check for Updates";
+    }
+  }
+}
+function openUpdateModal(info) {
+  if (!updateModal) return;
+  const curVer = normalizeVersionTag(info.currentVersion);
+  const latVer = normalizeVersionTag(info.latestVersion);
+  if (updateModalTitle) {
+    updateModalTitle.textContent = info.updateAvailable ? `Update Available: SVGTuber ${latVer}` : `SVGTuber ${curVer} is Up to Date`;
+  }
+  if (updateVersionCompare) {
+    updateVersionCompare.textContent = info.updateAvailable ? `${curVer} \u2192 ${latVer}` : `${curVer} (Latest)`;
+  }
+  if (updateModeBadge) {
+    updateModeBadge.textContent = formatInstallModeLabel(info.installMode);
+  }
+  if (updateAssetInfo) {
+    if (info.assetName) {
+      updateAssetInfo.textContent = `Asset: ${info.assetName} (${formatAssetSize(info.assetSize)})`;
+      updateAssetInfo.style.display = "block";
+    } else {
+      updateAssetInfo.style.display = "none";
+    }
+  }
+  if (updateReleaseNotes) {
+    updateReleaseNotes.textContent = info.releaseNotes || "No release notes provided for this version.";
+  }
+  if (updateGithubLink && info.htmlUrl) {
+    updateGithubLink.href = info.htmlUrl;
+  }
+  if (updateProgressContainer) {
+    updateProgressContainer.style.display = "none";
+  }
+  if (btnApplyUpdate) {
+    btnApplyUpdate.disabled = !info.updateAvailable;
+    btnApplyUpdate.textContent = info.updateAvailable ? "\u2B07 Install Update & Restart" : "\u2713 Already Up to Date";
+    btnApplyUpdate.style.display = info.updateAvailable ? "inline-block" : "none";
+  }
+  updateModal.style.display = "flex";
+}
+function closeUpdateModal() {
+  if (updateModal) {
+    updateModal.style.display = "none";
+  }
+}
+function handleUpdateProgress(msg) {
+  if (!updateProgressContainer) return;
+  updateProgressContainer.style.display = "flex";
+  if (msg.stage === "applying") {
+    if (updateProgressStatus) {
+      updateProgressStatus.textContent = "\u2713 SHA-256 verified! Applying update & restarting...";
+    }
+    if (updateProgressPercent) updateProgressPercent.textContent = "100%";
+    if (updateProgressBar) updateProgressBar.style.width = "100%";
+    return;
+  }
+  const pct = computeDownloadPercent(msg.downloaded, msg.total);
+  if (updateProgressStatus) {
+    updateProgressStatus.textContent = `Downloading & verifying SHA-256 (${formatAssetSize(msg.downloaded)} / ${formatAssetSize(msg.total)})...`;
+  }
+  if (updateProgressPercent) updateProgressPercent.textContent = `${pct}%`;
+  if (updateProgressBar) updateProgressBar.style.width = `${pct}%`;
+}
+async function applyVerifiedUpdate() {
+  if (!btnApplyUpdate) return;
+  btnApplyUpdate.disabled = true;
+  btnApplyUpdate.textContent = "\u23F3 Downloading & Verifying...";
+  if (updateProgressContainer) {
+    updateProgressContainer.style.display = "flex";
+  }
+  if (updateProgressStatus) {
+    updateProgressStatus.textContent = "Fetching checksums.txt & release asset...";
+  }
+  if (updateProgressPercent) updateProgressPercent.textContent = "0%";
+  if (updateProgressBar) updateProgressBar.style.width = "0%";
+  try {
+    const res = await fetch("/api/update/apply", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || res.statusText);
+    }
+    if (updateProgressStatus) {
+      updateProgressStatus.textContent = "\u2713 Update applied! Waiting for SVGTuber server to restart...";
+    }
+    if (updateProgressPercent) updateProgressPercent.textContent = "100%";
+    if (updateProgressBar) updateProgressBar.style.width = "100%";
+    btnApplyUpdate.textContent = "\u2713 Restarting...";
+    setTimeout(() => {
+      window.location.reload();
+    }, 3500);
+  } catch (err) {
+    if (updateProgressStatus) {
+      updateProgressStatus.textContent = `\u274C Update failed: ${err?.message || err}`;
+    }
+    btnApplyUpdate.disabled = false;
+    btnApplyUpdate.textContent = "Retry Update";
+  }
+}
+if (btnUpdateBadge) {
+  btnUpdateBadge.addEventListener("click", () => {
+    if (cachedUpdateInfo) {
+      openUpdateModal(cachedUpdateInfo);
+    } else {
+      checkForUpdates(false);
+    }
+  });
+}
+if (btnCheckUpdate) {
+  btnCheckUpdate.addEventListener("click", () => checkForUpdates(false));
+}
+if (btnCloseUpdateModal) {
+  btnCloseUpdateModal.addEventListener("click", closeUpdateModal);
+}
+if (btnCancelUpdate) {
+  btnCancelUpdate.addEventListener("click", closeUpdateModal);
+}
+if (btnApplyUpdate) {
+  btnApplyUpdate.addEventListener("click", applyVerifiedUpdate);
 }
 async function initMediaPipe() {
   try {
@@ -1624,6 +1836,24 @@ if (btnRefreshAvatars) {
     } finally {
       btnRefreshAvatars.disabled = false;
       btnRefreshAvatars.textContent = "\u21BB Scan Folder";
+    }
+  });
+}
+var btnOpenAvatarDir = document.getElementById("btn-open-avatar-dir");
+if (btnOpenAvatarDir) {
+  btnOpenAvatarDir.addEventListener("click", async () => {
+    btnOpenAvatarDir.disabled = true;
+    try {
+      const res = await fetch("/api/avatars/open-dir", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || res.statusText);
+      }
+    } catch (err) {
+      console.error("[Studio Tracker] Error opening avatar directory:", err);
+      alert(`Could not open avatar directory: ${err?.message || err}`);
+    } finally {
+      btnOpenAvatarDir.disabled = false;
     }
   });
 }

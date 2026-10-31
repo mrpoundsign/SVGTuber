@@ -55,6 +55,24 @@
       background: #272738;
       color: #a5a5cc;
     }
+    .btn-update-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.16);
+      border: 1px solid #38bdf8;
+      color: #38bdf8;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.15s ease;
+    }
+    .btn-update-badge:hover {
+      background: #38bdf8;
+      color: #0f172a;
+    }
     .status-badge {
       font-size: 12px;
       font-weight: 500;
@@ -745,8 +763,14 @@
     <div class="brand">
       <h1>SVGTuber Studio</h1>
       <span class="badge" id="app-version">v0.0.7</span>
+      <button id="btn-update-badge" class="btn-update-badge" style="display: none;" title="A verified update is available">
+        ⬆ Update
+      </button>
     </div>
     <div style="display: flex; align-items: center; gap: 12px;">
+      <button id="btn-check-update" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px;" title="Check GitHub Releases for updates">
+        🔄 Check for Updates
+      </button>
       <a href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/RIGGING_GUIDE.md" target="_blank" rel="noopener" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px; text-decoration: none; display: flex; align-items: center; gap: 5px;" title="View Inkscape rigging instructions and directive cheat sheet">
         📖 Rigging Guide
       </a>
@@ -899,7 +923,10 @@
       <div style="margin-bottom: 12px; background: #181820; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
           <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">Active Avatar</span>
-          <button id="btn-refresh-avatars" class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px;" title="Rescan avatar directory for new SVGs">↻ Scan Folder</button>
+          <div style="display: flex; gap: 6px;">
+            <button id="btn-open-avatar-dir" class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px;" title="Open the avatar directory in your file manager">📂 Open Folder</button>
+            <button id="btn-refresh-avatars" class="btn btn-secondary" style="font-size: 10px; padding: 2px 6px;" title="Rescan avatar directory for new SVGs">↻ Scan Folder</button>
+          </div>
         </div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <select id="avatar-select" class="form-select" style="flex: 1; background: #121218; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 13px; font-weight: 500;">
@@ -1446,6 +1473,56 @@
           <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
             <button id="modal-btn-reset" class="btn btn-secondary" style="font-size: 12px; padding: 6px 12px;">Reset Transforms</button>
             <button id="modal-btn-done" class="btn" style="font-size: 12px; padding: 6px 18px; background: var(--accent); color: white;">Done Fitting</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Self-Update Modal Dialog -->
+  <div id="update-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-dialog" style="max-width: 580px; height: auto; max-height: 82vh; background: #0f172a; border-color: #334155;">
+      <div class="modal-header" style="background: #1e293b; border-color: #334155;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 18px;">🚀</span>
+          <div>
+            <div id="update-modal-title" style="font-size: 15px; font-weight: 700; color: #f8fafc;">SVGTuber Update</div>
+            <div id="update-modal-subtitle" style="font-size: 11px; color: #94a3b8;">SHA-256 Verified GitHub Release Updater</div>
+          </div>
+        </div>
+        <button id="btn-close-update-modal" class="modal-close-btn" title="Close (Esc)">✕</button>
+      </div>
+      <div style="padding: 20px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 10px 14px; font-size: 12px;">
+          <div>
+            <span style="color: #94a3b8;">Version:</span>
+            <strong id="update-version-compare" style="color: #f8fafc; margin-left: 6px;">v0.0.7 → v0.0.8</strong>
+          </div>
+          <span id="update-mode-badge" class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">Automatic Verified Update</span>
+        </div>
+
+        <div id="update-asset-info" style="font-size: 11px; color: #94a3b8; font-family: monospace;"></div>
+
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8;">Release Notes</span>
+          <pre id="update-release-notes" style="background: #0b1120; border: 1px solid #334155; border-radius: 8px; padding: 12px; font-family: inherit; font-size: 12px; color: #e2e8f0; white-space: pre-wrap; max-height: 220px; overflow-y: auto; line-height: 1.5;">Checking release notes...</pre>
+        </div>
+
+        <div id="update-progress-container" style="display: none; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: #38bdf8;">
+            <span id="update-progress-status">Downloading &amp; verifying SHA-256...</span>
+            <span id="update-progress-percent">0%</span>
+          </div>
+          <div class="gauge-bar-track" style="height: 8px; background: #1e293b;">
+            <div id="update-progress-bar" class="gauge-bar-fill" style="background: #38bdf8; width: 0%;"></div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; pt: 8px;">
+          <a id="update-github-link" href="https://github.com/mrpoundsign/SVGTuber/releases" target="_blank" rel="noopener" style="font-size: 12px; color: #38bdf8; text-decoration: none;">View on GitHub ↗</a>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-cancel-update" class="btn btn-secondary" style="font-size: 12px;">Later</button>
+            <button id="btn-apply-update" class="btn" style="font-size: 12px; background: #38bdf8; color: #0f172a; font-weight: 600;">⬇ Install Update &amp; Restart</button>
           </div>
         </div>
       </div>

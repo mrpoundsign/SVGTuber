@@ -1,0 +1,1 @@
+Placeholder for go:embed payload/* during development and CI tests.

@@ -29,11 +29,13 @@ archives:
   - id: default
     builds:
       - svgtuber
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    name_template: "SVGTuber-v{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - src: testdata/test_avatar.svg
         dst: avatar.svg
@@ -49,6 +51,17 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+release:
+  github:
+    owner: mrpoundsign
+    name: SVGTuber
+  draft: false
+  prerelease: auto
+  mode: keep-existing
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
 
 changelog:
   sort: asc
