@@ -1,14 +1,13 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/streamdeck"
@@ -26,25 +25,13 @@ func TestAPIStreamDeckStatusAndInstall(t *testing.T) {
 	srv := New(0, avatarPath, NewHub(), tracking.NewEngine())
 	srv.SetStreamDeckPluginsDir(sdPluginsDir)
 
-	if err := srv.Start(); err != nil {
-		t.Fatalf("srv.Start: %v", err)
-	}
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	}()
-
-	baseURL := "http://" + srv.Addr()
-
 	// 1. Check status before installation
-	resp, err := http.Get(baseURL + "/api/streamdeck/status")
-	if err != nil {
-		t.Fatalf("GET /api/streamdeck/status: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	reqStatus := httptest.NewRequest(http.MethodGet, "/api/streamdeck/status", nil)
+	recStatus := httptest.NewRecorder()
+	srv.handleAPIStreamDeckStatus(recStatus, reqStatus)
+
+	if recStatus.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recStatus.Code)
 	}
 
 	var statusBefore struct {
@@ -52,7 +39,7 @@ func TestAPIStreamDeckStatusAndInstall(t *testing.T) {
 		PluginsDir    string `json:"pluginsDir"`
 		PluginDirName string `json:"pluginDirName"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&statusBefore); err != nil {
+	if err := json.NewDecoder(recStatus.Body).Decode(&statusBefore); err != nil {
 		t.Fatalf("decode statusBefore: %v", err)
 	}
 	if statusBefore.Installed {
@@ -60,13 +47,12 @@ func TestAPIStreamDeckStatusAndInstall(t *testing.T) {
 	}
 
 	// 2. Install Stream Deck plugin via POST /api/streamdeck/install
-	instResp, err := http.Post(baseURL+"/api/streamdeck/install", "application/json", nil)
-	if err != nil {
-		t.Fatalf("POST /api/streamdeck/install: %v", err)
-	}
-	defer func() { _ = instResp.Body.Close() }()
-	if instResp.StatusCode != http.StatusOK {
-		t.Fatalf("install status = %d, want 200", instResp.StatusCode)
+	reqInstall := httptest.NewRequest(http.MethodPost, "/api/streamdeck/install", nil)
+	recInstall := httptest.NewRecorder()
+	srv.handleAPIStreamDeckInstall(recInstall, reqInstall)
+
+	if recInstall.Code != http.StatusOK {
+		t.Fatalf("install status = %d, want 200", recInstall.Code)
 	}
 
 	var instPayload struct {
@@ -74,7 +60,7 @@ func TestAPIStreamDeckStatusAndInstall(t *testing.T) {
 		Installed     bool   `json:"installed"`
 		InstalledPath string `json:"installedPath"`
 	}
-	if err := json.NewDecoder(instResp.Body).Decode(&instPayload); err != nil {
+	if err := json.NewDecoder(recInstall.Body).Decode(&instPayload); err != nil {
 		t.Fatalf("decode instPayload: %v", err)
 	}
 	if !instPayload.Installed || instPayload.Status != "installed" {
@@ -85,15 +71,17 @@ func TestAPIStreamDeckStatusAndInstall(t *testing.T) {
 	}
 
 	// 3. Re-check status after installation
-	respAfter, err := http.Get(baseURL + "/api/streamdeck/status")
-	if err != nil {
-		t.Fatalf("GET /api/streamdeck/status after install: %v", err)
+	reqStatus2 := httptest.NewRequest(http.MethodGet, "/api/streamdeck/status", nil)
+	recStatus2 := httptest.NewRecorder()
+	srv.handleAPIStreamDeckStatus(recStatus2, reqStatus2)
+
+	if recStatus2.Code != http.StatusOK {
+		t.Fatalf("status after install = %d, want 200", recStatus2.Code)
 	}
-	defer func() { _ = respAfter.Body.Close() }()
 	var statusAfter struct {
 		Installed bool `json:"installed"`
 	}
-	if err := json.NewDecoder(respAfter.Body).Decode(&statusAfter); err != nil {
+	if err := json.NewDecoder(recStatus2.Body).Decode(&statusAfter); err != nil {
 		t.Fatalf("decode statusAfter: %v", err)
 	}
 	if !statusAfter.Installed {
@@ -120,14 +108,6 @@ func TestAPIModeAndCycleAvatar(t *testing.T) {
 	_ = cfgMgr.SetActiveAvatar("alpha.svg")
 
 	srv := New(0, aPath, NewHub(), tracking.NewEngine(cfgMgr), cfgMgr)
-	if err := srv.Start(); err != nil {
-		t.Fatalf("srv.Start: %v", err)
-	}
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(ctx)
-	}()
 
 	// Cycle avatar: alpha.svg -> beta.svg -> alpha.svg
 	nextAvatar, err := srv.CycleAvatar()
@@ -147,16 +127,17 @@ func TestAPIModeAndCycleAvatar(t *testing.T) {
 	}
 
 	// Test POST /api/mode cycle: hybrid -> camera -> audio -> hybrid
-	baseURL := "http://" + srv.Addr()
-	resp, err := http.Post(baseURL+"/api/mode", "application/json", strings.NewReader(`{"mode":"cycle"}`))
-	if err != nil {
-		t.Fatalf("POST /api/mode: %v", err)
+	reqMode := httptest.NewRequest(http.MethodPost, "/api/mode", strings.NewReader(`{"mode":"cycle"}`))
+	recMode := httptest.NewRecorder()
+	srv.handleAPIMode(recMode, reqMode)
+
+	if recMode.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recMode.Code)
 	}
-	defer func() { _ = resp.Body.Close() }()
 	var modeResp struct {
 		Mode string `json:"mode"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&modeResp); err != nil {
+	if err := json.NewDecoder(recMode.Body).Decode(&modeResp); err != nil {
 		t.Fatalf("decode modeResp: %v", err)
 	}
 	if modeResp.Mode != "camera" {
