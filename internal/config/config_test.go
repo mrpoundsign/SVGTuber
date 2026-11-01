@@ -415,4 +415,59 @@ func TestConfigManager_UpdatePreservesAccessories(t *testing.T) {
 	}
 }
 
+func TestConfig_BlinkStabilizationDefaultsAndPersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.json")
+
+	mgr, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	got := mgr.Get()
+	if !got.Tracking.StabilizeBlink {
+		t.Errorf("Expected default StabilizeBlink=true, got false")
+	}
+	if got.Tracking.BlinkMaxHeadYaw != 25.0 {
+		t.Errorf("Expected default BlinkMaxHeadYaw=25.0, got %v", got.Tracking.BlinkMaxHeadYaw)
+	}
+
+	// Persist custom values including StabilizeBlink=false and reload
+	got.Tracking.StabilizeBlink = false
+	got.Tracking.BlinkMaxHeadYaw = 32.0
+	if err := mgr.Update(got); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	mgr2, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager reload failed: %v", err)
+	}
+	reloaded := mgr2.Get()
+	if reloaded.Tracking.StabilizeBlink {
+		t.Errorf("Expected persisted StabilizeBlink=false, got true")
+	}
+	if reloaded.Tracking.BlinkMaxHeadYaw != 32.0 {
+		t.Errorf("Expected persisted BlinkMaxHeadYaw=32.0, got %v", reloaded.Tracking.BlinkMaxHeadYaw)
+	}
+
+	// Legacy config missing both fields should default to StabilizeBlink=true, BlinkMaxHeadYaw=25.0
+	legacyPath := filepath.Join(tmpDir, "legacy.json")
+	if err := os.WriteFile(legacyPath, []byte(`{"tracking":{"yawMultiplier":1.5}}`), 0644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+	mgrLegacy, err := NewManager(legacyPath)
+	if err != nil {
+		t.Fatalf("NewManager legacy failed: %v", err)
+	}
+	leg := mgrLegacy.Get()
+	if !leg.Tracking.StabilizeBlink {
+		t.Errorf("Expected legacy fallback StabilizeBlink=true, got false")
+	}
+	if leg.Tracking.BlinkMaxHeadYaw != 25.0 {
+		t.Errorf("Expected legacy fallback BlinkMaxHeadYaw=25.0, got %v", leg.Tracking.BlinkMaxHeadYaw)
+	}
+}
+
+
 

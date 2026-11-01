@@ -704,3 +704,111 @@ func TestEngine_IndependentEyebrows(t *testing.T) {
 	}
 }
 
+func TestStabilizeBlink_HeadTurnOcclusion(t *testing.T) {
+	// 1. Head turned right (+30 deg > 25 deg): Left eye foreshortened (0.85), Right eye open (0.05) -> both mirror Right (0.05)
+	l, r := StabilizeBlink(0.85, 0.05, 30.0, false, 25.0)
+	if math.Abs(l-0.05) > 1e-6 || math.Abs(r-0.05) > 1e-6 {
+		t.Errorf("Expected both eyes to mirror unobstructed Right eye (0.05) on +30° yaw, got L=%v R=%v", l, r)
+	}
+
+	// 2. Head turned left (-30 deg < -25 deg): Right eye foreshortened (0.88), Left eye open (0.04) -> both mirror Left (0.04)
+	l2, r2 := StabilizeBlink(0.04, 0.88, -30.0, false, 25.0)
+	if math.Abs(l2-0.04) > 1e-6 || math.Abs(r2-0.04) > 1e-6 {
+		t.Errorf("Expected both eyes to mirror unobstructed Left eye (0.04) on -30° yaw, got L=%v R=%v", l2, r2)
+	}
+
+	// 3. Natural bilateral blink during head turn (+30 deg): unobstructed Right eye closes (0.90) -> both close (0.90)
+	l3, r3 := StabilizeBlink(0.95, 0.90, 30.0, false, 25.0)
+	if math.Abs(l3-0.90) > 1e-6 || math.Abs(r3-0.90) > 1e-6 {
+		t.Errorf("Expected both eyes to close (0.90) during head-turn blink, got L=%v R=%v", l3, r3)
+	}
+}
+
+func TestStabilizeBlink_FrontalWinkAndCoupling(t *testing.T) {
+	// 1. Intentional frontal wink (even with natural opposite-eye squint: blinkL=0.55, blinkR=0.15) -> preserved independently
+	l, r := StabilizeBlink(0.55, 0.15, 5.0, false, 25.0)
+	if math.Abs(l-0.55) > 1e-6 || math.Abs(r-0.15) > 1e-6 {
+		t.Errorf("Expected intentional frontal wink to be preserved (0.55, 0.15), got L=%v R=%v", l, r)
+	}
+
+	// 2. Resting open eyes with minor optical jitter (blinkL=0.22, blinkR=0.08, both < 0.35) -> coupled toward open eye
+	l2, r2 := StabilizeBlink(0.22, 0.08, 0.0, false, 25.0)
+	expectedCoupled := 0.08*0.95 + 0.22*0.05 // 0.087
+	if math.Abs(l2-expectedCoupled) > 1e-6 || math.Abs(r2-expectedCoupled) > 1e-6 {
+		t.Errorf("Expected resting open jitter to couple to %v, got L=%v R=%v", expectedCoupled, l2, r2)
+	}
+
+	// 3. Normal ARKit bilateral blink (blinkL=0.50, blinkR=0.62, both >= 0.40) -> coupled toward closed eye
+	l3, r3 := StabilizeBlink(0.50, 0.62, 0.0, false, 25.0)
+	expectedClosing := 0.50*0.05 + 0.62*0.95 // 0.614
+	if math.Abs(l3-expectedClosing) > 1e-6 || math.Abs(r3-expectedClosing) > 1e-6 {
+		t.Errorf("Expected bilateral closing eyes to couple to %v, got L=%v R=%v", expectedClosing, l3, r3)
+	}
+}
+
+func TestEngine_HeadTurnSuppressesFalseWink(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	eng := NewEngine(cfgMgr)
+
+	// Step 1: User turns head right (+30 deg > default 25 deg cutoff) for >100ms (past 50ms syncDelay).
+	// MediaPipe reports false closure on occluded Left eye (0.85) while Right eye is open (0.05).
+	_ = eng.Process(FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Yaw:       30.0,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.85,
+			"eyeBlinkRight": 0.05,
+		},
+	})
+	out := eng.Process(FaceFrame{
+		Timestamp: 1100,
+		Present:   true,
+		Yaw:       30.0,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.85,
+			"eyeBlinkRight": 0.05,
+		},
+	})
+	if out.IsBlinkL || out.IsBlinkR {
+		t.Errorf("Expected false wink to be suppressed during +30° head turn, got IsBlinkL=%v IsBlinkR=%v", out.IsBlinkL, out.IsBlinkR)
+	}
+	if !out.StabilizeBlink || out.BlinkMaxHeadYaw != 25.0 {
+		t.Errorf("Expected ParamFrame to expose StabilizeBlink=true and BlinkMaxHeadYaw=25.0, got %v / %v", out.StabilizeBlink, out.BlinkMaxHeadYaw)
+	}
+
+	// Step 2: Disable StabilizeBlink -> same head turn now allows unilateral wink through after syncDelay
+	s := cfgMgr.Get()
+	s.Tracking.StabilizeBlink = false
+	_ = cfgMgr.Update(s)
+
+	_ = eng.Process(FaceFrame{
+		Timestamp: 1200,
+		Present:   true,
+		Yaw:       30.0,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.85,
+			"eyeBlinkRight": 0.05,
+		},
+	})
+	outDisabled := eng.Process(FaceFrame{
+		Timestamp: 1300,
+		Present:   true,
+		Yaw:       30.0,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.85,
+			"eyeBlinkRight": 0.05,
+		},
+	})
+	if !outDisabled.IsBlinkL || outDisabled.IsBlinkR {
+		t.Errorf("Expected unilateral wink when StabilizeBlink=false, got IsBlinkL=%v IsBlinkR=%v", outDisabled.IsBlinkL, outDisabled.IsBlinkR)
+	}
+}
+
+

@@ -100,7 +100,7 @@
       <path id="Head_Visor_Screen" d="M240 214 L560 214 L428 412 L372 412 Z" fill="#090d16" stroke="#06b6d4" stroke-width="2" stroke-linejoin="round"/>
       <path id="Head_Visor_Glare" d="M252 220 L350 220 L315 310 L285 280 Z" fill="#1e293b" opacity="0.45"/>
       </g>
-      <g id="Eye_Open_Left_Group" data-name="Eye_Open_Left_Group [Hide {when: blinkL > 0.4}]" inkscape:label="Eye_Open_Left_Group [Hide {when: blinkL > 0.4}]">
+      <g id="Eye_Open_Left_Group" data-name="Eye_Open_Left_Group [Hide {when: isBlinkL}]" inkscape:label="Eye_Open_Left_Group [Hide {when: isBlinkL}]">
       <path id="Eye_Open_Left" d="M288 268 C288 250.327 304.565 236 325 236 C345.435 236 362 250.327 362 268 C362 285.673 345.435 300 325 300 C304.565 300 288 285.673 288 268 Z" fill="#0f172a" stroke="#0891b2" stroke-width="3" stroke-miterlimit="10"/>
       <g id="Pupil_Left_Group" data-name="Pupil_Left_Group [Move {x: eyeX; y: eyeY; range: 6}]" inkscape:label="Pupil_Left_Group [Move {x: eyeX; y: eyeY; range: 6}]">
       <path id="Pupil_Left" d="M304 268 C304 256.402 313.402 247 325 247 C336.598 247 346 256.402 346 268 C346 279.598 336.598 289 325 289 C313.402 289 304 279.598 304 268 Z" fill="#06b6d4" stroke="#67e8f9" stroke-width="2.5" stroke-miterlimit="10"/>
@@ -108,7 +108,7 @@
       <path id="Pupil_Left_Glint" d="M310 256 C310 253.791 311.791 252 314 252 C316.209 252 318 253.791 318 256 C318 258.209 316.209 260 314 260 C311.791 260 310 258.209 310 256 Z" fill="#ffffff"/>
       </g>
       </g>
-      <g id="Eye_Open_Right_Group" data-name="Eye_Open_Right_Group [Hide {when: blinkR > 0.4}]" inkscape:label="Eye_Open_Right_Group [Hide {when: blinkR > 0.4}]">
+      <g id="Eye_Open_Right_Group" data-name="Eye_Open_Right_Group [Hide {when: isBlinkR}]" inkscape:label="Eye_Open_Right_Group [Hide {when: isBlinkR}]">
       <path id="Eye_Open_Right" d="M438 268 C438 250.327 454.565 236 475 236 C495.435 236 512 250.327 512 268 C512 285.673 495.435 300 475 300 C454.565 300 438 285.673 438 268 Z" fill="#0f172a" stroke="#0891b2" stroke-width="3" stroke-miterlimit="10"/>
       <g id="Pupil_Right_Group" data-name="Pupil_Right_Group [Move {x: eyeX; y: eyeY; range: 6}]" inkscape:label="Pupil_Right_Group [Move {x: eyeX; y: eyeY; range: 6}]">
       <path id="Pupil_Right" d="M454 268 C454 256.402 463.402 247 475 247 C486.598 247 496 256.402 496 268 C496 279.598 486.598 289 475 289 C463.402 289 454 279.598 454 268 Z" fill="#06b6d4" stroke="#67e8f9" stroke-width="2.5" stroke-miterlimit="10"/>
@@ -116,10 +116,10 @@
       <path id="Pupil_Right_Glint" d="M460 256 C460 253.791 461.791 252 464 252 C466.209 252 468 253.791 468 256 C468 258.209 466.209 260 464 260 C461.791 260 460 258.209 460 256 Z" fill="#ffffff"/>
       </g>
       </g>
-      <g id="Eye_Closed_Left_Group" data-name="Eye_Closed_Left_Group [Show {when: blinkL > 0.4}]" inkscape:label="Eye_Closed_Left_Group [Show {when: blinkL > 0.4}]">
+      <g id="Eye_Closed_Left_Group" data-name="Eye_Closed_Left_Group [Show {when: isBlinkL}]" inkscape:label="Eye_Closed_Left_Group [Show {when: isBlinkL}]" style="display: none;">
       <path id="Eye_Closed_Left" d="M290 268 L325 276 L360 268" fill="none" stroke="#22d3ee" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
-      <g id="Eye_Closed_Right_Group" data-name="Eye_Closed_Right_Group [Show {when: blinkR > 0.4}]" inkscape:label="Eye_Closed_Right_Group [Show {when: blinkR > 0.4}]">
+      <g id="Eye_Closed_Right_Group" data-name="Eye_Closed_Right_Group [Show {when: isBlinkR}]" inkscape:label="Eye_Closed_Right_Group [Show {when: isBlinkR}]" style="display: none;">
       <path id="Eye_Closed_Right" d="M440 268 L475 276 L510 268" fill="none" stroke="#22d3ee" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
       <g id="Brow_Left_Group" data-name="Brow_Left_Group [Move {y: browL; rangeY: -8}] [Rotate {param: browL; range: -6; pivot: center}]" inkscape:label="Brow_Left_Group [Move {y: browL; rangeY: -8}] [Rotate {param: browL; range: -6; pivot: center}]">

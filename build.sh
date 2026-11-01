@@ -23,8 +23,11 @@ bundle_frontend() {
 }
 
 bundle_accessories() {
-  echo "==> Bundling default accessories into build/accessories..."
+  echo "==> Bundling default avatars & accessories into build/..."
   mkdir -p build/accessories
+  for av in cow_avatar.svg robot_avatar.svg triangle_robot_avatar.svg; do
+    [ -f "testdata/$av" ] && cp -f "testdata/$av" "build/$av"
+  done
   if [ -d "testdata/accessories" ]; then
     cp -u testdata/accessories/*.svg build/accessories/ 2>/dev/null || cp testdata/accessories/*.svg build/accessories/
   fi
@@ -49,15 +52,15 @@ build_binary_windows() {
     CC=x86_64-w64-mingw32-gcc GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \
       go build -trimpath -ldflags "-H windowsgui -s -w -X main.version=${VERSION} -X main.commit=${commit_hash} -X main.date=${build_date} -extldflags '-static-libgcc'" \
       -o build/svgtuber.exe ./cmd/svgtuber
-  elif [ "$(go env GOOS)" = "windows" ] && command -v gcc &>/dev/null; then
-    echo "==> Building svgtuber.exe (Windows amd64, Fyne Mini UI CGO_ENABLED=1 + native gcc)..."
+  elif [ "$(go env GOOS)" = "windows" ]; then
+    echo "==> Building svgtuber.exe (Windows amd64, Fyne Mini UI CGO_ENABLED=1)..."
     GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \
-      go build -trimpath -ldflags "-H windowsgui -s -w -X main.version=${VERSION} -X main.commit=${commit_hash} -X main.date=${build_date}" \
+      go build -trimpath -ldflags "-H windowsgui -s -w -X main.version=${VERSION} -X main.commit=${commit_hash} -X main.date=${build_date} -extldflags '-Wl,--subsystem,windows'" \
       -o build/svgtuber.exe ./cmd/svgtuber
   else
     echo "==> Building svgtuber.exe (Windows amd64, CGO_ENABLED=0 fallback)..."
     GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-      go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${commit_hash} -X main.date=${build_date}" \
+      go build -trimpath -ldflags "-H windowsgui -s -w -X main.version=${VERSION} -X main.commit=${commit_hash} -X main.date=${build_date}" \
       -o build/svgtuber.exe ./cmd/svgtuber
   fi
   echo "==> Successfully built build/svgtuber.exe"
@@ -83,6 +86,9 @@ build_installer_windows() {
   mkdir -p "$payload_dir/accessories" "$payload_dir/docs"
   cp -f build/svgtuber.exe "$payload_dir/svgtuber.exe"
   [ -f "testdata/test_avatar.svg" ] && cp -f testdata/test_avatar.svg "$payload_dir/avatar.svg"
+  for av in cow_avatar.svg robot_avatar.svg triangle_robot_avatar.svg; do
+    [ -f "testdata/$av" ] && cp -f "testdata/$av" "$payload_dir/$av"
+  done
   if [ -d "testdata/accessories" ]; then
     cp -f testdata/accessories/*.svg "$payload_dir/accessories/"
   fi

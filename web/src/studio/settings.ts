@@ -12,6 +12,8 @@ export interface TrackingConfig {
   blinkThresholdR: number;
   blinkSyncDelayMs: number;
   winkIsBlink: boolean;
+  stabilizeBlink?: boolean;
+  blinkMaxHeadYaw?: number;
   autoBlink: boolean;
   autoBlinkMode: string;
   autoBlinkIntervalSec: number;
@@ -62,6 +64,8 @@ export function createDefaultSettings(): SettingsPayload {
       blinkThresholdR: 0.45,
       blinkSyncDelayMs: 50,
       winkIsBlink: false,
+      stabilizeBlink: true,
+      blinkMaxHeadYaw: 25,
       autoBlink: true,
       autoBlinkMode: "always",
       autoBlinkIntervalSec: 4.0,

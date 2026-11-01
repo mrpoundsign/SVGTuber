@@ -410,7 +410,10 @@ var sliderMouthGain = document.getElementById("slider-mouth-gain");
 var sliderMouthThreshold = document.getElementById("slider-mouth-threshold");
 var checkboxEnableSmile = document.getElementById("check-enable-smile");
 var sliderSmileThreshold = document.getElementById("slider-smile-threshold");
-var checkboxWinkIsBlink = document.getElementById("check-wink-is-blink");
+var checkboxWinkIsBlink = document.getElementById("checkbox-wink-is-blink") || document.getElementById("check-wink-is-blink");
+var checkboxStabilizeBlink = document.getElementById("checkbox-stabilize-blink");
+var sliderBlinkMaxYaw = document.getElementById("slider-blink-max-yaw");
+var valBlinkMaxYaw = document.getElementById("val-blink-max-yaw");
 var checkboxAutoBlink = document.getElementById("check-auto-blink");
 var selectAutoBlinkMode = document.getElementById("select-auto-blink-mode");
 var sliderAutoBlinkInterval = document.getElementById("slider-auto-blink-interval");
@@ -1563,6 +1566,9 @@ function syncSettingsToUI(s) {
     if (checkboxEnableSmile) checkboxEnableSmile.checked = t.enableSmile !== false;
     if (sliderSmileThreshold) sliderSmileThreshold.value = String(t.smileThreshold || 0.5);
     if (checkboxWinkIsBlink) checkboxWinkIsBlink.checked = Boolean(t.winkIsBlink);
+    if (checkboxStabilizeBlink) checkboxStabilizeBlink.checked = t.stabilizeBlink !== false;
+    if (sliderBlinkMaxYaw)
+      sliderBlinkMaxYaw.value = String(t.blinkMaxHeadYaw !== void 0 && t.blinkMaxHeadYaw > 0 ? t.blinkMaxHeadYaw : 25);
     if (checkboxAutoBlink) checkboxAutoBlink.checked = t.autoBlink !== false;
     if (selectAutoBlinkMode) selectAutoBlinkMode.value = t.autoBlinkMode || "always";
     if (sliderAutoBlinkInterval) sliderAutoBlinkInterval.value = String(t.autoBlinkIntervalSec || 4);
@@ -1612,6 +1618,8 @@ function updateSliderLabels() {
     valBlinkThresholdR.textContent = parseFloat(sliderBlinkThresholdR.value).toFixed(2);
   if (valBlinkSyncDelay && sliderBlinkSyncDelay)
     valBlinkSyncDelay.textContent = `${sliderBlinkSyncDelay.value}ms`;
+  if (valBlinkMaxYaw && sliderBlinkMaxYaw)
+    valBlinkMaxYaw.textContent = `${Math.round(parseFloat(sliderBlinkMaxYaw.value))}\xB0`;
   if (valAutoBlinkInterval && sliderAutoBlinkInterval)
     valAutoBlinkInterval.textContent = `${parseFloat(sliderAutoBlinkInterval.value).toFixed(1)}s`;
   if (valAutoGazeRange && sliderAutoGazeRange)
@@ -1669,6 +1677,8 @@ function collectSettingsFromUI() {
       blinkThresholdR: parseFloat(sliderBlinkThresholdR?.value || "0.45"),
       blinkSyncDelayMs: parseFloat(sliderBlinkSyncDelay?.value || "50"),
       winkIsBlink: checkboxWinkIsBlink ? checkboxWinkIsBlink.checked : false,
+      stabilizeBlink: checkboxStabilizeBlink ? checkboxStabilizeBlink.checked : true,
+      blinkMaxHeadYaw: parseFloat(sliderBlinkMaxYaw?.value || "25"),
       autoBlink: checkboxAutoBlink ? checkboxAutoBlink.checked : true,
       autoBlinkMode: selectAutoBlinkMode ? selectAutoBlinkMode.value : "always",
       autoBlinkIntervalSec: parseFloat(sliderAutoBlinkInterval?.value || "4.0"),
@@ -1714,6 +1724,7 @@ function onSliderInput() {
   sliderBlinkThresholdL,
   sliderBlinkThresholdR,
   sliderBlinkSyncDelay,
+  sliderBlinkMaxYaw,
   sliderAutoBlinkInterval,
   sliderAutoGazeRange,
   sliderAutoTiltAmount,
@@ -1740,6 +1751,7 @@ if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChan
 [
   checkboxEnableSmile,
   checkboxWinkIsBlink,
+  checkboxStabilizeBlink,
   checkboxAutoBlink,
   checkboxAutoGaze,
   checkboxAutoTilt,

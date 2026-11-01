@@ -20,6 +20,8 @@ type TrackingSettings struct {
 	BlinkThresholdR  float64 `json:"blinkThresholdR"`  // Right eye closed trigger threshold (default: 0.45)
 	BlinkSyncDelayMs float64 `json:"blinkSyncDelayMs"` // Window to synchronize bilateral blinks in ms (default: 50.0)
 	WinkIsBlink      bool    `json:"winkIsBlink"`      // When true, closing either eye closes both eyes (default: false)
+	StabilizeBlink   bool    `json:"stabilizeBlink"`   // Stabilize blinks and suppress head-turn foreshortening winks (default: true)
+	BlinkMaxHeadYaw  float64 `json:"blinkMaxHeadYaw"`  // Head yaw cutoff in degrees beyond which far-side eye mirrors camera-side eye (default: 25.0)
 	SmileThreshold   float64 `json:"smileThreshold"`   // Smile trigger threshold (default: 0.50)
 	EnableSmile          bool    `json:"enableSmile"`          // Enable smile expression tracking (default: true)
 	EyeGazeGain          float64 `json:"eyeGazeGain"`          // Multiplier on pupil gaze range (default: 1.0)
@@ -96,6 +98,8 @@ func DefaultSettings() Settings {
 			BlinkThresholdR:  0.45,
 			BlinkSyncDelayMs: 50.0,
 			WinkIsBlink:      false,
+			StabilizeBlink:   true,
+			BlinkMaxHeadYaw:  25.0,
 			SmileThreshold:       0.50,
 			EnableSmile:          true,
 			EyeGazeGain:          1.0,
@@ -664,6 +668,12 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.PhysicsAmount <= 0 && !strings.Contains(string(data), "physicsAmount") {
 		s.Tracking.PhysicsAmount = 1.0
+	}
+	if !strings.Contains(string(data), "stabilizeBlink") {
+		s.Tracking.StabilizeBlink = true
+	}
+	if s.Tracking.BlinkMaxHeadYaw <= 0 {
+		s.Tracking.BlinkMaxHeadYaw = 25.0
 	}
 
 	m.mu.Lock()

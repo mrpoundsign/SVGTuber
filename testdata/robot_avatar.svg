@@ -134,7 +134,7 @@
       <g id="Forelock_Group" data-name="Forelock_Group [Sway {pivot: top; range: 8; stiffness: 0.25; damping: 0.85}]" inkscape:label="Forelock_Group [Sway {pivot: top; range: 8; stiffness: 0.25; damping: 0.85}]">
       <path id="Forelock_Beacon" d="M364 176 C368 152 432 152 436 176 Z" fill="#38bdf8" stroke="#0f172a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
-      <g id="Eye_Open_Left_Group" data-name="Eye_Open_Left_Group [Hide {when: blinkL > 0.4}]" inkscape:label="Eye_Open_Left_Group [Hide {when: blinkL > 0.4}]">
+      <g id="Eye_Open_Left_Group" data-name="Eye_Open_Left_Group [Hide {when: isBlinkL}]" inkscape:label="Eye_Open_Left_Group [Hide {when: isBlinkL}]">
       <path id="Eye_Open_Left" d="M284 286 C284 265 301 248 322 248 C343 248 360 265 360 286 C360 307 343 324 322 324 C301 324 284 307 284 286 Z" fill="#082f49" stroke="#0284c7" stroke-width="2.8" stroke-miterlimit="10"/>
       <g id="Pupil_Left_Group" data-name="Pupil_Left_Group [Move {x: eyeX; y: eyeY; range: 6}]" inkscape:label="Pupil_Left_Group [Move {x: eyeX; y: eyeY; range: 6}]">
       <path id="Pupil_Left" d="M298 286 C298 272.7 308.7 262 322 262 C335.3 262 346 272.7 346 286 C346 299.3 335.3 310 322 310 C308.7 310 298 299.3 298 286 Z" fill="#0ea5e9" stroke="#7dd3fc" stroke-width="2.2" stroke-miterlimit="10"/>
@@ -142,7 +142,7 @@
       <path id="Pupil_Left_Glint1" d="M308 274 C308 271.2 310.2 269 313 269 C315.8 269 318 271.2 318 274 C318 276.8 315.8 279 313 279 C310.2 279 308 276.8 308 274 Z" fill="#ffffff"/>
       </g>
       </g>
-      <g id="Eye_Open_Right_Group" data-name="Eye_Open_Right_Group [Hide {when: blinkR > 0.4}]" inkscape:label="Eye_Open_Right_Group [Hide {when: blinkR > 0.4}]">
+      <g id="Eye_Open_Right_Group" data-name="Eye_Open_Right_Group [Hide {when: isBlinkR}]" inkscape:label="Eye_Open_Right_Group [Hide {when: isBlinkR}]">
       <path id="Eye_Open_Right" d="M440 286 C440 265 457 248 478 248 C499 248 516 265 516 286 C516 307 499 324 478 324 C457 324 440 307 440 286 Z" fill="#082f49" stroke="#0284c7" stroke-width="2.8" stroke-miterlimit="10"/>
       <g id="Pupil_Right_Group" data-name="Pupil_Right_Group [Move {x: eyeX; y: eyeY; range: 6}]" inkscape:label="Pupil_Right_Group [Move {x: eyeX; y: eyeY; range: 6}]">
       <path id="Pupil_Right" d="M454 286 C454 272.7 464.7 262 478 262 C491.3 262 502 272.7 502 286 C502 299.3 491.3 310 478 310 C464.7 310 454 299.3 454 286 Z" fill="#0ea5e9" stroke="#7dd3fc" stroke-width="2.2" stroke-miterlimit="10"/>
@@ -150,10 +150,10 @@
       <path id="Pupil_Right_Glint1" d="M464 274 C464 271.2 466.2 269 469 269 C471.8 269 474 271.2 474 274 C474 276.8 471.8 279 469 279 C466.2 279 464 276.8 464 274 Z" fill="#ffffff"/>
       </g>
       </g>
-      <g id="Eye_Closed_Left_Group" data-name="Eye_Closed_Left_Group [Show {when: blinkL > 0.4}]" inkscape:label="Eye_Closed_Left_Group [Show {when: blinkL > 0.4}]">
+      <g id="Eye_Closed_Left_Group" data-name="Eye_Closed_Left_Group [Show {when: isBlinkL}]" inkscape:label="Eye_Closed_Left_Group [Show {when: isBlinkL}]" style="display: none;">
       <path id="Eye_Closed_Left" d="M284 282 L360 282 L360 290 L284 290 Z" fill="#38bdf8" stroke="#e0f2fe" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
-      <g id="Eye_Closed_Right_Group" data-name="Eye_Closed_Right_Group [Show {when: blinkR > 0.4}]" inkscape:label="Eye_Closed_Right_Group [Show {when: blinkR > 0.4}]">
+      <g id="Eye_Closed_Right_Group" data-name="Eye_Closed_Right_Group [Show {when: isBlinkR}]" inkscape:label="Eye_Closed_Right_Group [Show {when: isBlinkR}]" style="display: none;">
       <path id="Eye_Closed_Right" d="M440 282 L516 282 L516 290 L440 290 Z" fill="#38bdf8" stroke="#e0f2fe" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
       <g id="Brow_Left_Group" data-name="Brow_Left_Group [Move {y: browL; rangeY: -8}] [Rotate {param: browL; range: -6; pivot: center}]" inkscape:label="Brow_Left_Group [Move {y: browL; rangeY: -8}] [Rotate {param: browL; range: -6; pivot: center}]">

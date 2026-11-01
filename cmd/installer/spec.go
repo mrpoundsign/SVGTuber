@@ -142,11 +142,17 @@ func copyStarterWorkspace(installDir, wsDir string) error {
 		return fmt.Errorf("create starter workspace dir: %w", err)
 	}
 
-	avatarSrc := filepath.Join(installDir, "avatar.svg")
-	avatarDst := filepath.Join(wsDir, "avatar.svg")
-	if _, err := os.Stat(avatarSrc); err == nil {
-		if err := copyFileIfMissing(avatarSrc, avatarDst); err != nil {
-			return fmt.Errorf("copy starter avatar.svg: %w", err)
+	topEntries, err := os.ReadDir(installDir)
+	if err == nil {
+		for _, entry := range topEntries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".svg") {
+				continue
+			}
+			src := filepath.Join(installDir, entry.Name())
+			dst := filepath.Join(wsDir, entry.Name())
+			if err := copyFileIfMissing(src, dst); err != nil {
+				return fmt.Errorf("copy starter avatar %s: %w", entry.Name(), err)
+			}
 		}
 	}
 

@@ -27,6 +27,8 @@ export interface ParamFrame {
   blinkThresholdR?: number;
   blinkSyncDelayMs?: number;
   winkIsBlink?: boolean;
+  stabilizeBlink?: boolean;
+  blinkMaxHeadYaw?: number;
   smileThreshold?: number;
   audioVolume?: number;
   bounceAmount?: number;
@@ -103,6 +105,8 @@ export interface TrackingSettings {
   blinkThresholdR: number;
   blinkSyncDelayMs: number;
   winkIsBlink: boolean;
+  stabilizeBlink?: boolean;
+  blinkMaxHeadYaw?: number;
   enableSmile: boolean;
   smileThreshold: number;
   yawMultiplier: number;

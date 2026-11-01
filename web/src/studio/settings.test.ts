@@ -12,6 +12,8 @@ describe("Settings Management", () => {
     const defaults = createDefaultSettings();
     assert.equal(defaults.version, 1);
     assert.equal(defaults.tracking.mouthGain, 1.4);
+    assert.equal(defaults.tracking.stabilizeBlink, true);
+    assert.equal(defaults.tracking.blinkMaxHeadYaw, 25);
     assert.equal(defaults.tracking.autoBlink, true);
     assert.equal(defaults.tracking.autoBlinkMode, "always");
     assert.equal(defaults.audio.mode, "hybrid");
