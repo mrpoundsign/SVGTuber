@@ -367,7 +367,7 @@ func defaultAvatarCandidates() []string {
 func currentNormalizedVersion() string {
 	curVer := version
 	if curVer == "" || curVer == "dev" {
-		return "0.0.7"
+		return "0.0.8"
 	}
 	return updater.NormalizeVersion(curVer)
 }

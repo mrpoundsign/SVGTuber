@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TARGET="${1:-all}"
-VERSION="${VERSION:-0.0.7}"
+VERSION="${VERSION:-0.0.8}"
 VERSION="${VERSION#v}"
 
 for dir in "$HOME/go/bin" "/usr/local/go/bin" "$HOME/.asdf/shims" "$HOME/.asdf/bin" "/home/linuxbrew/.linuxbrew/bin" "/home/linuxbrew/.linuxbrew/sbin"; do

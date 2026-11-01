@@ -46,8 +46,8 @@ func TestDefaultAvatarCandidatesAndVersion(t *testing.T) {
 	t.Cleanup(func() { version = origVer })
 
 	version = "dev"
-	if got := currentNormalizedVersion(); got != "0.0.7" {
-		t.Errorf("currentNormalizedVersion() for dev = %q, want 0.0.7", got)
+	if got := currentNormalizedVersion(); got != "0.0.8" {
+		t.Errorf("currentNormalizedVersion() for dev = %q, want 0.0.8", got)
 	}
 
 	version = "v0.0.9"

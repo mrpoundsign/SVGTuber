@@ -185,7 +185,7 @@ function computeSessionBannerState(isActive, connectedTabs) {
 // web/src/studio/updater.ts
 function normalizeVersionTag(ver) {
   const clean = (ver || "").trim();
-  if (!clean) return "v0.0.7";
+  if (!clean) return "v0.0.8";
   return clean.startsWith("v") || clean.startsWith("V") ? `v${clean.slice(1)}` : `v${clean}`;
 }
 function formatUpdateBadgeText(latestVersion) {
