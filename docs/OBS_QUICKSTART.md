@@ -70,25 +70,41 @@ SVGTuber supports three operation modes configured in the Studio dashboard (`htt
   - **Auto-Gaze**: Subtle micro-dart saccades preventing a static stare.
   - **Auto-Tilt**: Gentle breathing posture sway and occasional natural head tilts.
 
-### 3. Noise Gate & Mic Tuning
-In the Studio **Audio Calibration & Lip-Sync** card:
-- **Mic Gain**: Multiplier for quiet microphones.
-- **Noise Gate**: Adjust the yellow gate marker on the live VU meter just above background room noise and mechanical keyboard clicks so keystrokes don't trigger talking mouth states.
-- **Voice Bounce**: Adjust the bounce height multiplier (`0.0x` = stationary, `1.0x` = standard, `2.0x` = high energy).
+### 3. Noise Gate, Lip-Sync & Blink Stabilization
+In the Studio **🎛️ Calibration & Life** workspace:
+- **👄 Mouth & Audio Tab**:
+  - **Mic Gain**: Multiplier for quiet microphones.
+  - **Noise Gate**: Adjust the yellow gate marker on the live VU meter just above background room noise and mechanical keyboard clicks so keystrokes don't trigger talking mouth states.
+  - **Voice Bounce**: Adjust the bounce height multiplier (`0.0x` = stationary, `1.0x` = standard, `2.0x` = high energy).
+- **👀 Eyes & Head Tab**:
+  - **Left / Right Blink Threshold & Sync Delay**: Tune bilateral blinks and intentional winks independently.
+  - **Blink Stabilizer (`Prevent Head-Turn Wink`)**: Prevents accidental one-eye winks caused by 3D camera foreshortening when turning your head beyond the **Head-Turn Wink Cutoff** (`10°`–`45°`, default `25°`).
+- **✨ Idle Life & Physics Tab**:
+  - Tune **Auto-Blink**, **Auto-Gaze**, **Auto-Tilt**, and **Spring Physics** multipliers.
+
+### 4. Streamer Mode Privacy Shield (`🛡️ Streamer Mode`)
+Toggle **🛡️ Streamer Mode** in either the **Desktop Control Window** or the **Web Studio** header before sharing your screen on stream:
+- Hides your raw webcam video while keeping the 478-point face landmark mesh visible.
+- Redacts your OBS Overlay URL, server port, and local OS file paths across both the desktop app and Web Studio.
 
 ---
 
 ## 🎮 Stream Deck & Hotkeys
 
 - **In-Studio Hotkeys**: While the Studio browser tab is open, press number keys **`1` through `9`** to toggle expressions (e.g. blush, sweat, tears).
-- **Elgato Stream Deck / Touch Portal**:
-  1. In the Studio **Expressions & Hotkeys** card, click the 📋 **Copy URL** icon next to any expression.
-  2. In the Stream Deck software, add an **HTTP Request** or **Website** button.
-  3. Set the method to `POST` and paste the URL:
-     ```text
-     POST http://localhost:7420/api/expressions/toggle?name=blush
-     ```
-  4. See the [Stream Deck API Reference](../README.md#stream-deck--touch-portal-integration) for additional actions like outfit swapping and instant calibration.
+- **Native Elgato Stream Deck Plugin (`com.github.mrpoundsign.svgtuber.sdPlugin`)**:
+  1. In the **SVGTuber Desktop Control Window** (or during the `SVGTuber-Setup.exe` wizard), click **Install Elgato Stream Deck Plugin** (automatically detects installed versions and offers **Install**, **Update**, or **Reinstall**).
+  2. Open the Elgato Stream Deck app and drag any of the 4 **SVGTuber** hardware actions onto your keys:
+     - **Toggle Expression** (with live LED active state feedback)
+     - **Trigger Timed Expression**
+     - **Switch Avatar**
+     - **Recalibrate Pose**
+- **Touch Portal / Custom HTTP Webhooks**:
+  - You can also trigger expressions or actions from any macro tool via HTTP `POST`:
+    ```text
+    POST http://localhost:7420/api/expressions/toggle?name=blush
+    ```
+  - See the [Stream Deck & Touch Portal API Reference](../README.md#elgato-stream-deck--touch-portal-integration) for additional endpoints like outfit swapping and instant pose calibration.
 
 ---
 

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVGTuber — Real-Time Vector VTuber Engine for Inkscape &amp; OBS Studio</title>
+  <meta name="description" content="Turn any Inkscape, Vectorcraft, or Illustrator SVG drawing into an expressive, 60 FPS GPU-accelerated 2D VTuber for OBS Studio with webcam tracking, audio lip-sync, spring physics, and AI auto-rigging.">
+  <style>
+    :root {
+      --bg-color: #0F172A;
+      --card-bg: #1E293B;
+      --border-color: #334155;
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --accent: #38BDF8;
+      --accent-hover: #0284C7;
+      --accent-green: #22C55E;
+      --code-bg: #0B1120;
+      --badge-bg: rgba(56, 189, 248, 0.12);
+      --badge-text: #38BDF8;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      padding: 2rem 1.5rem 5rem;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      margin-bottom: 1.75rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 1.1rem;
+    }
+    .brand-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #1E293B 0%, #0B1120 100%);
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+      flex-shrink: 0;
+    }
+    header h1 {
+      font-size: 2.1rem;
+      font-weight: 700;
+      color: var(--text-main);
+      letter-spacing: -0.02em;
+    }
+    header p {
+      color: var(--accent);
+      font-size: 0.95rem;
+      font-weight: 500;
+      margin-bottom: 0;
+    }
+    .version-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: rgba(34, 197, 94, 0.14);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      color: #4ADE80;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.35rem 0.8rem;
+      border-radius: 9999px;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.1rem;
+      margin-bottom: 2rem;
+      padding: 0.75rem 1.25rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+    nav a {
+      color: var(--text-main);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.94rem;
+      transition: color 0.15s ease;
+    }
+    nav a:hover {
+      color: var(--accent);
+    }
+    .hero {
+      background: linear-gradient(180deg, #1E293B 0%, #152033 100%);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 2.25rem 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    }
+    .hero h2 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+    }
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      margin-bottom: 1.25rem;
+      line-height: 1.65;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.75rem 2rem;
+      margin-bottom: 1.75rem;
+    }
+    h2 {
+      color: var(--text-main);
+      font-size: 1.4rem;
+      margin-bottom: 0.75rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    h3 {
+      color: var(--text-main);
+      font-size: 1.15rem;
+      margin-top: 1.25rem;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+    p {
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+    p:last-child {
+      margin-bottom: 0;
+    }
+    ul {
+      list-style-type: none;
+      padding-left: 0;
+      margin-bottom: 1rem;
+    }
+    li {
+      color: var(--text-muted);
+      position: relative;
+      padding-left: 1.5rem;
+      margin-bottom: 0.6rem;
+    }
+    li::before {
+      content: "•";
+      color: var(--accent);
+      position: absolute;
+      left: 0.5rem;
+      font-weight: bold;
+    }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .btn-group {
+      display: flex;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+      margin-top: 1.35rem;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--accent);
+      color: #0F172A;
+      font-weight: 600;
+      padding: 0.72rem 1.35rem;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+    .btn:hover {
+      background: var(--accent-hover);
+      text-decoration: none;
+      color: #0F172A;
+    }
+    .btn-secondary {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      border-color: var(--accent);
+      color: var(--accent);
+      text-decoration: none;
+    }
+    .media-card {
+      margin: 1.25rem 0;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+      background: var(--code-bg);
+    }
+    .media-card img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .badge {
+      display: inline-block;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.2rem 0.65rem;
+      border-radius: 9999px;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    code, kbd {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      padding: 0.15rem 0.45rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.86em;
+      color: var(--accent);
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 0.75rem 0 1rem;
+    }
+    pre code {
+      border: none;
+      padding: 0;
+      color: #E2E8F0;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.15rem;
+      margin-top: 1rem;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.1rem;
+      margin-top: 1rem;
+    }
+    @media (max-width: 760px) {
+      .grid-2, .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+    .grid-item {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1.2rem;
+    }
+    .grid-item h4 {
+      color: var(--text-main);
+      font-size: 1.02rem;
+      margin-bottom: 0.4rem;
+    }
+    .grid-item p {
+      font-size: 0.92rem;
+      margin-bottom: 0;
+    }
+    footer {
+      margin-top: 3.5rem;
+      padding-top: 1.75rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    footer nav {
+      background: transparent;
+      border: none;
+      padding: 0;
+      margin: 0;
+      gap: 1.25rem;
+    }
+    footer nav a {
+      color: var(--text-muted);
+    }
+    footer nav a:hover {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="40" height="40" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="10" width="48" height="44" rx="12" fill="#0F172A" stroke="#38BDF8" stroke-width="3"/>
+            <circle cx="23" cy="28" r="4.5" fill="#38BDF8"/>
+            <circle cx="41" cy="28" r="4.5" fill="#38BDF8"/>
+            <path d="M22 41C25 45 39 45 42 41" stroke="#4ADE80" stroke-width="3.5" stroke-linecap="round"/>
+            <path d="M32 2V10" stroke="#38BDF8" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="32" cy="3" r="2.5" fill="#4ADE80"/>
+          </svg>
+        </div>
+        <div>
+          <h1>SVGTuber</h1>
+          <p>Real-Time Vector VTuber Engine for Inkscape &amp; OBS Studio</p>
+        </div>
+      </div>
+      <span class="version-pill">&#9679; Latest Release: v0.0.8</span>
+    </header>
+
+    <nav aria-label="Main Navigation">
+      <a href="#download"><strong>Download</strong></a>
+      <a href="#studio">3-Mode Web Studio</a>
+      <a href="#desktop">Desktop Monitor</a>
+      <a href="#rigging">Rigging &amp; AI MCP</a>
+      <a href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/OBS_QUICKSTART.md" target="_blank" rel="noopener noreferrer">OBS Quickstart</a>
+      <a href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/RIGGING_GUIDE.md" target="_blank" rel="noopener noreferrer">Rigging Guide</a>
+      <a href="https://github.com/mrpoundsign/SVGTuber" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </nav>
+
+    <main>
+      <!-- Hero -->
+      <section class="hero" id="download">
+        <h2>Turn Any SVG Drawing Into a Live 60 FPS VTuber</h2>
+        <p>
+          <strong>SVGTuber</strong> animates layered vector artwork from <strong>Inkscape</strong>, <strong>Vectorcraft</strong>, or <strong>Adobe Illustrator</strong> directly inside an OBS Studio Browser Source at native 4K/8K vector resolution—with webcam face tracking, microphone lip-sync, spring hair physics, modular accessories, and zero 3D engine overhead.
+        </p>
+        <p>
+          Edit your SVG character in Inkscape and hit <kbd>Ctrl</kbd>+<kbd>S</kbd>—your live OBS stream updates in milliseconds without dropping a frame.
+        </p>
+        <div class="btn-group">
+          <a class="btn" href="https://github.com/mrpoundsign/SVGTuber/releases/latest/download/SVGTuber-v0.0.8-windows-amd64-setup.exe">
+            &#11015; Download Windows Setup (v0.0.8)
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/mrpoundsign/SVGTuber/releases/latest" target="_blank" rel="noopener noreferrer">
+            All Releases (Windows ZIP &amp; Linux)
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/mrpoundsign/SVGTuber" target="_blank" rel="noopener noreferrer">
+            View on GitHub
+          </a>
+        </div>
+      </section>
+
+      <div class="media-card">
+        <img src="images/studio_dashboard.png"
+             alt="SVGTuber Web Studio Dashboard with Live Face Mesh and Avatar Preview"
+             fetchpriority="high"
+             width="1280" height="720">
+      </div>
+
+      <!-- Desktop Control Window & Installer -->
+      <section class="card" id="desktop">
+        <span class="badge">Desktop App &amp; Setup Wizard</span>
+        <h2>Native Desktop Companion &amp; Guided Windows Installer</h2>
+        <p>
+          Install in seconds with <code>SVGTuber-Setup.exe</code> or run portably from any folder. Launching <code>svgtuber</code> opens a compact desktop control window with no background console clutter:
+        </p>
+        <div class="grid-2">
+          <div class="grid-item">
+            <h4>&#128994; Live Studio &amp; Overlay Counters</h4>
+            <p>See the exact number of connected Web Studio tabs (<code>Connected Studios</code>) and external OBS Browser Sources (<code>Connected Overlays</code>) in real time.</p>
+          </div>
+          <div class="grid-item">
+            <h4>&#128737;&#65039; Streamer Mode Privacy Shield</h4>
+            <p>One-click toggle synchronized between the Desktop Window and Web Studio—hides raw webcam video (keeping the 478-point mesh visible) and redacts URLs, ports, and local file paths on stream.</p>
+          </div>
+          <div class="grid-item">
+            <h4>&#127918; Native Elgato Stream Deck Plugin</h4>
+            <p>Detects your installed plugin version and offers 1-click <strong>Install / Update / Reinstall</strong> for hardware expression toggles, outfit swaps, and pose recalibration.</p>
+          </div>
+          <div class="grid-item">
+            <h4>&#11014;&#65039; SHA-256 Verified Self-Updater</h4>
+            <p>Check GitHub Releases and apply verified updates directly from the Desktop Window, the Web Studio header badge, or the CLI (<code>svgtuber -update</code>).</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3-Mode Web Studio -->
+      <section class="card" id="studio">
+        <span class="badge">Web Studio</span>
+        <h2>Three Zero-Scroll Workspaces &amp; Camera Face Auto-Zoom</h2>
+        <p>
+          Open <code>http://localhost:7420/studio</code> to control your avatar across three focused workspaces designed so your live avatar preview is always visible:
+        </p>
+        <div class="grid-3">
+          <div class="grid-item">
+            <h4>&#127909; Live Stage (Stream)</h4>
+            <p>Side-by-side Face Tracker (with <strong>&#128269; Auto-Zoom: ON/OFF</strong> face centering) and Live Avatar Stage above a full-width Expressions (<kbd>1</kbd>–<kbd>9</kbd>) &amp; Equipped Accessories deck.</p>
+          </div>
+          <div class="grid-item">
+            <h4>&#127872; Wardrobe &amp; Props</h4>
+            <p>Attach standalone SVG props (hats, glasses, cat ears, sweat drops) to any bone on your avatar and position, scale, and layer them in the interactive <strong>Dressing Room</strong>.</p>
+          </div>
+          <div class="grid-item">
+            <h4>&#127899;&#65039; Calibration &amp; Life</h4>
+            <p>Tune <strong>Mouth &amp; Audio</strong> (Noise Gate, Voice Bounce), <strong>Eyes &amp; Head</strong> (Independent Winks, <strong>Head-Turn Blink Stabilizer</strong>, Eyebrow Range), and <strong>Idle Life &amp; Physics</strong>.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- OBS Integration -->
+      <section class="card">
+        <span class="badge">OBS Studio</span>
+        <h2>Zero-CPU Vector Rendering in OBS Studio</h2>
+        <p>
+          Add a single <strong>Browser Source</strong> in OBS Studio pointing to <code>http://localhost:7420/overlay</code>:
+        </p>
+        <ul>
+          <li><strong>Infinite Vector Resolution:</strong> Renders directly in OBS Chromium (CEF) with GPU acceleration—razor-sharp at 1080p, 1440p, or 4K with pure alpha transparency (no Chroma Key needed).</li>
+          <li><strong>4 Starter Avatars Included:</strong> Ships ready to stream with the Default Chibi Avatar, Expressive Cow Avatar (<code>cow_avatar.svg</code>), Retro CRT Robot (<code>robot_avatar.svg</code>), and Triangle Mecha Robot (<code>triangle_robot_avatar.svg</code>), plus 6 modular SVG accessories.</li>
+          <li><strong>Webcam + Mic or Audio-Only PNGTuber Mode:</strong> Stream with full 478-point MediaPipe facial tracking + audio lip-sync, or turn the camera off and let autonomous <strong>Auto-Blink</strong>, <strong>Auto-Gaze</strong>, and <strong>Auto-Tilt</strong> keep your character alive.</li>
+        </ul>
+        <div class="media-card">
+          <img src="images/obs_browser_source.png"
+               alt="OBS Studio Browser Source Setup for SVGTuber"
+               loading="lazy"
+               width="1280" height="720">
+        </div>
+      </section>
+
+      <!-- Rigging & MCP -->
+      <section class="card" id="rigging">
+        <span class="badge">Inkscape &amp; AI MCP</span>
+        <h2>Simple Layer Tagging &amp; One-Command AI Auto-Rigging</h2>
+        <p>
+          Rig characters in minutes by adding human-readable tags to layer names in Inkscape, Vectorcraft, or Illustrator—or let an AI assistant rig your SVG automatically via <code>svgtuber -mcp</code>:
+        </p>
+        <pre><code>Head [Follow {track: yaw, pitch; amount: 18, 12}] [Tilt {amount: 0.7}]
+  Pigtail_Left [Physics {stiffness: 140; damping: 9; gravity: 1.2}] [Sway {follow: yaw; amount: -16}]
+  Eye_Left_Open [Hide {when: blinkL}]
+  Eye_Left_Closed [Show {when: blinkL}]
+  Brow_Left [Shift {track: browL; axis: y; amount: -10}]
+  Mouth_Talk [Show {when: speaking}]</code></pre>
+        <div class="media-card">
+          <img src="images/inkscape_rigging.png"
+               alt="Inkscape Layer Naming and Rigging Directives in SVGTuber"
+               loading="lazy"
+               width="1280" height="720">
+        </div>
+        <div class="btn-group">
+          <a class="btn btn-secondary" href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/RIGGING_GUIDE.md" target="_blank" rel="noopener noreferrer">Read Artist Rigging Guide</a>
+          <a class="btn btn-secondary" href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/MCP_GUIDE.md" target="_blank" rel="noopener noreferrer">AI Auto-Rigging Guide (-mcp)</a>
+          <a class="btn btn-secondary" href="https://github.com/mrpoundsign/SVGTuber/blob/main/docs/ACCESSORIES_GUIDE.md" target="_blank" rel="noopener noreferrer">Modular Accessories Guide</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div>&copy; SVGTuber Open Source Project. Licensed under MIT.</div>
+      <nav aria-label="Footer Navigation">
+        <a href="https://github.com/mrpoundsign/SVGTuber" target="_blank" rel="noopener noreferrer">GitHub Repository</a>
+        <a href="https://github.com/mrpoundsign/SVGTuber/releases" target="_blank" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/mrpoundsign/SVGTuber/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">Changelog</a>
+        <a href="https://github.com/mrpoundsign/SVGTuber/issues" target="_blank" rel="noopener noreferrer">GitHub Issues</a>
+      </nav>
+    </footer>
+  </div>
+</body>
+</html>

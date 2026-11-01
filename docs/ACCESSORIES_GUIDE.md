@@ -26,13 +26,13 @@ SVGTuber automatically scans this directory on startup and lists all available S
 
 ---
 
-## 🪞 Using the Studio Dressing Room
+## 🪞 Using the Studio Wardrobe & Dressing Room
 
-SVGTuber features a built-in **interactive Dressing Room modal** for visual calibration:
+SVGTuber features a dedicated **🎀 Wardrobe & Props** workspace and interactive **Dressing Room modal** for visual calibration:
 
 1. Open the Studio dashboard (`http://localhost:7420/studio`).
-2. Scroll to the **Accessories & Props** section.
-3. Click **Add Accessory** (or click the 👗 **Dressing Room** button on any configured accessory).
+2. Switch to the **🎀 Wardrobe & Props** mode in the left sidebar.
+3. Click **Add Accessory** (or click the **Fit** button on any configured accessory).
 4. In the Dressing Room modal:
    - **Direct Dragging:** Click and drag the accessory directly on top of your avatar preview to position it.
    - **Mouse Wheel Scaling:** Scroll your mouse wheel over the accessory to scale it up or down smoothly.
