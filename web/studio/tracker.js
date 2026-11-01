@@ -241,6 +241,7 @@ var micSelect = document.getElementById("mic-select");
 var btnToggleMic = document.getElementById("btn-toggle-mic");
 var modeSelect = document.getElementById("mode-select");
 var settingsModeSelect = document.getElementById("settings-mode-select");
+var inputServerPort = document.getElementById("input-server-port");
 var vuMeterBar = document.getElementById("vu-meter-bar");
 var noiseGateMarker = document.getElementById("noise-gate-marker");
 var valVuMeter = document.getElementById("val-vu-meter");
@@ -662,6 +663,10 @@ function connectWebSocket() {
         loadExpressions();
         loadAccessories();
         reloadAvatarFrame();
+      } else if (msg.type === "mode_update") {
+        if (typeof msg.mode === "string") {
+          applyMode(msg.mode, false);
+        }
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg);
       }
@@ -1392,6 +1397,9 @@ async function loadSettings() {
 }
 function syncSettingsToUI(s) {
   if (!s) return;
+  if (inputServerPort && s.port) {
+    inputServerPort.value = String(s.port);
+  }
   if (s.tracking) {
     const t = s.tracking;
     if (sliderMouthGain) sliderMouthGain.value = String(t.mouthGain || 1.4);
@@ -1490,8 +1498,11 @@ function updateSliderLabels() {
   }
 }
 function collectSettingsFromUI() {
+  const parsedPort = parseInt(inputServerPort?.value || "7420", 10);
+  const validPort = !isNaN(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 7420;
   return {
     version: 1,
+    port: validPort,
     tracking: {
       mouthGain: parseFloat(sliderMouthGain?.value || "1.4"),
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || "0.08"),
@@ -1570,6 +1581,7 @@ function onModeChange(e) {
 }
 if (modeSelect) modeSelect.addEventListener("change", onModeChange);
 if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChange);
+if (inputServerPort) inputServerPort.addEventListener("change", onSliderInput);
 [
   checkboxEnableSmile,
   checkboxWinkIsBlink,
@@ -2760,6 +2772,62 @@ if (checkShowCrosshair) {
     }
   });
 }
+var btnInstallStreamDeck = document.getElementById("btn-install-streamdeck");
+var streamDeckStatus = document.getElementById("streamdeck-status");
+async function loadStreamDeckStatus() {
+  try {
+    const res = await fetch("/api/streamdeck/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.installed) {
+      if (streamDeckStatus) {
+        streamDeckStatus.textContent = `\u2713 Plugin installed (${data.pluginDirName || "com.github.mrpoundsign.svgtuber.sdPlugin"})`;
+        streamDeckStatus.style.color = "var(--success)";
+      }
+      if (btnInstallStreamDeck) {
+        btnInstallStreamDeck.textContent = "\u21BB Update Stream Deck Plugin";
+      }
+    }
+  } catch {
+  }
+}
+if (btnInstallStreamDeck) {
+  btnInstallStreamDeck.addEventListener("click", async () => {
+    const origText = btnInstallStreamDeck.textContent;
+    btnInstallStreamDeck.disabled = true;
+    btnInstallStreamDeck.textContent = "Installing...";
+    try {
+      const res = await fetch("/api/streamdeck/install", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.installed) {
+        if (streamDeckStatus) {
+          streamDeckStatus.textContent = `\u2713 Installed to ${data.installedPath} (restart Elgato Stream Deck app to load)`;
+          streamDeckStatus.style.color = "var(--success)";
+        }
+        btnInstallStreamDeck.textContent = "\u2713 Installed!";
+      } else {
+        if (streamDeckStatus) {
+          streamDeckStatus.textContent = `\u26A0\uFE0F ${data.error || "Failed to install Stream Deck plugin"}`;
+          streamDeckStatus.style.color = "#ef4444";
+        }
+        btnInstallStreamDeck.textContent = origText;
+      }
+    } catch {
+      if (streamDeckStatus) {
+        streamDeckStatus.textContent = "\u26A0\uFE0F Network error installing Stream Deck plugin";
+        streamDeckStatus.style.color = "#ef4444";
+      }
+      btnInstallStreamDeck.textContent = origText;
+    } finally {
+      setTimeout(() => {
+        if (btnInstallStreamDeck) {
+          btnInstallStreamDeck.disabled = false;
+          btnInstallStreamDeck.textContent = "\u21BB Update Stream Deck Plugin";
+        }
+      }, 1500);
+    }
+  });
+}
 connectWebSocket();
 loadSettings().finally(() => {
   initMediaPipe();
@@ -2767,3 +2835,4 @@ loadSettings().finally(() => {
 loadExpressions();
 loadAvatars();
 loadAccessories();
+loadStreamDeckStatus();

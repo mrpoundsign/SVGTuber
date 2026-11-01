@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
+  <rect x="4" y="4" width="136" height="136" rx="22" fill="#0F172A" stroke="#38BDF8" stroke-width="4"/>
+  <rect x="42" y="38" width="42" height="30" rx="6" fill="none" stroke="#38BDF8" stroke-width="4"/>
+  <polygon points="88,46 102,38 102,68 88,60" fill="#F8FAFC"/>
+  <text x="72" y="108" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC" text-anchor="middle">MODE</text>
+</svg>

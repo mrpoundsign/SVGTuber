@@ -66,9 +66,13 @@ type AccessoryConfig struct {
 	Expression string  `json:"expression,omitempty"` // Optional trigger expression (e.g. "sweat", "blush", or empty for always)
 }
 
+// DefaultPort is the default HTTP and WebSocket server port for SVGTuber.
+const DefaultPort = 7420
+
 // Settings represents the complete user configuration.
 type Settings struct {
 	Version           int                          `json:"version"`
+	Port              int                          `json:"port,omitempty"`          // HTTP & WebSocket server port (default: 7420)
 	AvatarDir         string                       `json:"avatarDir,omitempty"`     // Directory containing avatar SVGs
 	CurrentAvatar     string                       `json:"currentAvatar,omitempty"` // Relative path/filename of active avatar within AvatarDir
 	AvatarPath        string                       `json:"avatarPath,omitempty"`    // Full absolute path (for backwards compatibility)
@@ -82,6 +86,7 @@ type Settings struct {
 func DefaultSettings() Settings {
 	return Settings{
 		Version: 2,
+		Port:    DefaultPort,
 		Tracking: TrackingSettings{
 			MouthGain:        1.4,
 			MouthThreshold:   0.08,
@@ -169,6 +174,28 @@ func (m *Manager) Get() Settings {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.settings
+}
+
+// GetPort returns the configured HTTP and WebSocket server port (falling back to DefaultPort).
+func (m *Manager) GetPort() int {
+	m.mu.RLock()
+	p := m.settings.Port
+	m.mu.RUnlock()
+	if p <= 0 || p > 65535 {
+		return DefaultPort
+	}
+	return p
+}
+
+// SetPort updates the configured server port (1..65535) and persists it to disk.
+func (m *Manager) SetPort(port int) error {
+	if port <= 0 || port > 65535 {
+		return fmt.Errorf("invalid port %d (must be 1..65535)", port)
+	}
+	m.mu.Lock()
+	m.settings.Port = port
+	m.mu.Unlock()
+	return m.Save()
 }
 
 // GetAvatarPath returns the persisted avatar path from settings.
@@ -439,6 +466,13 @@ func (m *Manager) RemoveAccessoryForAvatar(avatarKey string, id string) error {
 // Update updates the active settings and persists them to disk.
 func (m *Manager) Update(newSettings Settings) error {
 	m.mu.Lock()
+	if newSettings.Port <= 0 || newSettings.Port > 65535 {
+		if m.settings.Port > 0 && m.settings.Port <= 65535 {
+			newSettings.Port = m.settings.Port
+		} else {
+			newSettings.Port = DefaultPort
+		}
+	}
 	// Preserve configured AvatarDir, CurrentAvatar, and AvatarPath if incoming payload leaves them empty
 	if newSettings.AvatarDir == "" && m.settings.AvatarDir != "" {
 		newSettings.AvatarDir = m.settings.AvatarDir
@@ -526,6 +560,9 @@ func (m *Manager) Load() error {
 	}
 
 	// Validate / fill missing defaults
+	if s.Port <= 0 || s.Port > 65535 {
+		s.Port = DefaultPort
+	}
 	if s.Tracking.MouthGain <= 0 {
 		s.Tracking.MouthGain = 1.4
 	}

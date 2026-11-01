@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/server"
+	"github.com/mrpoundsign/SVGTuber/internal/streamdeck"
 )
 
 const defaultReleasesURL = "https://github.com/mrpoundsign/SVGTuber/releases"
@@ -36,7 +39,7 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 	fyneApp.Settings().SetTheme(installerui.NewObsidianTheme())
 
 	w := fyneApp.NewWindow("SVGTuber v" + curVer + " — Vector VTuber Engine")
-	w.Resize(fyne.NewSize(560, 420))
+	w.Resize(fyne.NewSize(560, 490))
 	w.CenterOnScreen()
 
 	// Header section
@@ -74,10 +77,46 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		go openBrowser(overlayURL)
 	})
 
+	activePort := srv.Port()
+	if cfgMgr != nil {
+		activePort = cfgMgr.GetPort()
+	}
+	portEntry := widget.NewEntry()
+	portEntry.SetPlaceHolder(strconv.Itoa(config.DefaultPort))
+	portEntry.SetText(strconv.Itoa(activePort))
+
+	portStatusLabel := widget.NewLabel("")
+	savePortBtn := widget.NewButtonWithIcon("Save Port", theme.ConfirmIcon(), func() {
+		p, err := strconv.Atoi(strings.TrimSpace(portEntry.Text))
+		if err != nil || p <= 0 || p > 65535 {
+			portStatusLabel.SetText("⚠️ Port must be 1..65535")
+			return
+		}
+		if cfgMgr != nil {
+			if err := cfgMgr.SetPort(p); err != nil {
+				portStatusLabel.SetText(fmt.Sprintf("⚠️ %v", err))
+				return
+			}
+		}
+		activePort = p
+		if streamdeck.IsPluginInstalled(srv.StreamDeckPluginsDir()) {
+			_, _ = streamdeck.InstallPluginWithPort(srv.StreamDeckPluginsDir(), p)
+		}
+		portStatusLabel.SetText(fmt.Sprintf("✓ Saved port %d (restart SVGTuber to rebind)", p))
+	})
+	portRow := container.NewBorder(
+		nil, nil,
+		widget.NewLabel("Server Port:"),
+		savePortBtn,
+		portEntry,
+	)
+
 	quickLaunchSection := container.NewVBox(
 		widget.NewLabelWithStyle("Quick Launch & OBS Browser Source:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		openStudioBtn,
 		container.NewGridWithColumns(2, copyOBSBtn, openOBSBtn),
+		portRow,
+		portStatusLabel,
 	)
 
 	// Avatar & Workspace Folder Section
@@ -104,6 +143,30 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		avatarFileLabel,
 		avatarDirLabel,
 		container.NewGridWithColumns(2, openAvatarDirBtn, reloadRigBtn),
+	)
+
+	// Elgato Stream Deck Plugin Section
+	sdPluginsDir := srv.StreamDeckPluginsDir()
+	sdStatusText := "Stream Deck Plugin: Ready to install (" + streamdeck.PluginDirName + ")"
+	if streamdeck.IsPluginInstalled(sdPluginsDir) {
+		sdStatusText = "✓ Stream Deck Plugin installed (" + streamdeck.PluginDirName + ")"
+	}
+	sdStatusLabel := widget.NewLabel(sdStatusText)
+	sdStatusLabel.Wrapping = fyne.TextWrapWord
+
+	sdInstallBtn := widget.NewButtonWithIcon("Install / Update Elgato Stream Deck Plugin", theme.DownloadIcon(), func() {
+		installedPath, err := streamdeck.InstallPluginWithPort(srv.StreamDeckPluginsDir(), activePort)
+		if err != nil {
+			sdStatusLabel.SetText(fmt.Sprintf("⚠️ Stream Deck plugin install failed: %v", err))
+			return
+		}
+		sdStatusLabel.SetText(fmt.Sprintf("✓ Installed Stream Deck plugin (port %d) to %s (restart Stream Deck app to load)", activePort, installedPath))
+	})
+
+	streamDeckSection := container.NewVBox(
+		widget.NewLabelWithStyle("Elgato Stream Deck Integration:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		sdStatusLabel,
+		sdInstallBtn,
 	)
 
 	// Version Check & Release Link Section
@@ -218,6 +281,8 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		quickLaunchSection,
 		widget.NewSeparator(),
 		avatarSection,
+		widget.NewSeparator(),
+		streamDeckSection,
 		widget.NewSeparator(),
 		updateSection,
 	))

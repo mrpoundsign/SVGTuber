@@ -1,0 +1,119 @@
+{
+  "SDKVersion": 2,
+  "Author": "SVGTuber",
+  "Name": "SVGTuber Control",
+  "Description": "Control SVGTuber vector avatar expressions, accessories, active avatar switching, tracking modes (Hybrid, Camera, Audio), and neutral pose calibration in real time over WebSocket.",
+  "Version": "1.0.0.0",
+  "Category": "SVGTuber",
+  "CategoryIcon": "imgs/plugin",
+  "Icon": "imgs/plugin",
+  "CodePath": "bin/plugin.js",
+  "PropertyInspectorPath": "property-inspector/index.html",
+  "UUID": "com.github.mrpoundsign.svgtuber",
+  "Nodejs": {
+    "Version": "20",
+    "Debug": "enabled"
+  },
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    },
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12"
+    }
+  ],
+  "Software": {
+    "MinimumVersion": "6.5"
+  },
+  "Actions": [
+    {
+      "UUID": "com.github.mrpoundsign.svgtuber.expression",
+      "Name": "Expression Control",
+      "Tooltip": "Toggle, timed-trigger, enable, disable, or reset SVGTuber avatar expressions",
+      "Icon": "imgs/expression",
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "imgs/expression",
+          "ShowTitle": false,
+          "TitleAlignment": "middle",
+          "FontSize": "11"
+        },
+        {
+          "Image": "imgs/expression",
+          "ShowTitle": false,
+          "TitleAlignment": "middle",
+          "FontSize": "11"
+        }
+      ]
+    },
+    {
+      "UUID": "com.github.mrpoundsign.svgtuber.accessory",
+      "Name": "Accessory Toggle",
+      "Tooltip": "Equip or hide an SVGTuber SVG accessory on the active avatar",
+      "Icon": "imgs/accessory",
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "imgs/accessory",
+          "ShowTitle": false,
+          "TitleAlignment": "middle",
+          "FontSize": "11"
+        },
+        {
+          "Image": "imgs/accessory",
+          "ShowTitle": false,
+          "TitleAlignment": "middle",
+          "FontSize": "11"
+        }
+      ]
+    },
+    {
+      "UUID": "com.github.mrpoundsign.svgtuber.avatar",
+      "Name": "Avatar Switcher",
+      "Tooltip": "Cycle to the next avatar SVG, select a specific avatar, or hot-reload the active rig",
+      "Icon": "imgs/avatar",
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "imgs/avatar",
+          "ShowTitle": false,
+          "TitleAlignment": "middle",
+          "FontSize": "11"
+        }
+      ]
+    },
+    {
+      "UUID": "com.github.mrpoundsign.svgtuber.mode",
+      "Name": "Tracking Mode",
+      "Tooltip": "Cycle or set SVGTuber tracking mode (Hybrid Camera+Audio, Camera Only, Audio Only)",
+      "Icon": "imgs/mode",
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "imgs/mode",
+          "ShowTitle": false,
+          "TitleAlignment": "middle",
+          "FontSize": "11"
+        }
+      ]
+    },
+    {
+      "UUID": "com.github.mrpoundsign.svgtuber.calibrate",
+      "Name": "Pose Calibration",
+      "Tooltip": "Calibrate neutral face pose or reset calibration offsets",
+      "Icon": "imgs/calibrate",
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "imgs/calibrate",
+          "ShowTitle": false,
+          "TitleAlignment": "middle",
+          "FontSize": "11"
+        }
+      ]
+    }
+  ]
+}

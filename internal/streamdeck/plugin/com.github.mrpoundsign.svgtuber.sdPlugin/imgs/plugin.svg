@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144">
+  <rect x="4" y="4" width="136" height="136" rx="22" fill="#0F172A" stroke="#38BDF8" stroke-width="4"/>
+  <circle cx="72" cy="64" r="32" fill="none" stroke="#38BDF8" stroke-width="5"/>
+  <circle cx="60" cy="58" r="4" fill="#F8FAFC"/>
+  <circle cx="84" cy="58" r="4" fill="#F8FAFC"/>
+  <path d="M58 74 Q72 86 86 74" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round"/>
+  <text x="72" y="122" font-family="Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC" text-anchor="middle">SVGTUBER</text>
+</svg>

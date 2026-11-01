@@ -944,13 +944,28 @@
       </p>
 
       <div style="margin-top: 12px;">
-        <div class="card-title" style="margin-bottom: 8px;">OBS Browser Source</div>
+        <div class="card-title" style="margin-bottom: 8px;">OBS Browser Source &amp; Server Port</div>
         <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 10px;">
           Add a Browser Source in OBS pointing to the URL below:
         </p>
         <div class="obs-link-box">
           <span id="overlay-url">http://localhost:7420/overlay</span>
           <button class="btn btn-secondary" onclick="copyOverlayUrl()">Copy URL</button>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px;">
+          <label for="input-server-port" style="font-size: 12px; color: var(--text-muted); font-weight: 500;">Server Port (default 7420, restart to apply):</label>
+          <input type="text" id="input-server-port" name="serverPort" inputmode="numeric" value="7420" autocorrect="off" autocapitalize="off" spellcheck="false" style="width: 90px; background: #121218; color: var(--text-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 5px 8px; font-size: 12px; text-align: center;">
+        </div>
+      </div>
+
+      <!-- Elgato Stream Deck Integration -->
+      <div style="margin-top: 14px; background: #181820; border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <div style="display: flex; flex-direction: column; gap: 3px;">
+            <span style="font-size: 13px; font-weight: 600; color: var(--text-main);">🎛️ Elgato Stream Deck Plugin</span>
+            <span id="streamdeck-status" style="font-size: 11px; color: var(--text-muted);" aria-live="polite">Control expressions, accessories, avatars, and modes from your Stream Deck</span>
+          </div>
+          <button type="button" id="btn-install-streamdeck" class="btn btn-secondary" style="font-size: 11px; padding: 6px 10px; white-space: nowrap;">⬇ Install Stream Deck Plugin</button>
         </div>
       </div>
 

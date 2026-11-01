@@ -64,6 +64,7 @@ const micSelect = document.getElementById("mic-select") as HTMLSelectElement | n
 const btnToggleMic = document.getElementById("btn-toggle-mic") as HTMLButtonElement | null;
 const modeSelect = document.getElementById("mode-select") as HTMLSelectElement | null;
 const settingsModeSelect = document.getElementById("settings-mode-select") as HTMLSelectElement | null;
+const inputServerPort = document.getElementById("input-server-port") as HTMLInputElement | null;
 const vuMeterBar = document.getElementById("vu-meter-bar") as HTMLElement | null;
 const noiseGateMarker = document.getElementById("noise-gate-marker") as HTMLElement | null;
 const valVuMeter = document.getElementById("val-vu-meter") as HTMLElement | null;
@@ -541,6 +542,10 @@ function connectWebSocket() {
         loadExpressions();
         loadAccessories();
         reloadAvatarFrame();
+      } else if (msg.type === "mode_update") {
+        if (typeof msg.mode === "string") {
+          applyMode(msg.mode, false);
+        }
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg as UpdateProgressMessage);
       }
@@ -1354,6 +1359,9 @@ async function loadSettings() {
 
 function syncSettingsToUI(s: SettingsPayload | null) {
   if (!s) return;
+  if (inputServerPort && s.port) {
+    inputServerPort.value = String(s.port);
+  }
   if (s.tracking) {
     const t = s.tracking;
     if (sliderMouthGain) sliderMouthGain.value = String(t.mouthGain || 1.4);
@@ -1458,8 +1466,11 @@ function updateSliderLabels() {
 }
 
 function collectSettingsFromUI(): SettingsPayload {
+  const parsedPort = parseInt(inputServerPort?.value || "7420", 10);
+  const validPort = !isNaN(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 7420;
   return {
     version: 1,
+    port: validPort,
     tracking: {
       mouthGain: parseFloat(sliderMouthGain?.value || "1.4"),
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || "0.08"),
@@ -1542,6 +1553,7 @@ function onModeChange(e: Event) {
 
 if (modeSelect) modeSelect.addEventListener("change", onModeChange);
 if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChange);
+if (inputServerPort) inputServerPort.addEventListener("change", onSliderInput);
 
 [
   checkboxEnableSmile,
@@ -2892,6 +2904,67 @@ if (checkShowCrosshair) {
   });
 }
 
+// Stream Deck Plugin Installer
+const btnInstallStreamDeck = document.getElementById("btn-install-streamdeck") as HTMLButtonElement | null;
+const streamDeckStatus = document.getElementById("streamdeck-status") as HTMLElement | null;
+
+async function loadStreamDeckStatus() {
+  try {
+    const res = await fetch("/api/streamdeck/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.installed) {
+      if (streamDeckStatus) {
+        streamDeckStatus.textContent = `✓ Plugin installed (${data.pluginDirName || "com.github.mrpoundsign.svgtuber.sdPlugin"})`;
+        streamDeckStatus.style.color = "var(--success)";
+      }
+      if (btnInstallStreamDeck) {
+        btnInstallStreamDeck.textContent = "↻ Update Stream Deck Plugin";
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
+if (btnInstallStreamDeck) {
+  btnInstallStreamDeck.addEventListener("click", async () => {
+    const origText = btnInstallStreamDeck.textContent;
+    btnInstallStreamDeck.disabled = true;
+    btnInstallStreamDeck.textContent = "Installing...";
+    try {
+      const res = await fetch("/api/streamdeck/install", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.installed) {
+        if (streamDeckStatus) {
+          streamDeckStatus.textContent = `✓ Installed to ${data.installedPath} (restart Elgato Stream Deck app to load)`;
+          streamDeckStatus.style.color = "var(--success)";
+        }
+        btnInstallStreamDeck.textContent = "✓ Installed!";
+      } else {
+        if (streamDeckStatus) {
+          streamDeckStatus.textContent = `⚠️ ${data.error || "Failed to install Stream Deck plugin"}`;
+          streamDeckStatus.style.color = "#ef4444";
+        }
+        btnInstallStreamDeck.textContent = origText;
+      }
+    } catch {
+      if (streamDeckStatus) {
+        streamDeckStatus.textContent = "⚠️ Network error installing Stream Deck plugin";
+        streamDeckStatus.style.color = "#ef4444";
+      }
+      btnInstallStreamDeck.textContent = origText;
+    } finally {
+      setTimeout(() => {
+        if (btnInstallStreamDeck) {
+          btnInstallStreamDeck.disabled = false;
+          btnInstallStreamDeck.textContent = "↻ Update Stream Deck Plugin";
+        }
+      }, 1500);
+    }
+  });
+}
+
 // Initial Bootstrap
 connectWebSocket();
 loadSettings().finally(() => {
@@ -2900,3 +2973,4 @@ loadSettings().finally(() => {
 loadExpressions();
 loadAvatars();
 loadAccessories();
+loadStreamDeckStatus();

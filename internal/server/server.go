@@ -41,19 +41,21 @@ type Server struct {
 	preprocessedAvatar []byte
 	avatarWatcher      *watcher.AvatarWatcher
 	accessoriesDir     string
-	version            string
-	commit             string
-	date               string
-	updateChecker      *updater.Checker
-	updateTargetExe    string
-	updateApplyFn      func(verifiedAssetPath, targetExePath string, mode updater.InstallMode) error
-	openDirFn          func(dir string) error
-	expMgr             *ExpressionManager
-	trackerMu          sync.RWMutex
-	trackerConns       map[*websocket.Conn]chan []byte
-	activeTrackerConn  *websocket.Conn
-	httpServer         *http.Server
-	listener           net.Listener
+	version              string
+	commit               string
+	date                 string
+	updateChecker        *updater.Checker
+	updateTargetExe      string
+	updateApplyFn        func(verifiedAssetPath, targetExePath string, mode updater.InstallMode) error
+	openDirFn            func(dir string) error
+	streamDeckPluginsDir string
+	expMgr               *ExpressionManager
+	trackerMu            sync.RWMutex
+	trackerConns         map[*websocket.Conn]chan []byte
+	controlConns         map[*websocket.Conn]chan []byte
+	activeTrackerConn    *websocket.Conn
+	httpServer           *http.Server
+	listener             net.Listener
 }
 
 // New constructs an unstarted Server instance.
@@ -96,6 +98,7 @@ func New(port int, avatarPath string, hub *Hub, engine *tracking.Engine, cfg ...
 		rigParser:      rig.DefaultParser,
 		updateChecker:  updater.NewChecker("mrpoundsign", "SVGTuber"),
 		trackerConns:   make(map[*websocket.Conn]chan []byte),
+		controlConns:   make(map[*websocket.Conn]chan []byte),
 	}
 
 	expMgr := NewExpressionManager(func(active map[string]bool) {
@@ -181,6 +184,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/version", s.handleAPIVersion)
 	mux.HandleFunc("/api/update/check", s.handleAPIUpdateCheck)
 	mux.HandleFunc("/api/update/apply", s.handleAPIUpdateApply)
+	mux.HandleFunc("/api/streamdeck/status", s.handleAPIStreamDeckStatus)
+	mux.HandleFunc("/api/streamdeck/install", s.handleAPIStreamDeckInstall)
+	mux.HandleFunc("/api/state", s.handleAPIState)
+	mux.HandleFunc("/api/mode", s.handleAPIMode)
 	mux.HandleFunc("/api/calibrate", s.handleAPICalibrate)
 	mux.HandleFunc("/api/settings", s.handleAPISettings)
 	mux.HandleFunc("/api/settings/reset", s.handleAPISettingsReset)
@@ -362,28 +369,45 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
-	log.Println("[Server] Studio tracker connected.")
+	isControlOnly := r.URL.Query().Get("client") == "streamdeck" || r.URL.Query().Get("role") == "control"
+	if isControlOnly {
+		log.Println("[Server] Control/Stream Deck client connected.")
+	} else {
+		log.Println("[Server] Studio tracker connected.")
+	}
 
-	msgCh := make(chan []byte, 16)
+	msgCh := make(chan []byte, 32)
 	s.trackerMu.Lock()
-	if s.trackerConns == nil {
-		s.trackerConns = make(map[*websocket.Conn]chan []byte)
+	if isControlOnly {
+		if s.controlConns == nil {
+			s.controlConns = make(map[*websocket.Conn]chan []byte)
+		}
+		s.controlConns[conn] = msgCh
+	} else {
+		if s.trackerConns == nil {
+			s.trackerConns = make(map[*websocket.Conn]chan []byte)
+		}
+		s.trackerConns[conn] = msgCh
+		if s.activeTrackerConn == nil {
+			s.activeTrackerConn = conn
+		}
+		s.broadcastTrackerSessionStatusLocked()
 	}
-	s.trackerConns[conn] = msgCh
-	if s.activeTrackerConn == nil {
-		s.activeTrackerConn = conn
-	}
-	s.broadcastTrackerSessionStatusLocked()
 	s.trackerMu.Unlock()
 
 	defer func() {
 		s.trackerMu.Lock()
-		delete(s.trackerConns, conn)
-		close(msgCh)
-		if s.activeTrackerConn == conn {
-			s.activeTrackerConn = nil
+		if isControlOnly {
+			delete(s.controlConns, conn)
+			close(msgCh)
+		} else {
+			delete(s.trackerConns, conn)
+			close(msgCh)
+			if s.activeTrackerConn == conn {
+				s.activeTrackerConn = nil
+			}
+			s.broadcastTrackerSessionStatusLocked()
 		}
-		s.broadcastTrackerSessionStatusLocked()
 		s.trackerMu.Unlock()
 	}()
 
@@ -399,7 +423,7 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Send initial rig and expression state to newly connected Studio tracker
+	// Send initial rig, expression state, and state snapshot to newly connected client
 	s.rigMu.RLock()
 	currentRig := s.rigDef
 	s.rigMu.RUnlock()
@@ -419,12 +443,20 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if data, err := json.Marshal(s.buildStateSnapshot()); err == nil {
+		select {
+		case msgCh <- data:
+		default:
+		}
+	}
 
 	ctx := r.Context()
 	for {
 		typ, data, err := conn.Read(ctx)
 		if err != nil {
-			log.Printf("[Server] Studio tracker disconnected: %v", err)
+			if !isControlOnly {
+				log.Printf("[Server] Studio tracker disconnected: %v", err)
+			}
 			break
 		}
 		if typ != websocket.MessageText {
@@ -436,48 +468,22 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 			Type string `json:"type"`
 		}
 		if err := json.Unmarshal(data, &ctrl); err == nil && ctrl.Type != "" {
-			switch ctrl.Type {
-			case "calibrate":
-				if s.engine != nil {
-					s.engine.Calibrate()
-					_ = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"calibrated"}`))
-				}
-				continue
-			case "reset_calibration":
-				if s.engine != nil {
-					s.engine.ResetCalibration()
-					_ = conn.Write(ctx, websocket.MessageText, []byte(`{"type":"calibration_reset"}`))
-				}
-				continue
-			case "take_control":
-				s.trackerMu.Lock()
-				s.activeTrackerConn = conn
-				s.broadcastTrackerSessionStatusLocked()
-				s.trackerMu.Unlock()
-				continue
-			case "expression_toggle":
-				var p struct {
-					Name string `json:"name"`
-				}
-				if err := json.Unmarshal(data, &p); err == nil && p.Name != "" && s.expMgr != nil {
-					s.expMgr.Toggle(p.Name)
-				}
-				continue
-			case "expression_set":
-				var p struct {
-					Name   string `json:"name"`
-					Active bool   `json:"active"`
-				}
-				if err := json.Unmarshal(data, &p); err == nil && p.Name != "" && s.expMgr != nil {
-					s.expMgr.Set(p.Name, p.Active)
-				}
-				continue
-			case "expression_reset":
-				if s.expMgr != nil {
-					s.expMgr.Reset()
+			if ctrl.Type == "take_control" {
+				if !isControlOnly {
+					s.trackerMu.Lock()
+					s.activeTrackerConn = conn
+					s.broadcastTrackerSessionStatusLocked()
+					s.trackerMu.Unlock()
 				}
 				continue
 			}
+			if s.handleWSControlCommand(ctrl.Type, data) {
+				continue
+			}
+		}
+
+		if isControlOnly {
+			continue
 		}
 
 		// Parse as FaceFrame and process through tracking engine
@@ -537,6 +543,11 @@ func (s *Server) handleAPISettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf(`{"error":"failed to save settings: %s"}`, err.Error()), http.StatusInternalServerError)
 			return
 		}
+
+		s.broadcastTracker(map[string]any{
+			"type": "mode_update",
+			"mode": NormalizeTrackingMode(newSettings.Audio.Mode),
+		})
 
 		cfgPath, _ := s.configMgr.ConfigPath()
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -708,6 +719,12 @@ func (s *Server) broadcastTracker(v any) {
 	s.trackerMu.RLock()
 	defer s.trackerMu.RUnlock()
 	for _, ch := range s.trackerConns {
+		select {
+		case ch <- data:
+		default:
+		}
+	}
+	for _, ch := range s.controlConns {
 		select {
 		case ch <- data:
 		default:

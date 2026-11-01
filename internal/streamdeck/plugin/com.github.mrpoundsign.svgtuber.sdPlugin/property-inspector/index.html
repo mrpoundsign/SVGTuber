@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SVGTuber Property Inspector</title>
+  <style>
+    body {
+      background-color: #0F172A;
+      color: #F8FAFC;
+      font-family: "Segoe UI", sans-serif;
+      font-size: 12px;
+      margin: 12px;
+    }
+    fieldset {
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 8px 10px 10px 10px;
+      margin: 0 0 12px 0;
+    }
+    legend {
+      color: #38BDF8;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 0 4px;
+    }
+    .field {
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    .field:last-child {
+      margin-bottom: 0;
+    }
+    label {
+      color: #94A3B8;
+      margin-bottom: 3px;
+    }
+    input, select {
+      background: #1E293B;
+      color: #F8FAFC;
+      border: 1px solid #475569;
+      border-radius: 4px;
+      padding: 5px 7px;
+      font-size: 12px;
+    }
+    input:focus-visible, select:focus-visible {
+      outline: 2px solid #38BDF8;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body>
+  <form id="sd-pi-form" action="#" method="POST">
+    <fieldset data-action="com.github.mrpoundsign.svgtuber.expression" style="display:none">
+      <legend>Expression Control</legend>
+      <div class="field">
+        <label for="expr-operation">Operation</label>
+        <select id="expr-operation" name="operation" data-setting="operation">
+          <option value="toggle">Toggle Expression On / Off</option>
+          <option value="trigger">Timed Trigger (Auto-Reset)</option>
+          <option value="enable">Force Enable Expression</option>
+          <option value="disable">Force Disable Expression</option>
+          <option value="reset">Clear All Active Expressions</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="expr-name">Expression Name</label>
+        <input type="text" id="expr-name" name="expression" list="expr-list" data-setting="expression" placeholder="happy, blush, angry..." autocorrect="off" autocapitalize="off" spellcheck="false" />
+        <datalist id="expr-list"></datalist>
+      </div>
+      <div class="field">
+        <label for="expr-duration">Timed Trigger Duration (e.g. 3s)</label>
+        <input type="text" id="expr-duration" name="duration" data-setting="duration" placeholder="3s" value="3s" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label for="expr-label">Custom Key Label (optional)</label>
+        <input type="text" id="expr-label" name="label" data-setting="label" placeholder="Auto from expression name" />
+      </div>
+    </fieldset>
+
+    <fieldset data-action="com.github.mrpoundsign.svgtuber.accessory" style="display:none">
+      <legend>Accessory Toggle</legend>
+      <div class="field">
+        <label for="acc-id">Accessory ID or SVG File</label>
+        <input type="text" id="acc-id" name="accessoryId" list="acc-list" data-setting="accessoryId" placeholder="glasses, hat.svg..." autocorrect="off" autocapitalize="off" spellcheck="false" />
+        <datalist id="acc-list"></datalist>
+      </div>
+      <div class="field">
+        <label for="acc-label">Custom Key Label (optional)</label>
+        <input type="text" id="acc-label" name="label" data-setting="label" placeholder="Auto from accessory" />
+      </div>
+    </fieldset>
+
+    <fieldset data-action="com.github.mrpoundsign.svgtuber.avatar" style="display:none">
+      <legend>Avatar Switcher &amp; Rig</legend>
+      <div class="field">
+        <label for="avatar-operation">Operation</label>
+        <select id="avatar-operation" name="operation" data-setting="operation">
+          <option value="cycle">Cycle to Next Avatar SVG</option>
+          <option value="select">Switch to Specific Avatar SVG</option>
+          <option value="reload">Hot-Reload Active Avatar Rig</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="avatar-file">Target Avatar SVG (when Switch to Specific)</label>
+        <input type="text" id="avatar-file" name="avatar" list="avatar-list" data-setting="avatar" placeholder="avatar.svg" autocorrect="off" autocapitalize="off" spellcheck="false" />
+        <datalist id="avatar-list"></datalist>
+      </div>
+      <div class="field">
+        <label for="avatar-label">Custom Key Label (optional)</label>
+        <input type="text" id="avatar-label" name="label" data-setting="label" placeholder="AVATAR" />
+      </div>
+    </fieldset>
+
+    <fieldset data-action="com.github.mrpoundsign.svgtuber.mode" style="display:none">
+      <legend>Tracking Mode</legend>
+      <div class="field">
+        <label for="mode-target">Key Press Behavior</label>
+        <select id="mode-target" name="targetMode" data-setting="targetMode">
+          <option value="cycle">Cycle (Hybrid → Camera Only → Audio Only)</option>
+          <option value="hybrid">Set Hybrid (Camera + Audio)</option>
+          <option value="camera">Set Camera Only</option>
+          <option value="audio">Set Audio Only (PNGTuber Mode)</option>
+        </select>
+      </div>
+    </fieldset>
+
+    <fieldset data-action="com.github.mrpoundsign.svgtuber.calibrate" style="display:none">
+      <legend>Pose Calibration</legend>
+      <div class="field">
+        <label for="cal-operation">Operation</label>
+        <select id="cal-operation" name="operation" data-setting="operation">
+          <option value="calibrate">Calibrate Neutral Face Pose</option>
+          <option value="reset">Reset Pose Calibration</option>
+        </select>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>SVGTuber Connection</legend>
+      <div class="field">
+        <label for="st-host">Host</label>
+        <input type="text" id="st-host" name="host" value="127.0.0.1" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label for="st-port">Port</label>
+        <input type="text" id="st-port" name="port" inputmode="numeric" value="7420" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      </div>
+    </fieldset>
+  </form>
+
+  <script src="pi.js"></script>
+</body>
+</html>
