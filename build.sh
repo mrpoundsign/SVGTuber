@@ -47,6 +47,15 @@ build_binary_windows() {
   local build_date
   build_date="$(date -u +%Y-%m-%d)"
 
+  if command -v x86_64-w64-mingw32-windres &>/dev/null && [ -f "assets/icon.ico" ]; then
+    echo "==> Compiling Windows icon resources (.syso)..."
+    local rc_file="build/icon.rc"
+    echo 'IDI_ICON1 ICON "../assets/icon.ico"' > "$rc_file"
+    (cd build && x86_64-w64-mingw32-windres icon.rc -O coff -o ../cmd/svgtuber/rsrc_windows_amd64.syso)
+    cp -f cmd/svgtuber/rsrc_windows_amd64.syso cmd/installer/rsrc_windows_amd64.syso
+    rm -f "$rc_file"
+  fi
+
   if command -v x86_64-w64-mingw32-gcc &>/dev/null; then
     echo "==> Building svgtuber.exe (Windows amd64, Fyne Mini UI CGO_ENABLED=1 + MinGW)..."
     CC=x86_64-w64-mingw32-gcc GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \

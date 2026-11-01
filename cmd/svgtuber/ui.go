@@ -20,6 +20,7 @@ import (
 	"github.com/mrpoundsign/appinstaller/pkg/updater"
 	"github.com/mrpoundsign/appinstaller/pkg/updaterui"
 
+	"github.com/mrpoundsign/SVGTuber/assets"
 	"github.com/mrpoundsign/SVGTuber/internal/config"
 	"github.com/mrpoundsign/SVGTuber/internal/server"
 	"github.com/mrpoundsign/SVGTuber/internal/streamdeck"
@@ -36,8 +37,10 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, logSink *AppLogSink, s
 	curVer := currentNormalizedVersion()
 	fyneApp := fyneapp.NewWithID("com.github.mrpoundsign.svgtuber")
 	fyneApp.Settings().SetTheme(installerui.NewObsidianTheme())
+	fyneApp.SetIcon(assets.AppIcon)
 
 	w := fyneApp.NewWindow("SVGTuber v" + curVer + " — Vector VTuber Engine")
+	w.SetIcon(assets.AppIcon)
 	w.Resize(fyne.NewSize(560, 560))
 	w.CenterOnScreen()
 

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="93.443" y1="-25.557" x2="418.557" y2="537.557" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#090d16"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="256" cy="256" r="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06b6d4" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#090d16" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <title>icon_design_4_vector_tribot</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <path id="Vec_Badge_BG" d="M126 18 L386 18 C445.647 18 494 66.353 494 126 L494 386 C494 445.647 445.647 494 386 494 L126 494 C66.353 494 18 445.647 18 386 L18 126 C18 66.353 66.353 18 126 18 Z" fill="url(#linear-gradient-1)" stroke="#f97316" stroke-width="12" stroke-miterlimit="10"/>
+    <circle id="Vec_Badge_Glow" cx="256" cy="256" r="190" fill="url(#radial-gradient-1)"/>
+    <path id="Bezier_Handle_Lines" d="M96 136 L148 58 M416 136 L364 58" fill="none" stroke="#94a3b8" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+    <path id="Vec_Ear_Pods" d="M112 204 L42 184 L56 266 L148 288 Z M400 204 L470 184 L456 266 L364 288 Z" fill="#f97316" stroke="#090d16" stroke-width="10" stroke-linejoin="round"/>
+    <polygon id="Vec_Visor_Triangle" points="96,136 416,136 256,444" fill="#090d16" stroke="#22d3ee" stroke-width="18" stroke-linejoin="round"/>
+    <polygon id="Vec_Visor_Glare" points="124,154 240,154 195,280 156,244" fill="#1e293b" opacity="0.5"/>
+    <circle id="Vec_Eye_L" cx="189" cy="241" r="43" fill="#06b6d4" stroke="#ecfeff" stroke-width="7" stroke-miterlimit="10"/>
+    <circle id="Vec_Eye_L_Core" cx="189" cy="241" r="21" fill="#ffffff"/>
+    <circle id="Vec_Eye_L_Glint" cx="166" cy="216" r="10" fill="#ffffff"/>
+    <circle id="Vec_Eye_R" cx="323" cy="241" r="43" fill="#06b6d4" stroke="#ecfeff" stroke-width="7" stroke-miterlimit="10"/>
+    <circle id="Vec_Eye_R_Core" cx="323" cy="241" r="21" fill="#ffffff"/>
+    <circle id="Vec_Eye_R_Glint" cx="300" cy="216" r="10" fill="#ffffff"/>
+    <path id="Vec_Brows" d="M142 182 L230 196 M370 182 L282 196" fill="none" stroke="#f97316" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline id="Vec_Mouth" points="222,324 256,356 290,324" fill="none" stroke="#22d3ee" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle id="Bezier_Knob_L" cx="148" cy="58" r="22" fill="#f97316" stroke="#ffffff" stroke-width="7" stroke-miterlimit="10"/>
+    <circle id="Bezier_Knob_Glow_L" cx="148" cy="58" r="9" fill="#fde047"/>
+    <circle id="Bezier_Knob_R" cx="364" cy="58" r="22" fill="#f97316" stroke="#ffffff" stroke-width="7" stroke-miterlimit="10"/>
+    <circle id="Bezier_Knob_Glow_R" cx="364" cy="58" r="9" fill="#fde047"/>
+    <path id="Anchor_Node_TopL" d="M81 113 L111 113 C115.418 113 119 116.582 119 121 L119 151 C119 155.418 115.418 159 111 159 L81 159 C76.582 159 73 155.418 73 151 L73 121 C73 116.582 76.582 113 81 113 Z" fill="#f97316" stroke="#ffffff" stroke-width="8" stroke-miterlimit="10"/>
+    <path id="Anchor_Node_TopR" d="M401 113 L431 113 C435.418 113 439 116.582 439 121 L439 151 C439 155.418 435.418 159 431 159 L401 159 C396.582 159 393 155.418 393 151 L393 121 C393 116.582 396.582 113 401 113 Z" fill="#f97316" stroke="#ffffff" stroke-width="8" stroke-miterlimit="10"/>
+    <path id="Anchor_Node_BottomChin" d="M241 421 L271 421 C275.418 421 279 424.582 279 429 L279 459 C279 463.418 275.418 467 271 467 L241 467 C236.582 467 233 463.418 233 459 L233 429 C233 424.582 236.582 421 241 421 Z" fill="#f97316" stroke="#ffffff" stroke-width="8" stroke-miterlimit="10"/>
+  </g>
+</svg>
