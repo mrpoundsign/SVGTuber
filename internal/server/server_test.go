@@ -569,7 +569,44 @@ func TestServer_MultiTabTrackerSession(t *testing.T) {
 	if !active1AfterClose || tabs1AfterClose != 1 {
 		t.Fatalf("expected tab 1 to become active again with 1 tab, got active=%v, tabs=%d", active1AfterClose, tabs1AfterClose)
 	}
+	if got := srv.ConnectedStudioCount(); got != 1 {
+		t.Fatalf("expected ConnectedStudioCount() == 1, got %d", got)
+	}
+	if got := srv.ConnectedOverlayCount(); got != 0 {
+		t.Fatalf("expected ConnectedOverlayCount() == 0, got %d", got)
+	}
+
+	overlaySrv := httptest.NewServer(http.HandlerFunc(srv.handleOverlayWS))
+	defer overlaySrv.Close()
+	overlayWSURL := "ws" + strings.TrimPrefix(overlaySrv.URL, "http")
+
+	// Embedded Studio preview iframe (?preview=1) should NOT count as an external overlay
+	previewConn, _, err := websocket.Dial(ctx, overlayWSURL+"?preview=1", nil)
+	if err != nil {
+		t.Fatalf("failed to dial preview overlay: %v", err)
+	}
+	defer func() { _ = previewConn.Close(websocket.StatusNormalClosure, "") }()
+	if got := srv.ConnectedOverlayCount(); got != 0 {
+		t.Fatalf("expected preview iframe to not increment ConnectedOverlayCount(), got %d", got)
+	}
+
+	// Standalone / OBS overlay (no ?preview=1) SHOULD count as an external overlay
+	obsConn, _, err := websocket.Dial(ctx, overlayWSURL, nil)
+	if err != nil {
+		t.Fatalf("failed to dial obs overlay: %v", err)
+	}
+	defer func() { _ = obsConn.Close(websocket.StatusNormalClosure, "") }()
+	for range 40 {
+		if srv.ConnectedOverlayCount() == 1 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := srv.ConnectedOverlayCount(); got != 1 {
+		t.Fatalf("expected OBS overlay to increment ConnectedOverlayCount() to 1, got %d", got)
+	}
 }
+
 
 
 

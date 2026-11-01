@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"
@@ -54,56 +53,6 @@ func (s *Server) StreamDeckPluginsDir() string {
 		return ""
 	}
 	return defDir
-}
-
-func (s *Server) handleAPIStreamDeckStatus(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		http.Error(w, `{"error":"GET required"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	dir := s.StreamDeckPluginsDir()
-	installed := streamdeck.IsPluginInstalled(dir)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"installed":     installed,
-		"pluginsDir":    dir,
-		"pluginDirName": streamdeck.PluginDirName,
-		"port":          s.Port(),
-	})
-}
-
-func (s *Server) handleAPIStreamDeckInstall(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	dir := s.StreamDeckPluginsDir()
-	port := s.Port()
-	if s.configMgr != nil {
-		if cfgPort := s.configMgr.GetPort(); cfgPort > 0 && cfgPort <= 65535 {
-			port = cfgPort
-		}
-	}
-	installedPath, err := streamdeck.InstallPluginWithPort(dir, port)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error":      fmt.Sprintf("failed to install Stream Deck plugin: %v", err),
-			"pluginsDir": dir,
-		})
-		return
-	}
-
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":        "installed",
-		"installed":     true,
-		"installedPath": installedPath,
-		"pluginsDir":    dir,
-		"pluginDirName": streamdeck.PluginDirName,
-	})
 }
 
 // NormalizeTrackingMode normalizes a tracking mode string to "hybrid", "camera", or "audio".

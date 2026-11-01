@@ -31,9 +31,9 @@ bundle_accessories() {
 }
 
 build_binary_linux() {
-  echo "==> Building svgtuber binary (CGO_ENABLED=0)..."
+  echo "==> Building svgtuber binary (CGO_ENABLED=1)..."
   mkdir -p build
-  CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber ./cmd/svgtuber
+  CGO_ENABLED=1 go build -trimpath -ldflags "-s -w -X main.version=${VERSION} -X main.commit=$(git rev-parse --short HEAD 2>/dev/null || echo 'none') -X main.date=$(date -u +%Y-%m-%d)" -o build/svgtuber ./cmd/svgtuber
   echo "==> Successfully built build/svgtuber"
 }
 

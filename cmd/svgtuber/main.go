@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,7 +38,8 @@ func main() {
 
 	avatarFlag := flag.String("avatar", "", "Path to the Inkscape SVG avatar file (saved to config when specified)")
 	port := flag.Int("port", config.DefaultPort, "Port for the HTTP and WebSocket server (saved to config when specified)")
-	openStudio := flag.Bool("open-studio", false, "Automatically open the Studio control page in default browser")
+	openStudio := flag.Bool("open-studio", false, "Automatically open the Studio control page in default browser on startup")
+	streamerModeFlag := flag.Bool("streamer-mode", false, "Enable Streamer Mode privacy protection (hides URLs and local paths in terminal and Studio)")
 	headlessFlag := flag.Bool("headless", false, "Run without the desktop control window (console mode)")
 	showVersion := flag.Bool("version", false, "Print version information and exit")
 	checkUpdate := flag.Bool("check-update", false, "Check GitHub Releases for a newer version and exit")
@@ -45,9 +48,13 @@ func main() {
 	flag.Parse()
 
 	portExplicit := false
+	streamerExplicit := false
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "port" {
 			portExplicit = true
+		}
+		if f.Name == "streamer-mode" {
+			streamerExplicit = true
 		}
 	})
 
@@ -72,6 +79,9 @@ func main() {
 		return
 	}
 
+	logSink := NewAppLogSink(DefaultLogPath(), *headlessFlag)
+	log.Printf("[Startup] SVGTuber %s starting (log file: %s)", version, logSink.FilePath())
+
 	cfgMgr, err := config.NewManager()
 	if err != nil {
 		log.Printf("[Warning] Failed to initialize config manager: %v (using defaults)", err)
@@ -84,6 +94,16 @@ func main() {
 		} else {
 			*port = cfgMgr.GetPort()
 		}
+		if streamerExplicit {
+			_ = cfgMgr.SetStreamerMode(*streamerModeFlag)
+		}
+	}
+
+	isStreamerMode := func() bool {
+		if cfgMgr != nil {
+			return cfgMgr.GetStreamerMode()
+		}
+		return *streamerModeFlag
 	}
 
 	// Resolve avatar path:
@@ -98,6 +118,7 @@ func main() {
 			absPath = *avatarFlag
 		}
 		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			_ = logSink.Close()
 			log.Fatalf("Specified avatar SVG file does not exist: %s", *avatarFlag)
 		}
 		avatarPath = absPath
@@ -117,13 +138,17 @@ func main() {
 			if cfgMgr != nil {
 				_ = cfgMgr.SetAvatarLocation(abs)
 			}
-			log.Printf("[Config] Found 'avatar.svg' in current directory; saved to config: %s", abs)
+			if !isStreamerMode() {
+				log.Printf("[Config] Found 'avatar.svg' in current directory; saved to config: %s", abs)
+			}
 		} else if cfgMgr != nil && cfgMgr.GetActiveAvatarPath() != "" {
 			saved := cfgMgr.GetActiveAvatarPath()
 			if _, err := os.Stat(saved); err == nil {
 				avatarPath = saved
-				log.Printf("[Config] Using avatar from saved config: %s", saved)
-			} else {
+				if !isStreamerMode() {
+					log.Printf("[Config] Using avatar from saved config: %s", saved)
+				}
+			} else if !isStreamerMode() {
 				log.Printf("[Config] Previously saved avatar path does not exist: %s", saved)
 			}
 		}
@@ -136,11 +161,14 @@ func main() {
 					} else {
 						avatarPath = candidate
 					}
-					log.Printf("[Config] No avatar specified or found; using sample avatar: %s", avatarPath)
+					if !isStreamerMode() {
+						log.Printf("[Config] No avatar specified or found; using sample avatar: %s", avatarPath)
+					}
 					break
 				}
 			}
 			if avatarPath == "" {
+				_ = logSink.Close()
 				log.Fatalf("No avatar SVG found! Place an 'avatar.svg' in the current directory or specify with -avatar <path>.")
 			}
 		}
@@ -152,8 +180,10 @@ func main() {
 	srv.SetVersion(version, commit, date)
 
 	if err := srv.Start(); err != nil {
+		_ = logSink.Close()
 		log.Fatalf("Failed to start server: %v", err)
 	}
+	defer func() { _ = logSink.Close() }()
 
 	// Initialize file watcher for live reload
 	fw, err := watcher.New(avatarPath, 100*time.Millisecond, func() {
@@ -173,26 +203,69 @@ func main() {
 	studioURL := fmt.Sprintf("http://localhost:%d/studio", *port)
 	overlayURL := fmt.Sprintf("http://localhost:%d/overlay", *port)
 
-	runAppUI(srv, cfgMgr, studioURL, overlayURL, *openStudio, *headlessFlag)
+	runAppUI(srv, cfgMgr, logSink, studioURL, overlayURL, *openStudio, *headlessFlag)
+}
+
+func formatBannerBannerLines(ver, avatarPath, avatarDir, studioURL, overlayURL, configPath string, streamerMode bool) []string {
+	lines := []string{
+		"====================================================",
+		"  SVGTuber " + ver + " - Vector VTuber Engine",
+		"====================================================",
+	}
+	if streamerMode {
+		lines = append(lines,
+			"  [STREAMER MODE: ON — URLs & Local Paths Hidden]",
+			"  Avatar:      "+filepath.Base(strings.ReplaceAll(avatarPath, `\`, "/")),
+			"  Studio:      [Hidden in Streamer Mode]",
+			"  OBS Overlay: [Hidden in Streamer Mode]",
+		)
+	} else {
+		lines = append(lines,
+			"  Avatar:      "+avatarPath,
+			"  Avatar Dir:  "+avatarDir,
+			"  Studio:      "+studioURL,
+			"  OBS Overlay: "+overlayURL,
+		)
+		if configPath != "" {
+			lines = append(lines, "  Settings:    "+configPath)
+		}
+	}
+	lines = append(lines,
+		"----------------------------------------------------",
+		"  Commands (type and press Enter):",
+		"    [Enter] or [s] -> Open Studio in default browser",
+		"    [o]            -> Open Avatar folder",
+		"    [m]            -> Toggle Streamer Mode (hide/show URLs)",
+		"    [q] or Ctrl+C  -> Quit SVGTuber",
+		"====================================================",
+	)
+	return lines
+}
+
+func printTerminalBanner(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL string) {
+	streamerMode := false
+	configPath := ""
+	if cfgMgr != nil {
+		streamerMode = cfgMgr.GetStreamerMode()
+		if p, err := cfgMgr.ConfigPath(); err == nil {
+			configPath = p
+		}
+	}
+	for _, line := range formatBannerBannerLines(
+		version,
+		srv.AvatarPath(),
+		srv.AvatarDir(),
+		studioURL,
+		overlayURL,
+		configPath,
+		streamerMode,
+	) {
+		fmt.Println(line)
+	}
 }
 
 func runHeadlessLoop(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL string, openStudio bool) {
-	fmt.Println("====================================================")
-	fmt.Printf("  SVGTuber %s - Vector VTuber Engine\n", version)
-	fmt.Println("====================================================")
-	fmt.Printf("  Avatar:      %s\n", srv.AvatarPath())
-	fmt.Printf("  Avatar Dir:  %s\n", srv.AvatarDir())
-	fmt.Printf("  Studio:      %s\n", studioURL)
-	fmt.Printf("  OBS Overlay: %s\n", overlayURL)
-	if cfgMgr != nil {
-		if path, err := cfgMgr.ConfigPath(); err == nil {
-			fmt.Printf("  Settings:    %s\n", path)
-		}
-	}
-	fmt.Println("----------------------------------------------------")
-	fmt.Println("  Add OBS Overlay URL as a Browser Source in OBS.")
-	fmt.Println("  Press Ctrl+C to stop.")
-	fmt.Println("====================================================")
+	printTerminalBanner(srv, cfgMgr, studioURL, overlayURL)
 
 	if openStudio {
 		go openBrowser(studioURL)
@@ -200,6 +273,35 @@ func runHeadlessLoop(srv *server.Server, cfgMgr *config.Manager, studioURL, over
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+
+	// Interactive terminal hotkeys ([Enter]/[s] = Open Studio, [o] = Open Avatar Dir, [m] = Toggle Streamer Mode, [q] = Quit)
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			cmd := strings.TrimSpace(strings.ToLower(scanner.Text()))
+			switch cmd {
+			case "", "s", "studio", "open":
+				fmt.Println("-> Opening SVGTuber Studio in default browser...")
+				go openBrowser(studioURL)
+			case "o", "dir", "folder":
+				fmt.Println("-> Opening Avatar folder...")
+				_ = server.OpenDirectory(srv.AvatarDir())
+			case "m", "streamer":
+				if cfgMgr != nil {
+					next := !cfgMgr.GetStreamerMode()
+					_ = cfgMgr.SetStreamerMode(next)
+					srv.BroadcastStreamerMode(next)
+					printTerminalBanner(srv, cfgMgr, studioURL, overlayURL)
+				}
+			case "q", "quit", "exit":
+				stop <- os.Interrupt
+				return
+			default:
+				fmt.Println("Press [Enter] or [s] to open Studio, [o] to open Avatar folder, [m] to toggle Streamer Mode, or [q] to quit.")
+			}
+		}
+	}()
+
 	<-stop
 
 	shutdownServer(srv)
@@ -211,6 +313,19 @@ func shutdownServer(srv *server.Server) {
 	if err := srv.Shutdown(ctx); err != nil && err != http.ErrServerClosed {
 		log.Printf("Shutdown error: %v", err)
 	}
+}
+
+func openFileInOS(filePath string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", filePath)
+	case "darwin":
+		cmd = exec.Command("open", filePath)
+	default:
+		cmd = exec.Command("xdg-open", filePath)
+	}
+	_ = cmd.Start()
 }
 
 func openBrowser(url string) {

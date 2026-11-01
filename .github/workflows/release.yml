@@ -51,7 +51,11 @@ jobs:
         run: |
           git checkout -- web/overlay/overlay.js web/studio/tracker.js 2>/dev/null || true
           npm run build
-          git diff --quiet || git commit -am "chore: update bundled web assets" || true
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git commit -am "chore: update bundled web assets" || true
+          fi
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6

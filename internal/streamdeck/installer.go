@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -16,8 +17,102 @@ const PluginDirName = "com.github.mrpoundsign.svgtuber.sdPlugin"
 // DefaultPort is the default SVGTuber HTTP and WebSocket control port.
 const DefaultPort = 7420
 
+// PluginStatus describes the installation and version state of the Elgato Stream Deck plugin.
+type PluginStatus struct {
+	Installed        bool
+	InstalledVersion string
+	BundledVersion   string
+	NeedsUpdate      bool
+}
+
 //go:embed all:plugin/com.github.mrpoundsign.svgtuber.sdPlugin
 var embeddedPluginFS embed.FS
+
+// BundledPluginVersion returns the Version declared in the embedded Stream Deck manifest.json.
+func BundledPluginVersion() string {
+	data, err := embeddedPluginFS.ReadFile("plugin/" + PluginDirName + "/manifest.json")
+	if err != nil {
+		return "1.0.0.0"
+	}
+	var m struct {
+		Version string `json:"Version"`
+	}
+	if err := json.Unmarshal(data, &m); err != nil || strings.TrimSpace(m.Version) == "" {
+		return "1.0.0.0"
+	}
+	return strings.TrimSpace(m.Version)
+}
+
+// InstalledPluginVersion returns the Version from the installed Stream Deck manifest.json
+// in targetBaseDir (or DefaultPluginsDir if empty), or "" if not installed.
+func InstalledPluginVersion(targetBaseDir string) string {
+	if strings.TrimSpace(targetBaseDir) == "" {
+		dir, err := DefaultPluginsDir()
+		if err != nil {
+			return ""
+		}
+		targetBaseDir = dir
+	}
+	if !IsPluginInstalled(targetBaseDir) {
+		return ""
+	}
+	manifestPath := filepath.Join(targetBaseDir, PluginDirName, "manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return ""
+	}
+	var m struct {
+		Version string `json:"Version"`
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(m.Version)
+}
+
+// CheckPluginStatus inspects targetBaseDir (or DefaultPluginsDir if empty) and reports whether
+// the Stream Deck plugin is installed, its installed version, the bundled version, and whether
+// an update is available.
+func CheckPluginStatus(targetBaseDir string) PluginStatus {
+	bundled := BundledPluginVersion()
+	installed := IsPluginInstalled(targetBaseDir)
+	if !installed {
+		return PluginStatus{
+			Installed:      false,
+			BundledVersion: bundled,
+		}
+	}
+	instVer := InstalledPluginVersion(targetBaseDir)
+	needsUpdate := instVer == "" || compareDotVersions(bundled, instVer) > 0
+	return PluginStatus{
+		Installed:        true,
+		InstalledVersion: instVer,
+		BundledVersion:   bundled,
+		NeedsUpdate:      needsUpdate,
+	}
+}
+
+func compareDotVersions(a, b string) int {
+	aParts := strings.Split(strings.TrimPrefix(strings.TrimSpace(a), "v"), ".")
+	bParts := strings.Split(strings.TrimPrefix(strings.TrimSpace(b), "v"), ".")
+	maxLen := max(len(bParts), len(aParts))
+	for i := range maxLen {
+		var ai, bi int
+		if i < len(aParts) {
+			ai, _ = strconv.Atoi(aParts[i])
+		}
+		if i < len(bParts) {
+			bi, _ = strconv.Atoi(bParts[i])
+		}
+		if ai > bi {
+			return 1
+		}
+		if ai < bi {
+			return -1
+		}
+	}
+	return 0
+}
 
 // DefaultPluginsDir returns the standard Elgato Stream Deck Plugins directory
 // (%APPDATA%\Elgato\StreamDeck\Plugins on Windows, or UserConfigDir fallback).

@@ -73,6 +73,7 @@ const DefaultPort = 7420
 type Settings struct {
 	Version           int                          `json:"version"`
 	Port              int                          `json:"port,omitempty"`          // HTTP & WebSocket server port (default: 7420)
+	StreamerMode      bool                         `json:"streamerMode,omitempty"`  // Hide URLs, ports, paths, and raw webcam video for stream privacy
 	AvatarDir         string                       `json:"avatarDir,omitempty"`     // Directory containing avatar SVGs
 	CurrentAvatar     string                       `json:"currentAvatar,omitempty"` // Relative path/filename of active avatar within AvatarDir
 	AvatarPath        string                       `json:"avatarPath,omitempty"`    // Full absolute path (for backwards compatibility)
@@ -194,6 +195,21 @@ func (m *Manager) SetPort(port int) error {
 	}
 	m.mu.Lock()
 	m.settings.Port = port
+	m.mu.Unlock()
+	return m.Save()
+}
+
+// GetStreamerMode returns whether Streamer Mode privacy protection is enabled.
+func (m *Manager) GetStreamerMode() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.settings.StreamerMode
+}
+
+// SetStreamerMode updates the Streamer Mode privacy flag and persists it to disk.
+func (m *Manager) SetStreamerMode(enabled bool) error {
+	m.mu.Lock()
+	m.settings.StreamerMode = enabled
 	m.mu.Unlock()
 	return m.Save()
 }
@@ -496,10 +512,11 @@ func (m *Manager) Update(newSettings Settings) error {
 	return m.Save()
 }
 
-// Reset restores settings to default values and saves to disk while preserving avatar directory, paths, and accessories.
+// Reset restores settings to default values and saves to disk while preserving avatar directory, paths, streamerMode, and accessories.
 func (m *Manager) Reset() (Settings, error) {
 	defaults := DefaultSettings()
 	m.mu.Lock()
+	defaults.StreamerMode = m.settings.StreamerMode
 	defaults.AvatarDir = m.settings.AvatarDir
 	defaults.CurrentAvatar = m.settings.CurrentAvatar
 	defaults.AvatarPath = m.settings.AvatarPath

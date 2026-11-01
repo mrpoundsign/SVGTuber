@@ -10,84 +10,8 @@ import (
 	"testing"
 
 	"github.com/mrpoundsign/SVGTuber/internal/config"
-	"github.com/mrpoundsign/SVGTuber/internal/streamdeck"
 	"github.com/mrpoundsign/SVGTuber/internal/tracking"
 )
-
-func TestAPIStreamDeckStatusAndInstall(t *testing.T) {
-	wsDir := t.TempDir()
-	avatarPath := filepath.Join(wsDir, "avatar.svg")
-	if err := os.WriteFile(avatarPath, []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"></svg>`), 0o600); err != nil {
-		t.Fatalf("write avatar: %v", err)
-	}
-
-	sdPluginsDir := t.TempDir()
-	srv := New(0, avatarPath, NewHub(), tracking.NewEngine())
-	srv.SetStreamDeckPluginsDir(sdPluginsDir)
-
-	// 1. Check status before installation
-	reqStatus := httptest.NewRequest(http.MethodGet, "/api/streamdeck/status", nil)
-	recStatus := httptest.NewRecorder()
-	srv.handleAPIStreamDeckStatus(recStatus, reqStatus)
-
-	if recStatus.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", recStatus.Code)
-	}
-
-	var statusBefore struct {
-		Installed     bool   `json:"installed"`
-		PluginsDir    string `json:"pluginsDir"`
-		PluginDirName string `json:"pluginDirName"`
-	}
-	if err := json.NewDecoder(recStatus.Body).Decode(&statusBefore); err != nil {
-		t.Fatalf("decode statusBefore: %v", err)
-	}
-	if statusBefore.Installed {
-		t.Fatalf("expected Installed=false before POST /api/streamdeck/install")
-	}
-
-	// 2. Install Stream Deck plugin via POST /api/streamdeck/install
-	reqInstall := httptest.NewRequest(http.MethodPost, "/api/streamdeck/install", nil)
-	recInstall := httptest.NewRecorder()
-	srv.handleAPIStreamDeckInstall(recInstall, reqInstall)
-
-	if recInstall.Code != http.StatusOK {
-		t.Fatalf("install status = %d, want 200", recInstall.Code)
-	}
-
-	var instPayload struct {
-		Status        string `json:"status"`
-		Installed     bool   `json:"installed"`
-		InstalledPath string `json:"installedPath"`
-	}
-	if err := json.NewDecoder(recInstall.Body).Decode(&instPayload); err != nil {
-		t.Fatalf("decode instPayload: %v", err)
-	}
-	if !instPayload.Installed || instPayload.Status != "installed" {
-		t.Fatalf("unexpected install payload: %+v", instPayload)
-	}
-	if !streamdeck.IsPluginInstalled(sdPluginsDir) {
-		t.Fatalf("expected streamdeck.IsPluginInstalled(%q) == true", sdPluginsDir)
-	}
-
-	// 3. Re-check status after installation
-	reqStatus2 := httptest.NewRequest(http.MethodGet, "/api/streamdeck/status", nil)
-	recStatus2 := httptest.NewRecorder()
-	srv.handleAPIStreamDeckStatus(recStatus2, reqStatus2)
-
-	if recStatus2.Code != http.StatusOK {
-		t.Fatalf("status after install = %d, want 200", recStatus2.Code)
-	}
-	var statusAfter struct {
-		Installed bool `json:"installed"`
-	}
-	if err := json.NewDecoder(recStatus2.Body).Decode(&statusAfter); err != nil {
-		t.Fatalf("decode statusAfter: %v", err)
-	}
-	if !statusAfter.Installed {
-		t.Fatalf("expected Installed=true after POST /api/streamdeck/install")
-	}
-}
 
 func TestAPIModeAndCycleAvatar(t *testing.T) {
 	wsDir := t.TempDir()

@@ -41,6 +41,17 @@ import {
   type UpdateCheckPayload,
   type UpdateProgressMessage,
 } from "./updater.ts";
+import {
+  normalizeStudioMode,
+  normalizeTuningTab,
+  parseStreamerMode,
+  formatStreamerModeButtonState,
+  maskSensitivePath,
+  computeFaceCropTransform,
+  type StudioMode,
+  type TuningTab,
+  type FaceCropState,
+} from "./studio-modes.ts";
 
 const multiTabBanner = document.getElementById("multi-tab-banner") as HTMLElement | null;
 const multiTabMessage = document.getElementById("multi-tab-message") as HTMLElement | null;
@@ -56,7 +67,31 @@ const canvasCtx = canvas ? canvas.getContext("2d") : null;
 const cameraSelect = document.getElementById("camera-select") as HTMLSelectElement | null;
 const btnToggleCamera = document.getElementById("btn-toggle-camera") as HTMLButtonElement | null;
 const btnCalibrate = document.getElementById("btn-calibrate") as HTMLButtonElement | null;
+const btnFaceAutocrop = document.getElementById("btn-face-autocrop") as HTMLButtonElement | null;
 const trackingStatus = document.getElementById("tracking-status") as HTMLElement | null;
+
+let faceAutoCropEnabled = true;
+let faceCropState: FaceCropState | null = null;
+
+function applyFaceCropTransform(landmarks: any[] | null) {
+  if (!video || !canvas) return;
+  if (!faceAutoCropEnabled || !webcamRunning) {
+    faceCropState = null;
+    video.style.transform = "scale(-1, 1)";
+    canvas.style.transform = "scale(-1, 1)";
+    return;
+  }
+  const crop = computeFaceCropTransform(landmarks, faceCropState, 0.28);
+  faceCropState = crop.state;
+  video.style.transform = crop.cssTransform;
+  canvas.style.transform = crop.cssTransform;
+}
+
+function updateFaceAutocropButtonUI() {
+  if (!btnFaceAutocrop) return;
+  btnFaceAutocrop.textContent = faceAutoCropEnabled ? "🔍 Auto-Zoom: ON" : "🔍 Auto-Zoom: OFF";
+  btnFaceAutocrop.setAttribute("aria-pressed", String(faceAutoCropEnabled));
+}
 const fpsDisplay = document.getElementById("fps-display") as HTMLElement | null;
 
 // Audio Controls & VU Meter
@@ -64,7 +99,6 @@ const micSelect = document.getElementById("mic-select") as HTMLSelectElement | n
 const btnToggleMic = document.getElementById("btn-toggle-mic") as HTMLButtonElement | null;
 const modeSelect = document.getElementById("mode-select") as HTMLSelectElement | null;
 const settingsModeSelect = document.getElementById("settings-mode-select") as HTMLSelectElement | null;
-const inputServerPort = document.getElementById("input-server-port") as HTMLInputElement | null;
 const vuMeterBar = document.getElementById("vu-meter-bar") as HTMLElement | null;
 const noiseGateMarker = document.getElementById("noise-gate-marker") as HTMLElement | null;
 const valVuMeter = document.getElementById("val-vu-meter") as HTMLElement | null;
@@ -546,6 +580,9 @@ function connectWebSocket() {
         if (typeof msg.mode === "string") {
           applyMode(msg.mode, false);
         }
+        if (typeof msg.streamerMode === "boolean" && msg.streamerMode !== streamerModeEnabled) {
+          applyStreamerMode(msg.streamerMode, true, false);
+        }
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg as UpdateProgressMessage);
       }
@@ -998,8 +1035,12 @@ async function startCamera(deviceId: string | null = null) {
 
     updateCameraUI();
     if (canvas && video) {
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+      canvas.width = vw;
+      canvas.height = vh;
+      video.style.aspectRatio = `${vw} / ${vh}`;
+      canvas.style.aspectRatio = `${vw} / ${vh}`;
     }
 
     populateCameraDevices();
@@ -1076,6 +1117,7 @@ function stopCamera() {
   frameCount = 0;
 
   updateCameraUI();
+  applyFaceCropTransform(null);
   if (canvasCtx && canvas) {
     canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
   }
@@ -1153,6 +1195,7 @@ function processFrame(renderUI = true) {
 
       if (renderUI) {
         updateTrackingGauges(pose, blendshapes);
+        applyFaceCropTransform(landmarks);
         drawLandmarks(landmarks);
       }
     } else {
@@ -1171,6 +1214,7 @@ function processFrame(renderUI = true) {
       }
 
       if (renderUI) {
+        applyFaceCropTransform(null);
         if (canvasCtx && canvas) canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
         resetTrackingGauges();
       }
@@ -1323,6 +1367,9 @@ if (micSelect) {
 
 // Settings Loading and Persistence
 let activeSettings: SettingsPayload | null = null;
+let rawConfigPath = "";
+let streamerModeEnabled = false;
+
 const debouncedSaveSettings = createDebouncedSaver(async (settings) => {
   try {
     const res = await fetch("/api/settings", {
@@ -1348,8 +1395,11 @@ async function loadSettings() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     activeSettings = data.settings;
-    if (configPathDisplay && data.configPath) {
-      configPathDisplay.textContent = data.configPath;
+    if (data.configPath) {
+      rawConfigPath = data.configPath;
+    }
+    if (configPathDisplay && rawConfigPath) {
+      configPathDisplay.textContent = maskSensitivePath(rawConfigPath, streamerModeEnabled);
     }
     syncSettingsToUI(activeSettings);
   } catch (err) {
@@ -1359,8 +1409,8 @@ async function loadSettings() {
 
 function syncSettingsToUI(s: SettingsPayload | null) {
   if (!s) return;
-  if (inputServerPort && s.port) {
-    inputServerPort.value = String(s.port);
+  if (typeof s.streamerMode === "boolean" && s.streamerMode !== streamerModeEnabled) {
+    applyStreamerMode(s.streamerMode, true, false);
   }
   if (s.tracking) {
     const t = s.tracking;
@@ -1466,11 +1516,14 @@ function updateSliderLabels() {
 }
 
 function collectSettingsFromUI(): SettingsPayload {
-  const parsedPort = parseInt(inputServerPort?.value || "7420", 10);
-  const validPort = !isNaN(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 7420;
+  const validPort =
+    activeSettings?.port && activeSettings.port > 0 && activeSettings.port <= 65535
+      ? activeSettings.port
+      : 7420;
   return {
     version: 1,
     port: validPort,
+    streamerMode: streamerModeEnabled,
     tracking: {
       mouthGain: parseFloat(sliderMouthGain?.value || "1.4"),
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || "0.08"),
@@ -1553,7 +1606,6 @@ function onModeChange(e: Event) {
 
 if (modeSelect) modeSelect.addEventListener("change", onModeChange);
 if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChange);
-if (inputServerPort) inputServerPort.addEventListener("change", onSliderInput);
 
 [
   checkboxEnableSmile,
@@ -1768,7 +1820,6 @@ window.addEventListener("keydown", (e) => {
 
 // Avatar Directory Management
 const avatarSelect = document.getElementById("avatar-select") as HTMLSelectElement | null;
-const avatarDirLabel = document.getElementById("avatar-dir-label") as HTMLElement | null;
 const btnRefreshAvatars = document.getElementById("btn-refresh-avatars") as HTMLButtonElement | null;
 
 function reloadAvatarFrame() {
@@ -1784,16 +1835,10 @@ async function loadAvatars() {
     const res = await fetch(`/api/avatars?t=${Date.now()}`);
     if (!res.ok) return;
     const data = await res.json();
-    const dir = data.avatarDir || "";
     const current = data.currentAvatar || "";
     const avatars = (data.avatars || []).filter(
       (av: string) => !av.toLowerCase().startsWith("accessories/")
     );
-
-    if (avatarDirLabel) {
-      avatarDirLabel.textContent = `📁 ${dir}`;
-      avatarDirLabel.title = dir;
-    }
 
     avatarSelect.innerHTML = "";
     if (avatars.length === 0) {
@@ -1844,31 +1889,13 @@ if (avatarSelect) {
 if (btnRefreshAvatars) {
   btnRefreshAvatars.addEventListener("click", async () => {
     btnRefreshAvatars.disabled = true;
-    btnRefreshAvatars.textContent = "Scanning...";
+    const prevText = btnRefreshAvatars.textContent;
+    btnRefreshAvatars.textContent = "...";
     try {
       await loadAvatars();
     } finally {
       btnRefreshAvatars.disabled = false;
-      btnRefreshAvatars.textContent = "↻ Scan Folder";
-    }
-  });
-}
-
-const btnOpenAvatarDir = document.getElementById("btn-open-avatar-dir") as HTMLButtonElement | null;
-if (btnOpenAvatarDir) {
-  btnOpenAvatarDir.addEventListener("click", async () => {
-    btnOpenAvatarDir.disabled = true;
-    try {
-      const res = await fetch("/api/avatars/open-dir", { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || res.statusText);
-      }
-    } catch (err: any) {
-      console.error("[Studio Tracker] Error opening avatar directory:", err);
-      alert(`Could not open avatar directory: ${err?.message || err}`);
-    } finally {
-      btnOpenAvatarDir.disabled = false;
+      btnRefreshAvatars.textContent = prevText || "↻";
     }
   });
 }
@@ -1880,10 +1907,64 @@ let accessoryFileExpressions: Record<string, string[]> = {};
 const accessoryDebounceMap = new Map<string, any>();
 
 const accessoryCountBadge = document.getElementById("accessory-count-badge") as HTMLElement | null;
+const sidebarAccBadge = document.getElementById("sidebar-acc-badge") as HTMLElement | null;
+const quickAccessoriesBarEl = document.getElementById("quick-accessories-bar") as HTMLElement | null;
 const accessoryListEl = document.getElementById("accessory-list") as HTMLElement | null;
 const availableAccessoriesChipsEl = document.getElementById("available-accessories-chips") as HTMLElement | null;
 const accessorySaveIndicator = document.getElementById("accessory-save-indicator") as HTMLElement | null;
 const btnRefreshAccessories = document.getElementById("btn-refresh-accessories") as HTMLButtonElement | null;
+
+function renderQuickAccessoriesBar() {
+  const activeCount = configuredAccessories.filter((a) => a.enabled).length;
+  const badgeText = `${activeCount}/${configuredAccessories.length}`;
+  if (accessoryCountBadge) {
+    accessoryCountBadge.textContent = badgeText;
+  }
+  if (sidebarAccBadge) {
+    sidebarAccBadge.textContent = badgeText;
+  }
+  if (!quickAccessoriesBarEl) return;
+
+  quickAccessoriesBarEl.innerHTML = "";
+  if (configuredAccessories.length === 0) {
+    const empty = document.createElement("span");
+    empty.style.fontSize = "12px";
+    empty.style.color = "var(--text-muted)";
+    empty.textContent = "No accessories added yet (open Wardrobe & Props to equip)";
+    quickAccessoriesBarEl.appendChild(empty);
+    return;
+  }
+
+  configuredAccessories.forEach((acc) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `expr-btn ${acc.enabled ? "active" : ""}`;
+    btn.title = `Click to ${acc.enabled ? "unequip" : "equip"} ${acc.name || acc.file}`;
+    const dot = document.createElement("span");
+    dot.textContent = acc.enabled ? "🟢" : "⚪";
+    dot.style.fontSize = "9px";
+    const lbl = document.createElement("span");
+    lbl.textContent = acc.name || acc.file;
+    btn.appendChild(dot);
+    btn.appendChild(lbl);
+    btn.addEventListener("click", async () => {
+      acc.enabled = !acc.enabled;
+      renderQuickAccessoriesBar();
+      renderAccessoriesUI();
+      try {
+        await fetch("/api/accessories/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: acc.id }),
+        });
+        flashAccessorySaved();
+      } catch (err) {
+        console.error("[Studio Tracker] Quick accessory toggle error:", err);
+      }
+    });
+    quickAccessoriesBarEl.appendChild(btn);
+  });
+}
 
 function flashAccessorySaved() {
   if (accessorySaveIndicator) {
@@ -1931,10 +2012,7 @@ function debounceSaveAccessory(acc: AccessoryConfig) {
 }
 
 function renderAccessoriesUI() {
-  if (accessoryCountBadge) {
-    const activeCount = configuredAccessories.filter((a) => a.enabled).length;
-    accessoryCountBadge.textContent = `${activeCount}/${configuredAccessories.length}`;
-  }
+  renderQuickAccessoriesBar();
 
   if (availableAccessoriesChipsEl) {
     const currentChipsKey = availableAccessoriesChipsEl.dataset.files || "";
@@ -2052,10 +2130,7 @@ function renderAccessoriesUI() {
           body: JSON.stringify({ id: acc.id }),
         });
         flashAccessorySaved();
-        if (accessoryCountBadge) {
-          const activeCount = configuredAccessories.filter((a) => a.enabled).length;
-          accessoryCountBadge.textContent = `${activeCount}/${configuredAccessories.length}`;
-        }
+        renderQuickAccessoriesBar();
       } catch (err) {
         console.error("[Studio Tracker] Toggle error:", err);
       }
@@ -2559,6 +2634,9 @@ function openDressingRoom(accId: string | null = null) {
 function closeDressingRoom() {
   if (!dressingRoomModal) return;
   dressingRoomModal.style.display = "none";
+  if (fittingFrame) {
+    fittingFrame.src = "about:blank";
+  }
   renderAccessoriesUI();
   reloadAvatarFrame();
 }
@@ -2904,68 +2982,148 @@ if (checkShowCrosshair) {
   });
 }
 
-// Stream Deck Plugin Installer
-const btnInstallStreamDeck = document.getElementById("btn-install-streamdeck") as HTMLButtonElement | null;
-const streamDeckStatus = document.getElementById("streamdeck-status") as HTMLElement | null;
+// Concept B: Left Mode Sidebar & Top-Bar Streamer Mode Controllers
+const studioWorkspace = document.getElementById("studio-workspace") as HTMLElement | null;
+const modeNavBtns = document.querySelectorAll<HTMLButtonElement>(".mode-nav-btn");
+const btnJumpWardrobe = document.getElementById("btn-jump-wardrobe") as HTMLButtonElement | null;
+const btnStreamerMode = document.getElementById("btn-streamer-mode") as HTMLButtonElement | null;
 
-async function loadStreamDeckStatus() {
-  try {
-    const res = await fetch("/api/streamdeck/status");
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.installed) {
-      if (streamDeckStatus) {
-        streamDeckStatus.textContent = `✓ Plugin installed (${data.pluginDirName || "com.github.mrpoundsign.svgtuber.sdPlugin"})`;
-        streamDeckStatus.style.color = "var(--success)";
-      }
-      if (btnInstallStreamDeck) {
-        btnInstallStreamDeck.textContent = "↻ Update Stream Deck Plugin";
-      }
-    }
-  } catch {
-    // ignore
+function setStudioMode(mode: StudioMode, persist = true) {
+  const validMode = normalizeStudioMode(mode);
+  if (studioWorkspace) {
+    studioWorkspace.dataset.activeMode = validMode;
+  }
+  modeNavBtns.forEach((btn) => {
+    const isMatch = btn.dataset.mode === validMode;
+    btn.classList.toggle("active", isMatch);
+    btn.setAttribute("aria-current", isMatch ? "page" : "false");
+  });
+  if (persist) {
+    try {
+      localStorage.setItem("svgtuber_studio_mode", validMode);
+    } catch {}
   }
 }
 
-if (btnInstallStreamDeck) {
-  btnInstallStreamDeck.addEventListener("click", async () => {
-    const origText = btnInstallStreamDeck.textContent;
-    btnInstallStreamDeck.disabled = true;
-    btnInstallStreamDeck.textContent = "Installing...";
-    try {
-      const res = await fetch("/api/streamdeck/install", { method: "POST" });
-      const data = await res.json();
-      if (res.ok && data.installed) {
-        if (streamDeckStatus) {
-          streamDeckStatus.textContent = `✓ Installed to ${data.installedPath} (restart Elgato Stream Deck app to load)`;
-          streamDeckStatus.style.color = "var(--success)";
-        }
-        btnInstallStreamDeck.textContent = "✓ Installed!";
-      } else {
-        if (streamDeckStatus) {
-          streamDeckStatus.textContent = `⚠️ ${data.error || "Failed to install Stream Deck plugin"}`;
-          streamDeckStatus.style.color = "#ef4444";
-        }
-        btnInstallStreamDeck.textContent = origText;
-      }
-    } catch {
-      if (streamDeckStatus) {
-        streamDeckStatus.textContent = "⚠️ Network error installing Stream Deck plugin";
-        streamDeckStatus.style.color = "#ef4444";
-      }
-      btnInstallStreamDeck.textContent = origText;
-    } finally {
-      setTimeout(() => {
-        if (btnInstallStreamDeck) {
-          btnInstallStreamDeck.disabled = false;
-          btnInstallStreamDeck.textContent = "↻ Update Stream Deck Plugin";
-        }
-      }, 1500);
-    }
+function initStudioModeSidebar() {
+  let savedMode: string | null = null;
+  try {
+    savedMode = localStorage.getItem("svgtuber_studio_mode");
+  } catch {}
+  setStudioMode(normalizeStudioMode(savedMode), false);
+
+  modeNavBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetMode = normalizeStudioMode(btn.dataset.mode);
+      setStudioMode(targetMode, true);
+    });
   });
+
+  if (btnJumpWardrobe) {
+    btnJumpWardrobe.addEventListener("click", () => {
+      setStudioMode("wardrobe", true);
+    });
+  }
+
+  // Tuning Sub-Tabs (Mouth & Audio | Eyes & Head | Idle Life & Physics)
+  const cardTuningSliders = document.getElementById("card-tuning-sliders") as HTMLElement | null;
+  const tuningTabBtns = document.querySelectorAll<HTMLButtonElement>(".tuning-tab-btn");
+
+  const setTuningTab = (tab: TuningTab, persist = true) => {
+    const validTab = normalizeTuningTab(tab);
+    if (cardTuningSliders) {
+      cardTuningSliders.dataset.activeTuningTab = validTab;
+    }
+    tuningTabBtns.forEach((btn) => {
+      const isMatch = btn.dataset.tuningTab === validTab;
+      btn.classList.toggle("active", isMatch);
+      btn.setAttribute("aria-selected", String(isMatch));
+    });
+    if (persist) {
+      try {
+        localStorage.setItem("svgtuber_tuning_tab", validTab);
+      } catch {}
+    }
+  };
+
+  let savedTuningTab: string | null = null;
+  try {
+    savedTuningTab = localStorage.getItem("svgtuber_tuning_tab");
+  } catch {}
+  setTuningTab(normalizeTuningTab(savedTuningTab), false);
+
+  tuningTabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setTuningTab(normalizeTuningTab(btn.dataset.tuningTab), true);
+    });
+  });
+
+  // Face Auto-Zoom Toggle
+  try {
+    const savedAutoCrop = localStorage.getItem("svgtuber_face_autocrop");
+    if (savedAutoCrop !== null) {
+      faceAutoCropEnabled = savedAutoCrop !== "false" && savedAutoCrop !== "0";
+    }
+  } catch {}
+  updateFaceAutocropButtonUI();
+
+  if (btnFaceAutocrop) {
+    btnFaceAutocrop.addEventListener("click", () => {
+      faceAutoCropEnabled = !faceAutoCropEnabled;
+      updateFaceAutocropButtonUI();
+      if (!faceAutoCropEnabled) {
+        applyFaceCropTransform(null);
+      }
+      try {
+        localStorage.setItem("svgtuber_face_autocrop", String(faceAutoCropEnabled));
+      } catch {}
+    });
+  }
+}
+
+function applyStreamerMode(enabled: boolean, persist = true, saveServer = true) {
+  streamerModeEnabled = enabled;
+  document.body.classList.toggle("streamer-mode", enabled);
+
+  const btnState = formatStreamerModeButtonState(enabled);
+  if (btnStreamerMode) {
+    btnStreamerMode.textContent = btnState.text;
+    btnStreamerMode.title = btnState.title;
+    btnStreamerMode.setAttribute("aria-pressed", String(enabled));
+    btnStreamerMode.classList.toggle("is-active", btnState.activeClass);
+  }
+
+  if (configPathDisplay && rawConfigPath) {
+    configPathDisplay.textContent = maskSensitivePath(rawConfigPath, enabled);
+  }
+
+  if (persist) {
+    try {
+      localStorage.setItem("svgtuber_streamer_mode", String(enabled));
+    } catch {}
+    if (saveServer && activeSettings) {
+      debouncedSaveSettings(collectSettingsFromUI());
+    }
+  }
+}
+
+function initStreamerMode() {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem("svgtuber_streamer_mode");
+  } catch {}
+  applyStreamerMode(parseStreamerMode(saved), false, false);
+
+  if (btnStreamerMode) {
+    btnStreamerMode.addEventListener("click", () => {
+      applyStreamerMode(!streamerModeEnabled, true, true);
+    });
+  }
 }
 
 // Initial Bootstrap
+initStudioModeSidebar();
+initStreamerMode();
 connectWebSocket();
 loadSettings().finally(() => {
   initMediaPipe();
@@ -2973,4 +3131,3 @@ loadSettings().finally(() => {
 loadExpressions();
 loadAvatars();
 loadAccessories();
-loadStreamDeckStatus();

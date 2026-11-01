@@ -59,4 +59,22 @@ func TestInstallPlugin(t *testing.T) {
 	if !strings.Contains(string(cfgBytes), "7429") {
 		t.Errorf("expected config.json to contain configured port 7429, got: %s", string(cfgBytes))
 	}
+
+	status := streamdeck.CheckPluginStatus(baseDir)
+	if !status.Installed || status.NeedsUpdate {
+		t.Fatalf("expected installed and up-to-date status, got %+v", status)
+	}
+	if status.InstalledVersion != streamdeck.BundledPluginVersion() {
+		t.Fatalf("InstalledVersion = %q, want %q", status.InstalledVersion, streamdeck.BundledPluginVersion())
+	}
+
+	// Simulate an older installed version in manifest.json
+	manifestPath := filepath.Join(installedDir, "manifest.json")
+	if err := os.WriteFile(manifestPath, []byte(`{"Version":"0.9.0.0"}`), 0o600); err != nil {
+		t.Fatalf("write older manifest.json: %v", err)
+	}
+	olderStatus := streamdeck.CheckPluginStatus(baseDir)
+	if !olderStatus.Installed || !olderStatus.NeedsUpdate || olderStatus.InstalledVersion != "0.9.0.0" {
+		t.Fatalf("expected NeedsUpdate=true for 0.9.0.0, got %+v", olderStatus)
+	}
 }
