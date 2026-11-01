@@ -8,6 +8,8 @@ import (
 	"testing/fstest"
 
 	"github.com/mrpoundsign/appinstaller/pkg/installer"
+
+	"github.com/mrpoundsign/SVGTuber/internal/streamdeck"
 )
 
 type spyRegistry struct {
@@ -30,14 +32,17 @@ func TestInstallerAppSpecAndOptionalComponents(t *testing.T) {
 	tempRoot := t.TempDir()
 	installDir := filepath.Join(tempRoot, "Programs", "SVGTuber")
 	wsDir := filepath.Join(tempRoot, "Documents", "SVGTuber")
+	sdDir := filepath.Join(tempRoot, "AppData", "Roaming", "Elgato", "StreamDeck", "Plugins")
 	cfgDir := filepath.Join(tempRoot, "AppData", "Roaming", "com.github", "mrpoundsign.svgtuber")
 
 	starterWorkspaceDirOverride = wsDir
+	streamDeckPluginsDirOverride = sdDir
 	purgeDirsOverride = []string{cfgDir}
 	spyReg := &spyRegistry{}
 	registryOverride = spyReg
 	t.Cleanup(func() {
 		starterWorkspaceDirOverride = ""
+		streamDeckPluginsDirOverride = ""
 		purgeDirsOverride = nil
 		registryOverride = nil
 	})
@@ -70,6 +75,7 @@ func TestInstallerAppSpecAndOptionalComponents(t *testing.T) {
 		SelectedComponents: map[string]bool{
 			"starter_workspace": true,
 			"add_path":          true,
+			"streamdeck_plugin": true,
 		},
 	}
 
@@ -123,6 +129,11 @@ func TestInstallerAppSpecAndOptionalComponents(t *testing.T) {
 	}
 	if !reloadedManifest.AddedToUserPath {
 		t.Error("expected reloaded manifest AddedToUserPath = true")
+	}
+
+	// Verify streamdeck_plugin installed com.github.mrpoundsign.svgtuber.sdPlugin into sdDir
+	if !streamdeck.IsPluginInstalled(sdDir) {
+		t.Errorf("expected Stream Deck plugin installed in %s", sdDir)
 	}
 
 	// Create mock config dir to verify purge on Uninstall

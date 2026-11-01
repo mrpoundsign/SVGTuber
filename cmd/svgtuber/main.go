@@ -35,7 +35,7 @@ func main() {
 	}
 
 	avatarFlag := flag.String("avatar", "", "Path to the Inkscape SVG avatar file (saved to config when specified)")
-	port := flag.Int("port", 7420, "Port for the HTTP and WebSocket server")
+	port := flag.Int("port", config.DefaultPort, "Port for the HTTP and WebSocket server (saved to config when specified)")
 	openStudio := flag.Bool("open-studio", false, "Automatically open the Studio control page in default browser")
 	headlessFlag := flag.Bool("headless", false, "Run without the desktop control window (console mode)")
 	showVersion := flag.Bool("version", false, "Print version information and exit")
@@ -43,6 +43,13 @@ func main() {
 	applyUpdate := flag.Bool("update", false, "Download, verify (SHA-256), and install the latest SVGTuber update")
 	mcpFlag := flag.Bool("mcp", false, "Run as Model Context Protocol (MCP) stdio server for Vectorcraft rigging and control")
 	flag.Parse()
+
+	portExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "port" {
+			portExplicit = true
+		}
+	})
 
 	if *showVersion {
 		fmt.Printf("svgtuber %s (commit: %s, built: %s)\n", version, commit, date)
@@ -68,6 +75,15 @@ func main() {
 	cfgMgr, err := config.NewManager()
 	if err != nil {
 		log.Printf("[Warning] Failed to initialize config manager: %v (using defaults)", err)
+	}
+	if cfgMgr != nil {
+		if portExplicit {
+			if err := cfgMgr.SetPort(*port); err != nil {
+				log.Printf("[Warning] Failed to save port to config: %v", err)
+			}
+		} else {
+			*port = cfgMgr.GetPort()
+		}
 	}
 
 	// Resolve avatar path:

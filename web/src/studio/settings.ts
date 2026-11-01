@@ -41,6 +41,7 @@ export interface AudioConfig {
 
 export interface SettingsPayload {
   version: number;
+  port?: number;
   tracking: TrackingConfig;
   audio: AudioConfig;
 }
@@ -48,6 +49,7 @@ export interface SettingsPayload {
 export function createDefaultSettings(): SettingsPayload {
   return {
     version: 1,
+    port: 7420,
     tracking: {
       mouthGain: 1.4,
       mouthThreshold: 0.08,
@@ -93,6 +95,7 @@ export function mergeSettings(
   if (!partial) return { ...base };
   return {
     version: partial.version || base.version,
+    port: partial.port || base.port || 7420,
     tracking: {
       ...base.tracking,
       ...(partial.tracking || {}),

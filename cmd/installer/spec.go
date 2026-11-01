@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/mrpoundsign/appinstaller/pkg/installer"
+
+	"github.com/mrpoundsign/SVGTuber/internal/streamdeck"
 )
 
 //go:embed payload/*
@@ -21,9 +23,10 @@ var (
 	AppVersion = "0.0.7"
 
 	// Overridable in unit tests to guarantee strict test isolation inside os.TempDir().
-	starterWorkspaceDirOverride string
-	purgeDirsOverride           []string
-	registryOverride            installer.RegistryManager
+	starterWorkspaceDirOverride  string
+	streamDeckPluginsDirOverride string
+	purgeDirsOverride            []string
+	registryOverride             installer.RegistryManager
 )
 
 func buildAppSpec() installer.AppSpec {
@@ -94,6 +97,24 @@ func buildAppSpec() installer.AppSpec {
 					}
 					markManifestAddedToPath(installDir)
 					progress(1, 1, "Added SVGTuber to User PATH.")
+					return nil
+				},
+			},
+			{
+				ID:          "streamdeck_plugin",
+				Title:       "Install Elgato Stream Deck Plugin",
+				Description: "Install com.github.mrpoundsign.svgtuber.sdPlugin for hardware keypad control",
+				DefaultOn:   true,
+				Run: func(_ context.Context, _ string, progress func(cur, total int64, status string)) error {
+					progress(0, 1, "Installing Elgato Stream Deck plugin...")
+					targetDir := streamDeckPluginsDirOverride
+					if targetDir == "" && testing.Testing() {
+						targetDir = filepath.Join(os.TempDir(), "svgtuber-test-sd-plugins")
+					}
+					if _, err := streamdeck.InstallPlugin(targetDir); err != nil {
+						return err
+					}
+					progress(1, 1, "Installed Elgato Stream Deck plugin.")
 					return nil
 				},
 			},
