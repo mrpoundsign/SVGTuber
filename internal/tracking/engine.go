@@ -247,6 +247,15 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		physicsAmount = 1.0
 	}
 
+	stabilizeBlink := ts.StabilizeBlink
+	maxYawDeg := ts.BlinkMaxHeadYaw
+	if !stabilizeBlink && maxYawDeg <= 0 {
+		stabilizeBlink = true
+		maxYawDeg = 25.0
+	} else if maxYawDeg <= 0 {
+		maxYawDeg = 25.0
+	}
+
 	// Compute audio volume and speech state
 	var audioMouth float64
 	var isSpeaking bool
@@ -301,6 +310,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BlinkThresholdR:  threshR,
 			BlinkSyncDelayMs: syncDelay,
 			WinkIsBlink:      ts.WinkIsBlink,
+			StabilizeBlink:   stabilizeBlink,
+			BlinkMaxHeadYaw:  maxYawDeg,
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
 			BounceAmount:     bounceAmount,
@@ -357,6 +368,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BlinkThresholdR:  threshR,
 			BlinkSyncDelayMs: syncDelay,
 			WinkIsBlink:      ts.WinkIsBlink,
+			StabilizeBlink:   stabilizeBlink,
+			BlinkMaxHeadYaw:  maxYawDeg,
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
 			BounceAmount:     bounceAmount,
@@ -373,7 +386,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	}
 
 	// Calibrate angles and translation, scaled by tunable multipliers
-	yaw := (raw.Yaw - e.neutralYaw) * ts.YawMultiplier
+	calYawDeg := raw.Yaw - e.neutralYaw
+	yaw := calYawDeg * ts.YawMultiplier
 	pitch := (raw.Pitch - e.neutralPitch) * ts.PitchMultiplier
 	roll := (raw.Roll - e.neutralRoll) * ts.RollMultiplier
 	x := raw.X - e.neutralX
@@ -381,10 +395,18 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	z := raw.Z - e.neutralZ
 
 	// Extract standard ARKit facial blendshapes
-	var blinkL, blinkR, opticalMouth, smile, browUp, browL, browR, eyeX, eyeY float64
+	var rawBlinkL, rawBlinkR, blinkL, blinkR, opticalMouth, smile, browUp, browL, browR, eyeX, eyeY float64
 	if bs := raw.Blendshapes; bs != nil {
-		blinkL = bs["eyeBlinkLeft"]
-		blinkR = bs["eyeBlinkRight"]
+		rawBlinkL = bs["eyeBlinkLeft"]
+		rawBlinkR = bs["eyeBlinkRight"]
+		blinkL = rawBlinkL
+		blinkR = rawBlinkR
+		if stabilizeBlink {
+			blinkL, blinkR = StabilizeBlink(rawBlinkL, rawBlinkR, calYawDeg, ts.WinkIsBlink, maxYawDeg)
+			if math.Abs(calYawDeg) > maxYawDeg {
+				rawBlinkL, rawBlinkR = blinkL, blinkR
+			}
+		}
 
 		rawJaw := bs["jawOpen"]
 		if e.calibrated && e.neutralMouth > 0 {
@@ -486,7 +508,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		e.pendingCloseR = false
 		e.pendingOpenL = false
 		e.pendingOpenR = false
-		closed := (blinkL >= threshL) || (blinkR >= threshR)
+		closed := (rawBlinkL >= threshL) || (rawBlinkR >= threshR)
 		isBlinkL = closed
 		isBlinkR = closed
 		e.inBilateralBlink = closed
@@ -494,7 +516,16 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		filtBlinkL = maxBlink
 		filtBlinkR = maxBlink
 	} else {
-		isBlinkL, isBlinkR = e.evaluateBlinks(blinkL, blinkR, threshL, threshR, syncDelay, raw.Timestamp)
+		evalThreshL := threshL
+		evalThreshR := threshR
+		if stabilizeBlink {
+			if calYawDeg > maxYawDeg {
+				evalThreshL = threshR
+			} else if calYawDeg < -maxYawDeg {
+				evalThreshR = threshL
+			}
+		}
+		isBlinkL, isBlinkR = e.evaluateBlinks(rawBlinkL, rawBlinkR, evalThreshL, evalThreshR, syncDelay, raw.Timestamp)
 	}
 
 	// Auto-blink is strictly for when camera or face is not detected.
@@ -530,6 +561,8 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		BlinkThresholdR:  threshR,
 		BlinkSyncDelayMs: syncDelay,
 		WinkIsBlink:      ts.WinkIsBlink,
+		StabilizeBlink:   stabilizeBlink,
+		BlinkMaxHeadYaw:  maxYawDeg,
 		SmileThreshold:   ts.SmileThreshold,
 		AudioVolume:      audioVolume,
 		BounceAmount:     bounceAmount,
@@ -544,6 +577,54 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		Expressions:      activeExprs,
 		Raw:              raw.Blendshapes,
 	}
+}
+
+// StabilizeBlink stabilizes left and right eyelid closure values [0.0=open, 1.0=closed],
+// suppressing false winks during head turns (when one eye is foreshortened/occluded by the nose bridge)
+// and coupling bilateral eyelid jitter while preserving intentional frontal winks.
+// Adapted from yeemachine/kalidokit (src/FaceSolver/calcEyes.ts:stabilizeBlink) for ARKit closure convention.
+func StabilizeBlink(blinkL, blinkR, calYawDeg float64, winkIsBlink bool, maxYawDeg float64) (float64, float64) {
+	blinkL = math.Max(0.0, math.Min(1.0, blinkL))
+	blinkR = math.Max(0.0, math.Min(1.0, blinkR))
+	if maxYawDeg <= 0 {
+		maxYawDeg = 25.0
+	}
+
+	// 1. Head-turn occlusion override:
+	// When head turns toward screen-right (+calYawDeg > maxYawDeg), Left eye is turned away / occluded -> mirror Right eye.
+	if calYawDeg > maxYawDeg {
+		return blinkR, blinkR
+	}
+	// When head turns toward screen-left (calYawDeg < -maxYawDeg), Right eye is turned away / occluded -> mirror Left eye.
+	if calYawDeg < -maxYawDeg {
+		return blinkL, blinkL
+	}
+
+	// 2. Frontal bilateral coupling vs intentional wink disambiguation:
+	minBlink := math.Min(blinkL, blinkR)
+	maxBlink := math.Max(blinkL, blinkR)
+
+	// When WinkIsBlink is active, any single-eye closure couples both eyes closed
+	if winkIsBlink && maxBlink >= 0.35 {
+		return maxBlink, maxBlink
+	}
+
+	// Both eyes closing in a bilateral blink: couple toward the more closed eye so both close evenly
+	bothClosing := blinkL >= 0.40 && blinkR >= 0.40
+	if bothClosing {
+		coupled := minBlink*0.05 + maxBlink*0.95
+		return coupled, coupled
+	}
+
+	// One eye closing/winking while the other is open: preserve independent values so face-on
+	// winks and blink onsets are never suppressed (evaluateBlinks handles the syncDelay window).
+	if maxBlink >= 0.35 {
+		return blinkL, blinkR
+	}
+
+	// Both eyes resting open (< 0.35): gently couple minor resting eyelid jitter toward open
+	coupled := minBlink*0.95 + maxBlink*0.05
+	return coupled, coupled
 }
 
 // evaluateBlinks applies independent thresholds and a synchronization delay window to

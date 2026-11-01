@@ -131,7 +131,10 @@ const sliderMouthGain = document.getElementById("slider-mouth-gain") as HTMLInpu
 const sliderMouthThreshold = document.getElementById("slider-mouth-threshold") as HTMLInputElement | null;
 const checkboxEnableSmile = document.getElementById("check-enable-smile") as HTMLInputElement | null;
 const sliderSmileThreshold = document.getElementById("slider-smile-threshold") as HTMLInputElement | null;
-const checkboxWinkIsBlink = document.getElementById("check-wink-is-blink") as HTMLInputElement | null;
+const checkboxWinkIsBlink = (document.getElementById("checkbox-wink-is-blink") || document.getElementById("check-wink-is-blink")) as HTMLInputElement | null;
+const checkboxStabilizeBlink = document.getElementById("checkbox-stabilize-blink") as HTMLInputElement | null;
+const sliderBlinkMaxYaw = document.getElementById("slider-blink-max-yaw") as HTMLInputElement | null;
+const valBlinkMaxYaw = document.getElementById("val-blink-max-yaw") as HTMLElement | null;
 const checkboxAutoBlink = document.getElementById("check-auto-blink") as HTMLInputElement | null;
 const selectAutoBlinkMode = document.getElementById("select-auto-blink-mode") as HTMLSelectElement | null;
 const sliderAutoBlinkInterval = document.getElementById("slider-auto-blink-interval") as HTMLInputElement | null;
@@ -1419,6 +1422,9 @@ function syncSettingsToUI(s: SettingsPayload | null) {
     if (checkboxEnableSmile) checkboxEnableSmile.checked = t.enableSmile !== false;
     if (sliderSmileThreshold) sliderSmileThreshold.value = String(t.smileThreshold || 0.5);
     if (checkboxWinkIsBlink) checkboxWinkIsBlink.checked = Boolean(t.winkIsBlink);
+    if (checkboxStabilizeBlink) checkboxStabilizeBlink.checked = t.stabilizeBlink !== false;
+    if (sliderBlinkMaxYaw)
+      sliderBlinkMaxYaw.value = String(t.blinkMaxHeadYaw !== undefined && t.blinkMaxHeadYaw > 0 ? t.blinkMaxHeadYaw : 25);
     if (checkboxAutoBlink) checkboxAutoBlink.checked = t.autoBlink !== false;
     if (selectAutoBlinkMode) selectAutoBlinkMode.value = t.autoBlinkMode || "always";
     if (sliderAutoBlinkInterval) sliderAutoBlinkInterval.value = String(t.autoBlinkIntervalSec || 4.0);
@@ -1470,6 +1476,8 @@ function updateSliderLabels() {
     valBlinkThresholdR.textContent = parseFloat(sliderBlinkThresholdR.value).toFixed(2);
   if (valBlinkSyncDelay && sliderBlinkSyncDelay)
     valBlinkSyncDelay.textContent = `${sliderBlinkSyncDelay.value}ms`;
+  if (valBlinkMaxYaw && sliderBlinkMaxYaw)
+    valBlinkMaxYaw.textContent = `${Math.round(parseFloat(sliderBlinkMaxYaw.value))}°`;
   if (valAutoBlinkInterval && sliderAutoBlinkInterval)
     valAutoBlinkInterval.textContent = `${parseFloat(sliderAutoBlinkInterval.value).toFixed(1)}s`;
   if (valAutoGazeRange && sliderAutoGazeRange)
@@ -1534,6 +1542,8 @@ function collectSettingsFromUI(): SettingsPayload {
       blinkThresholdR: parseFloat(sliderBlinkThresholdR?.value || "0.45"),
       blinkSyncDelayMs: parseFloat(sliderBlinkSyncDelay?.value || "50"),
       winkIsBlink: checkboxWinkIsBlink ? checkboxWinkIsBlink.checked : false,
+      stabilizeBlink: checkboxStabilizeBlink ? checkboxStabilizeBlink.checked : true,
+      blinkMaxHeadYaw: parseFloat(sliderBlinkMaxYaw?.value || "25"),
       autoBlink: checkboxAutoBlink ? checkboxAutoBlink.checked : true,
       autoBlinkMode: selectAutoBlinkMode ? selectAutoBlinkMode.value : "always",
       autoBlinkIntervalSec: parseFloat(sliderAutoBlinkInterval?.value || "4.0"),
@@ -1581,6 +1591,7 @@ function onSliderInput() {
   sliderBlinkThresholdL,
   sliderBlinkThresholdR,
   sliderBlinkSyncDelay,
+  sliderBlinkMaxYaw,
   sliderAutoBlinkInterval,
   sliderAutoGazeRange,
   sliderAutoTiltAmount,
@@ -1610,6 +1621,7 @@ if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChan
 [
   checkboxEnableSmile,
   checkboxWinkIsBlink,
+  checkboxStabilizeBlink,
   checkboxAutoBlink,
   checkboxAutoGaze,
   checkboxAutoTilt,

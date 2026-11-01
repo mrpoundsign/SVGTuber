@@ -47,6 +47,12 @@ archives:
     files:
       - src: testdata/test_avatar.svg
         dst: avatar.svg
+      - src: testdata/cow_avatar.svg
+        dst: cow_avatar.svg
+      - src: testdata/robot_avatar.svg
+        dst: robot_avatar.svg
+      - src: testdata/triangle_robot_avatar.svg
+        dst: triangle_robot_avatar.svg
       - src: testdata/accessories/*
         dst: accessories
       - LICENSE
