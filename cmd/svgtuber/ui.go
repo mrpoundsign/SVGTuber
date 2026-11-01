@@ -1,11 +1,10 @@
-//go:build cgo
-
 package main
 
 import (
 	"context"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +27,7 @@ import (
 
 const defaultReleasesURL = "https://github.com/mrpoundsign/SVGTuber/releases"
 
-func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL string, openStudio, headless bool) {
+func runAppUI(srv *server.Server, cfgMgr *config.Manager, logSink *AppLogSink, studioURL, overlayURL string, openStudio, headless bool) {
 	if headless {
 		runHeadlessLoop(srv, cfgMgr, studioURL, overlayURL, openStudio)
 		return
@@ -39,7 +38,7 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 	fyneApp.Settings().SetTheme(installerui.NewObsidianTheme())
 
 	w := fyneApp.NewWindow("SVGTuber v" + curVer + " — Vector VTuber Engine")
-	w.Resize(fyne.NewSize(560, 490))
+	w.Resize(fyne.NewSize(560, 560))
 	w.CenterOnScreen()
 
 	// Header section
@@ -48,12 +47,50 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		fyne.TextAlignLeading,
 		fyne.TextStyle{Bold: true},
 	)
+	formatStatusText := func(streamer bool) string {
+		if streamer {
+			return "● Server Running (🛡️ Streamer Mode: URLs Hidden)"
+		}
+		return "● Server Running (" + studioURL + ")"
+	}
+	// Streamer Mode Privacy Toggle button in Header
+	var streamerBtn *widget.Button
+	formatStreamerBtnText := func(enabled bool) string {
+		if enabled {
+			return "🛡️ Streamer Mode: ON"
+		}
+		return "🛡️ Streamer Mode: OFF"
+	}
+
+	initialStreamer := cfgMgr != nil && cfgMgr.GetStreamerMode()
 	statusLabel := widget.NewLabelWithStyle(
-		"● Server Running ("+studioURL+")",
-		fyne.TextAlignTrailing,
+		formatStatusText(initialStreamer),
+		fyne.TextAlignLeading,
 		fyne.TextStyle{Italic: true},
 	)
-	headerRow := container.NewBorder(nil, nil, titleLabel, statusLabel)
+
+	var applyStreamerUI func(enabled bool)
+	streamerBtn = widget.NewButton(formatStreamerBtnText(initialStreamer), func() {
+		next := true
+		if cfgMgr != nil {
+			next = !cfgMgr.GetStreamerMode()
+			_ = cfgMgr.SetStreamerMode(next)
+		}
+		srv.BroadcastStreamerMode(next)
+		if applyStreamerUI != nil {
+			applyStreamerUI(next)
+		}
+	})
+	if initialStreamer {
+		streamerBtn.Importance = widget.SuccessImportance
+	}
+
+	headerRow := container.NewBorder(
+		nil,
+		nil,
+		container.NewHBox(titleLabel, statusLabel),
+		streamerBtn,
+	)
 
 	// Quick Launch buttons (Studio & OBS Overlay)
 	openStudioBtn := widget.NewButtonWithIcon("Open Studio Control Page", theme.HomeIcon(), func() {
@@ -102,7 +139,11 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		if streamdeck.IsPluginInstalled(srv.StreamDeckPluginsDir()) {
 			_, _ = streamdeck.InstallPluginWithPort(srv.StreamDeckPluginsDir(), p)
 		}
-		portStatusLabel.SetText(fmt.Sprintf("✓ Saved port %d (restart SVGTuber to rebind)", p))
+		if cfgMgr != nil && cfgMgr.GetStreamerMode() {
+			portStatusLabel.SetText("✓ Saved port (restart SVGTuber to rebind)")
+		} else {
+			portStatusLabel.SetText(fmt.Sprintf("✓ Saved port %d (restart SVGTuber to rebind)", p))
+		}
 	})
 	portRow := container.NewBorder(
 		nil, nil,
@@ -111,8 +152,35 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		portEntry,
 	)
 
+	// Live Connected Studios & Overlays indicators
+	formatStudioConnText := func(count int) string {
+		if count > 0 {
+			return fmt.Sprintf("🟢 Connected Studios: %d", count)
+		}
+		return "⚪ Connected Studios: 0"
+	}
+	formatOverlayConnText := func(count int) string {
+		if count > 0 {
+			return fmt.Sprintf("🟢 Connected Overlays: %d", count)
+		}
+		return "⚪ Connected Overlays: 0"
+	}
+
+	studioConnLabel := widget.NewLabelWithStyle(
+		formatStudioConnText(srv.ConnectedStudioCount()),
+		fyne.TextAlignLeading,
+		fyne.TextStyle{Bold: true},
+	)
+	overlayConnLabel := widget.NewLabelWithStyle(
+		formatOverlayConnText(srv.ConnectedOverlayCount()),
+		fyne.TextAlignLeading,
+		fyne.TextStyle{Bold: true},
+	)
+	liveConnRow := container.NewGridWithColumns(2, studioConnLabel, overlayConnLabel)
+
 	quickLaunchSection := container.NewVBox(
 		widget.NewLabelWithStyle("Quick Launch & OBS Browser Source:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		liveConnRow,
 		openStudioBtn,
 		container.NewGridWithColumns(2, copyOBSBtn, openOBSBtn),
 		portRow,
@@ -146,22 +214,55 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 	)
 
 	// Elgato Stream Deck Plugin Section
-	sdPluginsDir := srv.StreamDeckPluginsDir()
-	sdStatusText := "Stream Deck Plugin: Ready to install (" + streamdeck.PluginDirName + ")"
-	if streamdeck.IsPluginInstalled(sdPluginsDir) {
-		sdStatusText = "✓ Stream Deck Plugin installed (" + streamdeck.PluginDirName + ")"
-	}
-	sdStatusLabel := widget.NewLabel(sdStatusText)
+	sdStatusLabel := widget.NewLabel("")
 	sdStatusLabel.Wrapping = fyne.TextWrapWord
 
-	sdInstallBtn := widget.NewButtonWithIcon("Install / Update Elgato Stream Deck Plugin", theme.DownloadIcon(), func() {
+	var sdInstallBtn *widget.Button
+	refreshStreamDeckUI := func(justInstalledPath string) {
+		st := streamdeck.CheckPluginStatus(srv.StreamDeckPluginsDir())
+		if !st.Installed {
+			sdStatusLabel.SetText("Stream Deck Plugin: Not installed (Bundled: v" + st.BundledVersion + ")")
+			if sdInstallBtn != nil {
+				sdInstallBtn.SetText("Install Elgato Stream Deck Plugin (v" + st.BundledVersion + ")")
+				sdInstallBtn.Importance = widget.HighImportance
+				sdInstallBtn.Refresh()
+			}
+			return
+		}
+		if st.NeedsUpdate {
+			sdStatusLabel.SetText(fmt.Sprintf("⬆ Stream Deck Plugin update available: v%s -> v%s", st.InstalledVersion, st.BundledVersion))
+			if sdInstallBtn != nil {
+				sdInstallBtn.SetText("Update Elgato Stream Deck Plugin to v" + st.BundledVersion)
+				sdInstallBtn.Importance = widget.HighImportance
+				sdInstallBtn.Refresh()
+			}
+			return
+		}
+		if justInstalledPath != "" {
+			if cfgMgr != nil && cfgMgr.GetStreamerMode() {
+				sdStatusLabel.SetText("✓ Stream Deck Plugin v" + st.InstalledVersion + " installed (restart Stream Deck app to load)")
+			} else {
+				sdStatusLabel.SetText(fmt.Sprintf("✓ Stream Deck Plugin v%s installed (port %d) to %s (restart Stream Deck app to load)", st.InstalledVersion, activePort, justInstalledPath))
+			}
+		} else {
+			sdStatusLabel.SetText("✓ Stream Deck Plugin v" + st.InstalledVersion + " installed (up to date)")
+		}
+		if sdInstallBtn != nil {
+			sdInstallBtn.SetText("Reinstall Elgato Stream Deck Plugin (v" + st.BundledVersion + ")")
+			sdInstallBtn.Importance = widget.MediumImportance
+			sdInstallBtn.Refresh()
+		}
+	}
+
+	sdInstallBtn = widget.NewButtonWithIcon("Install Elgato Stream Deck Plugin", theme.DownloadIcon(), func() {
 		installedPath, err := streamdeck.InstallPluginWithPort(srv.StreamDeckPluginsDir(), activePort)
 		if err != nil {
 			sdStatusLabel.SetText(fmt.Sprintf("⚠️ Stream Deck plugin install failed: %v", err))
 			return
 		}
-		sdStatusLabel.SetText(fmt.Sprintf("✓ Installed Stream Deck plugin (port %d) to %s (restart Stream Deck app to load)", activePort, installedPath))
+		refreshStreamDeckUI(installedPath)
 	})
+	refreshStreamDeckUI("")
 
 	streamDeckSection := container.NewVBox(
 		widget.NewLabelWithStyle("Elgato Stream Deck Integration:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
@@ -253,6 +354,54 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		updateButtonsRow,
 	)
 
+	// Server Activity Log Section (Live Connections + Log Count + Latest Event + Open Log File)
+	logFilePath := ""
+	if logSink != nil {
+		logFilePath = logSink.FilePath()
+	}
+	formatLogSummary := func(studios, overlays int, count int64, lastLine string, streamer bool) string {
+		if streamer {
+			return fmt.Sprintf("Studios: %d  •  Overlays: %d  •  Log Entries: %d  •  [Details hidden in Streamer Mode]", studios, overlays, count)
+		}
+		if lastLine == "" {
+			return fmt.Sprintf("Studios: %d  •  Overlays: %d  •  Log Entries: %d", studios, overlays, count)
+		}
+		return fmt.Sprintf("Studios: %d  •  Overlays: %d  •  Log Entries: %d  •  Latest: %s", studios, overlays, count, lastLine)
+	}
+	logCountLabel := widget.NewLabel(formatLogSummary(
+		srv.ConnectedStudioCount(),
+		srv.ConnectedOverlayCount(),
+		logSink.Count(),
+		logSink.LastLine(),
+		initialStreamer,
+	))
+	logCountLabel.Truncation = fyne.TextTruncateEllipsis
+
+	logPathLabel := widget.NewLabelWithStyle(
+		"Log File: "+logFilePath,
+		fyne.TextAlignLeading,
+		fyne.TextStyle{Monospace: true},
+	)
+	logPathLabel.Truncation = fyne.TextTruncateEllipsis
+
+	openLogFileBtn := widget.NewButtonWithIcon("Open Log File", theme.DocumentIcon(), func() {
+		if logFilePath != "" {
+			go openFileInOS(logFilePath)
+		}
+	})
+	openLogDirBtn := widget.NewButtonWithIcon("Open Log Folder", theme.FolderOpenIcon(), func() {
+		if logFilePath != "" {
+			_ = server.OpenDirectory(filepath.Dir(logFilePath))
+		}
+	})
+
+	logSection := container.NewVBox(
+		widget.NewLabelWithStyle("Server Activity Log:", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		logCountLabel,
+		logPathLabel,
+		container.NewGridWithColumns(2, openLogFileBtn, openLogDirBtn),
+	)
+
 	// Footer with Settings Path & Quit button
 	settingsInfo := ""
 	if cfgMgr != nil {
@@ -284,6 +433,8 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		widget.NewSeparator(),
 		streamDeckSection,
 		widget.NewSeparator(),
+		logSection,
+		widget.NewSeparator(),
 		updateSection,
 	))
 
@@ -294,13 +445,43 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 		fyneApp.Quit()
 	})
 
-	// Keep avatar labels synced if user switches avatar inside Studio Web UI
+	applyStreamerUI = func(curS bool) {
+		if curS {
+			avatarDirLabel.SetText("Folder: [Hidden in Streamer Mode]")
+			logPathLabel.SetText("Log File: [Hidden in Streamer Mode]")
+			settingsLabel.SetText("[Path Hidden in Streamer Mode]")
+			streamerBtn.Importance = widget.SuccessImportance
+		} else {
+			avatarDirLabel.SetText("Folder: " + srv.AvatarDir())
+			logPathLabel.SetText("Log File: " + logFilePath)
+			settingsLabel.SetText(settingsInfo)
+			streamerBtn.Importance = widget.MediumImportance
+		}
+		curStudios := srv.ConnectedStudioCount()
+		curOverlays := srv.ConnectedOverlayCount()
+		studioConnLabel.SetText(formatStudioConnText(curStudios))
+		overlayConnLabel.SetText(formatOverlayConnText(curOverlays))
+		logCountLabel.SetText(formatLogSummary(curStudios, curOverlays, logSink.Count(), logSink.LastLine(), curS))
+		streamerBtn.SetText(formatStreamerBtnText(curS))
+		streamerBtn.Refresh()
+		statusLabel.SetText(formatStatusText(curS))
+		portEntry.Password = curS
+		portEntry.Refresh()
+	}
+	applyStreamerUI(initialStreamer)
+
+	// Keep avatar, streamer mode, connected clients, and live log count synced
 	stopSync := make(chan struct{})
 	defer close(stopSync)
 	go func() {
-		ticker := time.NewTicker(1500 * time.Millisecond)
+		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
-		var lastAvatar, lastDir string
+		lastAvatar := srv.CurrentAvatar()
+		lastDir := srv.AvatarDir()
+		lastStreamer := initialStreamer
+		lastStudios := srv.ConnectedStudioCount()
+		lastOverlays := srv.ConnectedOverlayCount()
+		lastLogCount := logSink.Count()
 		for {
 			select {
 			case <-stopSync:
@@ -308,12 +489,20 @@ func runAppUI(srv *server.Server, cfgMgr *config.Manager, studioURL, overlayURL 
 			case <-ticker.C:
 				curA := srv.CurrentAvatar()
 				curD := srv.AvatarDir()
-				if curA != lastAvatar || curD != lastDir {
+				curS := cfgMgr != nil && cfgMgr.GetStreamerMode()
+				curStudios := srv.ConnectedStudioCount()
+				curOverlays := srv.ConnectedOverlayCount()
+				curLogs := logSink.Count()
+				if curA != lastAvatar || curD != lastDir || curS != lastStreamer || curStudios != lastStudios || curOverlays != lastOverlays || curLogs != lastLogCount {
 					lastAvatar = curA
 					lastDir = curD
+					lastStreamer = curS
+					lastStudios = curStudios
+					lastOverlays = curOverlays
+					lastLogCount = curLogs
 					fyne.Do(func() {
 						avatarFileLabel.SetText("Active Avatar: " + curA)
-						avatarDirLabel.SetText("Folder: " + curD)
+						applyStreamerUI(curS)
 					})
 				}
 			}

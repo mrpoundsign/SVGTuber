@@ -1088,7 +1088,8 @@ import {
     }
 
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${location.host}/ws/overlay`;
+    const isEmbeddedPreview = window.self !== window.top || urlParams.has("preview");
+    const wsUrl = `${protocol}//${location.host}/ws/overlay${isEmbeddedPreview ? "?preview=1" : ""}`;
     console.log(`[SVGTuber] Connecting WebSocket: ${wsUrl}`);
     setStatus("Connecting WebSocket...", true);
 

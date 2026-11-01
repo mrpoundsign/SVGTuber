@@ -259,7 +259,7 @@ func TestAPIUpdateApplyChecksumMismatch(t *testing.T) {
 	}
 }
 
-func TestAPIAvatarOpenDir(t *testing.T) {
+func TestOpenDirectoryAndAvatarDir(t *testing.T) {
 	tempDir := t.TempDir()
 	avatarPath := filepath.Join(tempDir, "avatar.svg")
 	_ = os.WriteFile(avatarPath, []byte(`<svg xmlns="http://www.w3.org/2000/svg"><g id="head"/></svg>`), 0644)
@@ -271,20 +271,7 @@ func TestAPIAvatarOpenDir(t *testing.T) {
 	if srv.CurrentAvatar() != "avatar.svg" {
 		t.Errorf("CurrentAvatar() = %q, want avatar.svg", srv.CurrentAvatar())
 	}
-
-	var openedDir string
-	srv.SetOpenDirFunc(func(dir string) error {
-		openedDir = dir
-		return nil
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/avatars/open-dir", nil)
-	rec := httptest.NewRecorder()
-	srv.handleAPIAvatarOpenDir(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("POST /api/avatars/open-dir status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if openedDir != tempDir {
-		t.Errorf("openedDir = %q, want %q", openedDir, tempDir)
+	if err := OpenDirectory(tempDir); err != nil {
+		t.Errorf("OpenDirectory(%q) failed: %v", tempDir, err)
 	}
 }

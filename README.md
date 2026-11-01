@@ -3,7 +3,6 @@
 **Real-Time Vector VTuber Engine for Inkscape & OBS Studio**
 
 [![Latest Release](https://img.shields.io/github/v/release/mrpoundsign/SVGTuber?include_prereleases&label=release)](https://github.com/mrpoundsign/SVGTuber/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mrpoundsign/SVGTuber)](https://goreportcard.com/report/github.com/mrpoundsign/SVGTuber)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
 SVGTuber brings multi-layer vector avatars created in **Inkscape** directly into **OBS Studio** with live webcam face tracking, microphone lipsync, and instantaneous hot-reloading.
@@ -23,28 +22,35 @@ Unlike traditional PNGTuber tools that swap flat, pixelated bitmaps or heavyweig
 
 ## ✨ Features
 
-- **Pure Go & Zero-CGO:** Single static binary with zero native dependencies—compiles cleanly across Windows, Linux, and macOS.
+- **Lightweight & Cross-Platform:** Runs as a single self-contained app across Windows, macOS, and Linux with no external runtimes to install.
 - **In-Browser Face Tracking:** Runs Google MediaPipe Vision FaceLandmarker in WebAssembly; extracts 52 ARKit blendshapes and head rotation angles (Yaw, Pitch, Roll).
-- **Smooth Temporal Filtering:** Pure-Go 1€ (One-Euro) adaptive filter eliminates tracking jitter at rest while keeping rapid blinks and head turns snappy and responsive.
+- **Smooth Temporal Filtering:** Adaptive 1€ (One-Euro) filter eliminates tracking jitter at rest while keeping rapid blinks and head turns snappy and responsive.
 - **Declarative Inkscape Rigging:** Rig layers directly in Inkscape using simple labels (`[Follow]`, `[Dist]`, `[Show]`, `[Hide]`, `[Scale]`, `[Move]`, `[Idle]`).
 - **Hybrid Microphone Lipsync:** Blend webcam facial expressions with microphone Web Audio RMS volume for natural, reliable conversational speech.
 - **Dynamic Expression Hotkeys:** Auto-discovers custom expression layers (like `isBlush`, `isSweat`, `isAngry`) from your SVG with in-tab hotkeys (`1`–`9`) and REST webhook endpoints for **Elgato Stream Deck** and **Touch Portal**.
 - **Instant Hot-Reloading:** Saving your avatar in Inkscape (`Ctrl+S`) immediately updates the puppet on stream without dropping frames or restarting OBS.
 - **Modular Accessories & Dressing Room:** Attach external SVG accessories (hats, glasses, pets, props) with real-time visual dragging, mouse wheel scaling, arrow key nudging, expression triggers, and per-avatar isolation.
+- **Streamer Mode Privacy Shield:** One-click `🛡️ Streamer Mode` hides your raw webcam video (keeping the 478-point mesh visible), OBS URLs, server ports, and local file paths when sharing your screen on stream.
+- **Built-In Verified Self-Updater:** Check and install SHA-256 verified updates directly from the Studio header or CLI (`svgtuber -update`).
 - **Background Resilient:** Web Worker clock and silent audio keep tracking active even when the Studio dashboard is running minimized or behind games.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Download Latest Release (Recommended)
+### 1. Install or Download Latest Release (Recommended)
 
-Download the pre-compiled archive for your OS from **[GitHub Releases](https://github.com/mrpoundsign/SVGTuber/releases)**.
+Download the latest release for your OS from **[GitHub Releases](https://github.com/mrpoundsign/SVGTuber/releases)**:
 
-Each release includes ready-to-run binaries, starter accessories, and a sample `avatar.svg`:
-
-- **Windows:** Extract the `.zip` archive and double-click `svgtuber.exe` (or in terminal: `.\svgtuber.exe -open-studio`).
-- **macOS / Linux:** Extract the `.tar.gz` archive and run `./svgtuber -open-studio`.
+- **Windows Setup Installer (`SVGTuber-Setup.exe` — Recommended on Windows):**
+  - Run `SVGTuber-Setup.exe` to launch the guided setup wizard:
+    - Installs `svgtuber.exe`, creates Desktop & Start Menu shortcuts, and adds `svgtuber` to your user `PATH`.
+    - Sets up a ready-to-use starter workspace in `Documents\SVGTuber\` with a sample `avatar.svg` and `accessories/`.
+    - Optionally installs the native **Elgato Stream Deck plugin** (`com.github.mrpoundsign.svgtuber.sdPlugin`) with one click.
+    - Supports Repair and clean Uninstall (with optional settings/cache cleanup).
+- **Portable Archives (`.zip` / `.tar.gz` — Windows, macOS, Linux):**
+  - Extract the archive and launch `svgtuber.exe` (Windows) or `./svgtuber` (macOS / Linux).
+  - Click **Open Studio Control Page** in the SVGTuber desktop window to launch the Studio in your browser.
 
 <details>
 <summary><b>🛠️ Or Build from Source</b></summary>
@@ -55,7 +61,7 @@ Requires **Go 1.24+** and **Node.js 22+**:
 git clone https://github.com/mrpoundsign/SVGTuber.git
 cd SVGTuber
 
-# Build binary for your current OS:
+# Build frontend + binary for your current OS:
 ./build.sh build
 
 # Or cross-compile for Windows (.exe):
@@ -66,11 +72,11 @@ When built from source, the executable is placed in `./build/` (e.g. `./build/sv
 
 ### 2. Run SVGTuber
 ```bash
-# Place your 'avatar.svg' in the same folder and run:
-svgtuber -open-studio   # On Windows: .\svgtuber.exe -open-studio
+# Launch the SVGTuber desktop control window:
+svgtuber        # On Windows: svgtuber.exe (or double-click the Desktop shortcut)
 
 # Or specify a custom avatar file (persisted to settings for future launches):
-svgtuber -avatar path/to/my_avatar.svg -open-studio
+svgtuber -avatar path/to/my_avatar.svg
 ```
 
 ### 3. Add to OBS Studio
@@ -116,8 +122,12 @@ SVGTuber exposes a REST API for remote expression triggers, accessories, and sce
 | Flag | Default | Description |
 |---|---|---|
 | `-avatar` | `avatar.svg` or saved in config | Path to the Inkscape SVG avatar file (persisted to config) |
-| `-port` | `7420` | HTTP & WebSocket server port |
-| `-open-studio` | `false` | Automatically launch Studio in default web browser |
+| `-port` | `7420` | HTTP & WebSocket server port (persisted to config) |
+| `-open-studio` | `false` | Automatically launch Studio in default web browser on startup |
+| `-streamer-mode` | `false` | Enable Streamer Mode privacy protection (hides URLs and local paths in terminal and Studio) |
+| `-headless` | `false` | Run in terminal/console mode without the desktop launcher window |
+| `-check-update` | `false` | Check GitHub Releases for a newer version and exit |
+| `-update` | `false` | Download, verify (SHA-256), and install the latest SVGTuber update |
 | `-mcp` | `false` | Run as a Model Context Protocol (MCP) stdio server for AI-assisted rigging and validation |
 | `-version` | `false` | Print version and build info |
 

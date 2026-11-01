@@ -17,9 +17,10 @@ type Message struct {
 }
 
 type client struct {
-	conn *websocket.Conn
-	send chan []byte
-	once sync.Once
+	conn      *websocket.Conn
+	send      chan []byte
+	isPreview bool
+	once      sync.Once
 }
 
 func (c *client) closeSend() {
@@ -41,19 +42,45 @@ func NewHub() *Hub {
 	}
 }
 
-// Register adds a client connection to the hub and starts its dedicated write pump.
+// ClientCount returns the number of currently connected external overlay WebSocket clients
+// (excluding embedded Studio preview iframes).
+func (h *Hub) ClientCount() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.externalCountLocked()
+}
+
+func (h *Hub) externalCountLocked() int {
+	count := 0
+	for _, c := range h.clients {
+		if !c.isPreview {
+			count++
+		}
+	}
+	return count
+}
+
+// Register adds an external overlay client connection to the hub and starts its write pump.
 func (h *Hub) Register(conn *websocket.Conn) {
+	h.RegisterClient(conn, false)
+}
+
+// RegisterClient adds a client connection to the hub, marking whether it is an embedded Studio preview iframe.
+func (h *Hub) RegisterClient(conn *websocket.Conn, isPreview bool) {
 	c := &client{
-		conn: conn,
-		send: make(chan []byte, 16),
+		conn:      conn,
+		send:      make(chan []byte, 16),
+		isPreview: isPreview,
 	}
 
 	h.mu.Lock()
 	h.clients[conn] = c
-	count := len(h.clients)
+	extCount := h.externalCountLocked()
 	h.mu.Unlock()
 
-	log.Printf("[Hub] Client connected. Total active overlays: %d", count)
+	if !isPreview {
+		log.Printf("[Hub] Overlay connected. Total active overlays: %d", extCount)
+	}
 
 	go func() {
 		defer func() {
@@ -79,7 +106,9 @@ func (h *Hub) Unregister(conn *websocket.Conn) {
 	if c, ok := h.clients[conn]; ok {
 		delete(h.clients, conn)
 		c.closeSend()
-		log.Printf("[Hub] Client disconnected. Total active overlays: %d", len(h.clients))
+		if !c.isPreview {
+			log.Printf("[Hub] Overlay disconnected. Total active overlays: %d", h.externalCountLocked())
+		}
 	}
 }
 

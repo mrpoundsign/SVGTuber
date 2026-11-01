@@ -222,6 +222,127 @@ function computeDownloadPercent(downloaded, total) {
   return Math.max(0, Math.min(100, Math.round(cur / max * 100)));
 }
 
+// web/src/studio/studio-modes.ts
+var VALID_STUDIO_MODES = [
+  "live",
+  "wardrobe",
+  "tuning"
+];
+var VALID_TUNING_TABS = [
+  "mouth-audio",
+  "eyes-head",
+  "life-physics"
+];
+function normalizeStudioMode(raw) {
+  const cleaned = (raw || "").trim().toLowerCase();
+  if (cleaned === "automations") {
+    return "tuning";
+  }
+  if (VALID_STUDIO_MODES.includes(cleaned)) {
+    return cleaned;
+  }
+  return "live";
+}
+function normalizeTuningTab(raw) {
+  const cleaned = (raw || "").trim().toLowerCase();
+  if (VALID_TUNING_TABS.includes(cleaned)) {
+    return cleaned;
+  }
+  return "mouth-audio";
+}
+function parseStreamerMode(raw) {
+  const cleaned = (raw || "").trim().toLowerCase();
+  return cleaned === "true" || cleaned === "1" || cleaned === "on";
+}
+function formatStreamerModeButtonState(enabled) {
+  if (enabled) {
+    return {
+      text: "\u{1F6E1}\uFE0F Streamer Mode: ON",
+      title: "Streamer Mode is ON (Webcam video, URLs, ports, webhook links, and local file paths are hidden). Click to turn OFF.",
+      activeClass: true
+    };
+  }
+  return {
+    text: "\u{1F6E1}\uFE0F Streamer Mode: OFF",
+    title: "Turn ON Streamer Mode to hide your raw webcam feed, local file paths, server ports, and webhook URLs on stream.",
+    activeClass: false
+  };
+}
+function maskSensitivePath(pathStr, streamerMode, prefix = "") {
+  if (!pathStr) {
+    return "";
+  }
+  if (streamerMode) {
+    return `${prefix}[Path Hidden in Streamer Mode]`;
+  }
+  return `${prefix}${pathStr}`;
+}
+function computeFaceCropTransform(landmarks, prev = null, smoothing = 0.28) {
+  const defaultState = {
+    cx: 0.5,
+    cy: 0.5,
+    scale: 1,
+    boxW: 0.4,
+    boxH: 0.5
+  };
+  if (!landmarks || landmarks.length === 0) {
+    const base = prev ? {
+      cx: prev.cx + (0.5 - prev.cx) * smoothing,
+      cy: prev.cy + (0.5 - prev.cy) * smoothing,
+      scale: prev.scale + (1 - prev.scale) * smoothing,
+      boxW: prev.boxW + (0.4 - prev.boxW) * smoothing,
+      boxH: prev.boxH + (0.5 - prev.boxH) * smoothing
+    } : defaultState;
+    return {
+      state: base,
+      cssTransform: formatMirroredCropCss(base)
+    };
+  }
+  let minX = 1;
+  let maxX = 0;
+  let minY = 1;
+  let maxY = 0;
+  for (let i = 0; i < landmarks.length; i++) {
+    const pt = landmarks[i];
+    if (pt.x < minX) minX = pt.x;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.y > maxY) maxY = pt.y;
+  }
+  const rawCx = Math.max(0.05, Math.min(0.95, (minX + maxX) * 0.5));
+  const rawCy = Math.max(0.05, Math.min(0.95, (minY + maxY) * 0.5));
+  const rawBoxW = Math.max(0.08, Math.min(1, maxX - minX));
+  const rawBoxH = Math.max(0.1, Math.min(1, maxY - minY));
+  const boxSpan = Math.max(rawBoxW, rawBoxH, 0.12);
+  const rawScale = Math.max(1.2, Math.min(2.8, 0.68 / boxSpan));
+  const alpha = Math.max(0.01, Math.min(1, smoothing));
+  const next = prev ? {
+    cx: prev.cx + (rawCx - prev.cx) * alpha,
+    cy: prev.cy + (rawCy - prev.cy) * alpha,
+    scale: prev.scale + (rawScale - prev.scale) * alpha,
+    boxW: prev.boxW + (rawBoxW - prev.boxW) * alpha,
+    boxH: prev.boxH + (rawBoxH - prev.boxH) * alpha
+  } : {
+    cx: rawCx,
+    cy: rawCy,
+    scale: rawScale,
+    boxW: rawBoxW,
+    boxH: rawBoxH
+  };
+  return {
+    state: next,
+    cssTransform: formatMirroredCropCss(next)
+  };
+}
+function formatMirroredCropCss(state) {
+  const txPct = (0.5 - state.cx) * 100;
+  const tyPct = (0.5 - state.cy) * 100;
+  const s = Number(state.scale.toFixed(3));
+  const tx = Number(txPct.toFixed(2));
+  const ty = Number(tyPct.toFixed(2));
+  return `scale(${-s}, ${s}) translate(${tx}%, ${ty}%)`;
+}
+
 // web/src/studio/index.ts
 var multiTabBanner = document.getElementById("multi-tab-banner");
 var multiTabMessage = document.getElementById("multi-tab-message");
@@ -235,13 +356,33 @@ var canvasCtx = canvas ? canvas.getContext("2d") : null;
 var cameraSelect = document.getElementById("camera-select");
 var btnToggleCamera = document.getElementById("btn-toggle-camera");
 var btnCalibrate = document.getElementById("btn-calibrate");
+var btnFaceAutocrop = document.getElementById("btn-face-autocrop");
 var trackingStatus = document.getElementById("tracking-status");
+var faceAutoCropEnabled = true;
+var faceCropState = null;
+function applyFaceCropTransform(landmarks) {
+  if (!video || !canvas) return;
+  if (!faceAutoCropEnabled || !webcamRunning) {
+    faceCropState = null;
+    video.style.transform = "scale(-1, 1)";
+    canvas.style.transform = "scale(-1, 1)";
+    return;
+  }
+  const crop = computeFaceCropTransform(landmarks, faceCropState, 0.28);
+  faceCropState = crop.state;
+  video.style.transform = crop.cssTransform;
+  canvas.style.transform = crop.cssTransform;
+}
+function updateFaceAutocropButtonUI() {
+  if (!btnFaceAutocrop) return;
+  btnFaceAutocrop.textContent = faceAutoCropEnabled ? "\u{1F50D} Auto-Zoom: ON" : "\u{1F50D} Auto-Zoom: OFF";
+  btnFaceAutocrop.setAttribute("aria-pressed", String(faceAutoCropEnabled));
+}
 var fpsDisplay = document.getElementById("fps-display");
 var micSelect = document.getElementById("mic-select");
 var btnToggleMic = document.getElementById("btn-toggle-mic");
 var modeSelect = document.getElementById("mode-select");
 var settingsModeSelect = document.getElementById("settings-mode-select");
-var inputServerPort = document.getElementById("input-server-port");
 var vuMeterBar = document.getElementById("vu-meter-bar");
 var noiseGateMarker = document.getElementById("noise-gate-marker");
 var valVuMeter = document.getElementById("val-vu-meter");
@@ -667,6 +808,9 @@ function connectWebSocket() {
         if (typeof msg.mode === "string") {
           applyMode(msg.mode, false);
         }
+        if (typeof msg.streamerMode === "boolean" && msg.streamerMode !== streamerModeEnabled) {
+          applyStreamerMode(msg.streamerMode, true, false);
+        }
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg);
       }
@@ -1079,8 +1223,12 @@ async function startCamera(deviceId = null) {
     }
     updateCameraUI();
     if (canvas && video) {
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+      canvas.width = vw;
+      canvas.height = vh;
+      video.style.aspectRatio = `${vw} / ${vh}`;
+      canvas.style.aspectRatio = `${vw} / ${vh}`;
     }
     populateCameraDevices();
     populateAudioDevices();
@@ -1150,6 +1298,7 @@ function stopCamera() {
   }
   frameCount = 0;
   updateCameraUI();
+  applyFaceCropTransform(null);
   if (canvasCtx && canvas) {
     canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
   }
@@ -1216,6 +1365,7 @@ function processFrame(renderUI = true) {
       latestRawBlendshapes = blendshapes;
       if (renderUI) {
         updateTrackingGauges(pose, blendshapes);
+        applyFaceCropTransform(landmarks);
         drawLandmarks(landmarks);
       }
     } else {
@@ -1232,6 +1382,7 @@ function processFrame(renderUI = true) {
         socket.send(JSON.stringify(frame));
       }
       if (renderUI) {
+        applyFaceCropTransform(null);
         if (canvasCtx && canvas) canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
         resetTrackingGauges();
       }
@@ -1363,6 +1514,8 @@ if (micSelect) {
   });
 }
 var activeSettings = null;
+var rawConfigPath = "";
+var streamerModeEnabled = false;
 var debouncedSaveSettings = createDebouncedSaver(async (settings) => {
   try {
     const res = await fetch("/api/settings", {
@@ -1387,8 +1540,11 @@ async function loadSettings() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     activeSettings = data.settings;
-    if (configPathDisplay && data.configPath) {
-      configPathDisplay.textContent = data.configPath;
+    if (data.configPath) {
+      rawConfigPath = data.configPath;
+    }
+    if (configPathDisplay && rawConfigPath) {
+      configPathDisplay.textContent = maskSensitivePath(rawConfigPath, streamerModeEnabled);
     }
     syncSettingsToUI(activeSettings);
   } catch (err) {
@@ -1397,8 +1553,8 @@ async function loadSettings() {
 }
 function syncSettingsToUI(s) {
   if (!s) return;
-  if (inputServerPort && s.port) {
-    inputServerPort.value = String(s.port);
+  if (typeof s.streamerMode === "boolean" && s.streamerMode !== streamerModeEnabled) {
+    applyStreamerMode(s.streamerMode, true, false);
   }
   if (s.tracking) {
     const t = s.tracking;
@@ -1498,11 +1654,11 @@ function updateSliderLabels() {
   }
 }
 function collectSettingsFromUI() {
-  const parsedPort = parseInt(inputServerPort?.value || "7420", 10);
-  const validPort = !isNaN(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 7420;
+  const validPort = activeSettings?.port && activeSettings.port > 0 && activeSettings.port <= 65535 ? activeSettings.port : 7420;
   return {
     version: 1,
     port: validPort,
+    streamerMode: streamerModeEnabled,
     tracking: {
       mouthGain: parseFloat(sliderMouthGain?.value || "1.4"),
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || "0.08"),
@@ -1581,7 +1737,6 @@ function onModeChange(e) {
 }
 if (modeSelect) modeSelect.addEventListener("change", onModeChange);
 if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChange);
-if (inputServerPort) inputServerPort.addEventListener("change", onSliderInput);
 [
   checkboxEnableSmile,
   checkboxWinkIsBlink,
@@ -1773,7 +1928,6 @@ window.addEventListener("keydown", (e) => {
   }
 });
 var avatarSelect = document.getElementById("avatar-select");
-var avatarDirLabel = document.getElementById("avatar-dir-label");
 var btnRefreshAvatars = document.getElementById("btn-refresh-avatars");
 function reloadAvatarFrame() {
   const frame = document.getElementById("avatar-frame");
@@ -1787,15 +1941,10 @@ async function loadAvatars() {
     const res = await fetch(`/api/avatars?t=${Date.now()}`);
     if (!res.ok) return;
     const data = await res.json();
-    const dir = data.avatarDir || "";
     const current = data.currentAvatar || "";
     const avatars = (data.avatars || []).filter(
       (av) => !av.toLowerCase().startsWith("accessories/")
     );
-    if (avatarDirLabel) {
-      avatarDirLabel.textContent = `\u{1F4C1} ${dir}`;
-      avatarDirLabel.title = dir;
-    }
     avatarSelect.innerHTML = "";
     if (avatars.length === 0) {
       const opt = document.createElement("option");
@@ -1842,30 +1991,13 @@ if (avatarSelect) {
 if (btnRefreshAvatars) {
   btnRefreshAvatars.addEventListener("click", async () => {
     btnRefreshAvatars.disabled = true;
-    btnRefreshAvatars.textContent = "Scanning...";
+    const prevText = btnRefreshAvatars.textContent;
+    btnRefreshAvatars.textContent = "...";
     try {
       await loadAvatars();
     } finally {
       btnRefreshAvatars.disabled = false;
-      btnRefreshAvatars.textContent = "\u21BB Scan Folder";
-    }
-  });
-}
-var btnOpenAvatarDir = document.getElementById("btn-open-avatar-dir");
-if (btnOpenAvatarDir) {
-  btnOpenAvatarDir.addEventListener("click", async () => {
-    btnOpenAvatarDir.disabled = true;
-    try {
-      const res = await fetch("/api/avatars/open-dir", { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || res.statusText);
-      }
-    } catch (err) {
-      console.error("[Studio Tracker] Error opening avatar directory:", err);
-      alert(`Could not open avatar directory: ${err?.message || err}`);
-    } finally {
-      btnOpenAvatarDir.disabled = false;
+      btnRefreshAvatars.textContent = prevText || "\u21BB";
     }
   });
 }
@@ -1874,10 +2006,61 @@ var configuredAccessories = [];
 var accessoryFileExpressions = {};
 var accessoryDebounceMap = /* @__PURE__ */ new Map();
 var accessoryCountBadge = document.getElementById("accessory-count-badge");
+var sidebarAccBadge = document.getElementById("sidebar-acc-badge");
+var quickAccessoriesBarEl = document.getElementById("quick-accessories-bar");
 var accessoryListEl = document.getElementById("accessory-list");
 var availableAccessoriesChipsEl = document.getElementById("available-accessories-chips");
 var accessorySaveIndicator = document.getElementById("accessory-save-indicator");
 var btnRefreshAccessories = document.getElementById("btn-refresh-accessories");
+function renderQuickAccessoriesBar() {
+  const activeCount = configuredAccessories.filter((a) => a.enabled).length;
+  const badgeText = `${activeCount}/${configuredAccessories.length}`;
+  if (accessoryCountBadge) {
+    accessoryCountBadge.textContent = badgeText;
+  }
+  if (sidebarAccBadge) {
+    sidebarAccBadge.textContent = badgeText;
+  }
+  if (!quickAccessoriesBarEl) return;
+  quickAccessoriesBarEl.innerHTML = "";
+  if (configuredAccessories.length === 0) {
+    const empty = document.createElement("span");
+    empty.style.fontSize = "12px";
+    empty.style.color = "var(--text-muted)";
+    empty.textContent = "No accessories added yet (open Wardrobe & Props to equip)";
+    quickAccessoriesBarEl.appendChild(empty);
+    return;
+  }
+  configuredAccessories.forEach((acc) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `expr-btn ${acc.enabled ? "active" : ""}`;
+    btn.title = `Click to ${acc.enabled ? "unequip" : "equip"} ${acc.name || acc.file}`;
+    const dot = document.createElement("span");
+    dot.textContent = acc.enabled ? "\u{1F7E2}" : "\u26AA";
+    dot.style.fontSize = "9px";
+    const lbl = document.createElement("span");
+    lbl.textContent = acc.name || acc.file;
+    btn.appendChild(dot);
+    btn.appendChild(lbl);
+    btn.addEventListener("click", async () => {
+      acc.enabled = !acc.enabled;
+      renderQuickAccessoriesBar();
+      renderAccessoriesUI();
+      try {
+        await fetch("/api/accessories/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: acc.id })
+        });
+        flashAccessorySaved();
+      } catch (err) {
+        console.error("[Studio Tracker] Quick accessory toggle error:", err);
+      }
+    });
+    quickAccessoriesBarEl.appendChild(btn);
+  });
+}
 function flashAccessorySaved() {
   if (accessorySaveIndicator) {
     accessorySaveIndicator.style.opacity = "1";
@@ -1921,10 +2104,7 @@ function debounceSaveAccessory(acc) {
   accessoryDebounceMap.set(acc.id, timer);
 }
 function renderAccessoriesUI() {
-  if (accessoryCountBadge) {
-    const activeCount = configuredAccessories.filter((a) => a.enabled).length;
-    accessoryCountBadge.textContent = `${activeCount}/${configuredAccessories.length}`;
-  }
+  renderQuickAccessoriesBar();
   if (availableAccessoriesChipsEl) {
     const currentChipsKey = availableAccessoriesChipsEl.dataset.files || "";
     const newChipsKey = availableAccessoryFiles.join(",");
@@ -2025,10 +2205,7 @@ function renderAccessoriesUI() {
           body: JSON.stringify({ id: acc.id })
         });
         flashAccessorySaved();
-        if (accessoryCountBadge) {
-          const activeCount = configuredAccessories.filter((a) => a.enabled).length;
-          accessoryCountBadge.textContent = `${activeCount}/${configuredAccessories.length}`;
-        }
+        renderQuickAccessoriesBar();
       } catch (err) {
         console.error("[Studio Tracker] Toggle error:", err);
       }
@@ -2457,6 +2634,9 @@ function openDressingRoom(accId = null) {
 function closeDressingRoom() {
   if (!dressingRoomModal) return;
   dressingRoomModal.style.display = "none";
+  if (fittingFrame) {
+    fittingFrame.src = "about:blank";
+  }
   renderAccessoriesUI();
   reloadAvatarFrame();
 }
@@ -2772,62 +2952,135 @@ if (checkShowCrosshair) {
     }
   });
 }
-var btnInstallStreamDeck = document.getElementById("btn-install-streamdeck");
-var streamDeckStatus = document.getElementById("streamdeck-status");
-async function loadStreamDeckStatus() {
+var studioWorkspace = document.getElementById("studio-workspace");
+var modeNavBtns = document.querySelectorAll(".mode-nav-btn");
+var btnJumpWardrobe = document.getElementById("btn-jump-wardrobe");
+var btnStreamerMode = document.getElementById("btn-streamer-mode");
+function setStudioMode(mode, persist = true) {
+  const validMode = normalizeStudioMode(mode);
+  if (studioWorkspace) {
+    studioWorkspace.dataset.activeMode = validMode;
+  }
+  modeNavBtns.forEach((btn) => {
+    const isMatch = btn.dataset.mode === validMode;
+    btn.classList.toggle("active", isMatch);
+    btn.setAttribute("aria-current", isMatch ? "page" : "false");
+  });
+  if (persist) {
+    try {
+      localStorage.setItem("svgtuber_studio_mode", validMode);
+    } catch {
+    }
+  }
+}
+function initStudioModeSidebar() {
+  let savedMode = null;
   try {
-    const res = await fetch("/api/streamdeck/status");
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.installed) {
-      if (streamDeckStatus) {
-        streamDeckStatus.textContent = `\u2713 Plugin installed (${data.pluginDirName || "com.github.mrpoundsign.svgtuber.sdPlugin"})`;
-        streamDeckStatus.style.color = "var(--success)";
+    savedMode = localStorage.getItem("svgtuber_studio_mode");
+  } catch {
+  }
+  setStudioMode(normalizeStudioMode(savedMode), false);
+  modeNavBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetMode = normalizeStudioMode(btn.dataset.mode);
+      setStudioMode(targetMode, true);
+    });
+  });
+  if (btnJumpWardrobe) {
+    btnJumpWardrobe.addEventListener("click", () => {
+      setStudioMode("wardrobe", true);
+    });
+  }
+  const cardTuningSliders = document.getElementById("card-tuning-sliders");
+  const tuningTabBtns = document.querySelectorAll(".tuning-tab-btn");
+  const setTuningTab = (tab, persist = true) => {
+    const validTab = normalizeTuningTab(tab);
+    if (cardTuningSliders) {
+      cardTuningSliders.dataset.activeTuningTab = validTab;
+    }
+    tuningTabBtns.forEach((btn) => {
+      const isMatch = btn.dataset.tuningTab === validTab;
+      btn.classList.toggle("active", isMatch);
+      btn.setAttribute("aria-selected", String(isMatch));
+    });
+    if (persist) {
+      try {
+        localStorage.setItem("svgtuber_tuning_tab", validTab);
+      } catch {
       }
-      if (btnInstallStreamDeck) {
-        btnInstallStreamDeck.textContent = "\u21BB Update Stream Deck Plugin";
-      }
+    }
+  };
+  let savedTuningTab = null;
+  try {
+    savedTuningTab = localStorage.getItem("svgtuber_tuning_tab");
+  } catch {
+  }
+  setTuningTab(normalizeTuningTab(savedTuningTab), false);
+  tuningTabBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setTuningTab(normalizeTuningTab(btn.dataset.tuningTab), true);
+    });
+  });
+  try {
+    const savedAutoCrop = localStorage.getItem("svgtuber_face_autocrop");
+    if (savedAutoCrop !== null) {
+      faceAutoCropEnabled = savedAutoCrop !== "false" && savedAutoCrop !== "0";
     }
   } catch {
   }
+  updateFaceAutocropButtonUI();
+  if (btnFaceAutocrop) {
+    btnFaceAutocrop.addEventListener("click", () => {
+      faceAutoCropEnabled = !faceAutoCropEnabled;
+      updateFaceAutocropButtonUI();
+      if (!faceAutoCropEnabled) {
+        applyFaceCropTransform(null);
+      }
+      try {
+        localStorage.setItem("svgtuber_face_autocrop", String(faceAutoCropEnabled));
+      } catch {
+      }
+    });
+  }
 }
-if (btnInstallStreamDeck) {
-  btnInstallStreamDeck.addEventListener("click", async () => {
-    const origText = btnInstallStreamDeck.textContent;
-    btnInstallStreamDeck.disabled = true;
-    btnInstallStreamDeck.textContent = "Installing...";
+function applyStreamerMode(enabled, persist = true, saveServer = true) {
+  streamerModeEnabled = enabled;
+  document.body.classList.toggle("streamer-mode", enabled);
+  const btnState = formatStreamerModeButtonState(enabled);
+  if (btnStreamerMode) {
+    btnStreamerMode.textContent = btnState.text;
+    btnStreamerMode.title = btnState.title;
+    btnStreamerMode.setAttribute("aria-pressed", String(enabled));
+    btnStreamerMode.classList.toggle("is-active", btnState.activeClass);
+  }
+  if (configPathDisplay && rawConfigPath) {
+    configPathDisplay.textContent = maskSensitivePath(rawConfigPath, enabled);
+  }
+  if (persist) {
     try {
-      const res = await fetch("/api/streamdeck/install", { method: "POST" });
-      const data = await res.json();
-      if (res.ok && data.installed) {
-        if (streamDeckStatus) {
-          streamDeckStatus.textContent = `\u2713 Installed to ${data.installedPath} (restart Elgato Stream Deck app to load)`;
-          streamDeckStatus.style.color = "var(--success)";
-        }
-        btnInstallStreamDeck.textContent = "\u2713 Installed!";
-      } else {
-        if (streamDeckStatus) {
-          streamDeckStatus.textContent = `\u26A0\uFE0F ${data.error || "Failed to install Stream Deck plugin"}`;
-          streamDeckStatus.style.color = "#ef4444";
-        }
-        btnInstallStreamDeck.textContent = origText;
-      }
+      localStorage.setItem("svgtuber_streamer_mode", String(enabled));
     } catch {
-      if (streamDeckStatus) {
-        streamDeckStatus.textContent = "\u26A0\uFE0F Network error installing Stream Deck plugin";
-        streamDeckStatus.style.color = "#ef4444";
-      }
-      btnInstallStreamDeck.textContent = origText;
-    } finally {
-      setTimeout(() => {
-        if (btnInstallStreamDeck) {
-          btnInstallStreamDeck.disabled = false;
-          btnInstallStreamDeck.textContent = "\u21BB Update Stream Deck Plugin";
-        }
-      }, 1500);
     }
-  });
+    if (saveServer && activeSettings) {
+      debouncedSaveSettings(collectSettingsFromUI());
+    }
+  }
 }
+function initStreamerMode() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem("svgtuber_streamer_mode");
+  } catch {
+  }
+  applyStreamerMode(parseStreamerMode(saved), false, false);
+  if (btnStreamerMode) {
+    btnStreamerMode.addEventListener("click", () => {
+      applyStreamerMode(!streamerModeEnabled, true, true);
+    });
+  }
+}
+initStudioModeSidebar();
+initStreamerMode();
 connectWebSocket();
 loadSettings().finally(() => {
   initMediaPipe();
@@ -2835,4 +3088,3 @@ loadSettings().finally(() => {
 loadExpressions();
 loadAvatars();
 loadAccessories();
-loadStreamDeckStatus();

@@ -47,7 +47,6 @@ type Server struct {
 	updateChecker        *updater.Checker
 	updateTargetExe      string
 	updateApplyFn        func(verifiedAssetPath, targetExePath string, mode updater.InstallMode) error
-	openDirFn            func(dir string) error
 	streamDeckPluginsDir string
 	expMgr               *ExpressionManager
 	trackerMu            sync.RWMutex
@@ -184,8 +183,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/version", s.handleAPIVersion)
 	mux.HandleFunc("/api/update/check", s.handleAPIUpdateCheck)
 	mux.HandleFunc("/api/update/apply", s.handleAPIUpdateApply)
-	mux.HandleFunc("/api/streamdeck/status", s.handleAPIStreamDeckStatus)
-	mux.HandleFunc("/api/streamdeck/install", s.handleAPIStreamDeckInstall)
 	mux.HandleFunc("/api/state", s.handleAPIState)
 	mux.HandleFunc("/api/mode", s.handleAPIMode)
 	mux.HandleFunc("/api/calibrate", s.handleAPICalibrate)
@@ -201,7 +198,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/avatar/reload", s.handleAPIAvatarReload)
 	mux.HandleFunc("/api/avatars", s.handleAPIAvatars)
 	mux.HandleFunc("/api/avatars/select", s.handleAPIAvatarSelect)
-	mux.HandleFunc("/api/avatars/open-dir", s.handleAPIAvatarOpenDir)
 
 	// Accessories REST endpoints & static file server
 	mux.HandleFunc("/accessories/", s.handleAccessoryFile)
@@ -289,7 +285,8 @@ func (s *Server) handleOverlayWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = conn.Close(websocket.StatusNormalClosure, "") }()
 
-	s.hub.Register(conn)
+	isPreview := r.URL.Query().Get("preview") == "1" || r.URL.Query().Get("preview") == "true"
+	s.hub.RegisterClient(conn, isPreview)
 	defer s.hub.Unregister(conn)
 
 	// Send initial active expressions and accessories to new overlay connection
@@ -545,8 +542,9 @@ func (s *Server) handleAPISettings(w http.ResponseWriter, r *http.Request) {
 		}
 
 		s.broadcastTracker(map[string]any{
-			"type": "mode_update",
-			"mode": NormalizeTrackingMode(newSettings.Audio.Mode),
+			"type":         "mode_update",
+			"mode":         NormalizeTrackingMode(newSettings.Audio.Mode),
+			"streamerMode": newSettings.StreamerMode,
 		})
 
 		cfgPath, _ := s.configMgr.ConfigPath()
@@ -580,6 +578,29 @@ func (s *Server) handleAPISettingsReset(w http.ResponseWriter, r *http.Request) 
 		"settings":   defaults,
 		"configPath": cfgPath,
 	})
+}
+
+// BroadcastStreamerMode notifies connected Studio tabs that Streamer Mode was toggled from the desktop window or CLI.
+func (s *Server) BroadcastStreamerMode(enabled bool) {
+	s.broadcastTracker(map[string]any{
+		"type":         "mode_update",
+		"streamerMode": enabled,
+	})
+}
+
+// ConnectedOverlayCount returns the live number of connected overlay WebSocket clients.
+func (s *Server) ConnectedOverlayCount() int {
+	if s.hub == nil {
+		return 0
+	}
+	return s.hub.ClientCount()
+}
+
+// ConnectedStudioCount returns the live number of connected Studio tracker WebSocket clients.
+func (s *Server) ConnectedStudioCount() int {
+	s.trackerMu.RLock()
+	defer s.trackerMu.RUnlock()
+	return len(s.trackerConns)
 }
 
 // SetRigParser configures a custom rig parser implementation for dependency injection.

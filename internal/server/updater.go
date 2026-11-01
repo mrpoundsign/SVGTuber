@@ -38,13 +38,6 @@ func (s *Server) CurrentAvatar() string {
 	return s.currentAvatar
 }
 
-// SetOpenDirFunc overrides the directory-opening implementation (used in unit tests).
-func (s *Server) SetOpenDirFunc(fn func(dir string) error) {
-	s.rigMu.Lock()
-	defer s.rigMu.Unlock()
-	s.openDirFn = fn
-}
-
 // OpenDirectory opens the specified folder in the host operating system's file manager.
 func OpenDirectory(dir string) error {
 	cleanDir := strings.TrimSpace(dir)
@@ -80,36 +73,6 @@ func OpenDirectory(dir string) error {
 		}
 	}
 	return cmd.Start()
-}
-
-func (s *Server) handleAPIAvatarOpenDir(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
-		return
-	}
-
-	s.rigMu.RLock()
-	dir := s.avatarDir
-	openFn := s.openDirFn
-	s.rigMu.RUnlock()
-
-	if openFn == nil {
-		openFn = OpenDirectory
-	}
-	if err := openFn(dir); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error":     fmt.Sprintf("failed to open avatar directory: %v", err),
-			"avatarDir": dir,
-		})
-		return
-	}
-
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"status":    "opened",
-		"avatarDir": dir,
-	})
 }
 
 // UpdateCheckResponse represents the JSON payload returned by GET /api/update/check.

@@ -33,7 +33,7 @@ func buildAppSpec() installer.AppSpec {
 	return installer.AppSpec{
 		AppName:       "SVGTuber",
 		AppID:         "com.github.mrpoundsign.svgtuber",
-		Description:   "Zero-CGO, browser-tracked SVG VTuber engine for Inkscape and OBS",
+		Description:   "Real-time vector VTuber engine for Inkscape and OBS Studio",
 		Publisher:     "mrpoundsign",
 		Version:       AppVersion,
 		RepoOwner:     "mrpoundsign",
