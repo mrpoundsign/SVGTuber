@@ -70,7 +70,7 @@ jobs:
         run: |
           RAW_VER="${GITHUB_REF_NAME#v}"
           if [ -z "$RAW_VER" ] || [ "$RAW_VER" = "main" ]; then
-            RAW_VER="0.0.7"
+            RAW_VER="0.0.8"
           fi
           chmod +x ./build.sh
           VERSION="$RAW_VER" ./build.sh installer

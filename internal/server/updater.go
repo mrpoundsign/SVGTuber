@@ -118,7 +118,7 @@ func (s *Server) currentSemver() string {
 	ver := strings.TrimSpace(s.version)
 	s.rigMu.RUnlock()
 	if ver == "" || ver == "dev" {
-		return "0.0.7"
+		return "0.0.8"
 	}
 	return updater.NormalizeVersion(ver)
 }
