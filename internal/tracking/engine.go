@@ -197,6 +197,7 @@ func (e *Engine) Calibrate() {
 			NeutralSquintL:   e.neutralSquintL,
 			NeutralSquintR:   e.neutralSquintR,
 			NeutralPitchHz:   e.neutralPitchHz,
+			VowelFormants:    existing.VowelFormants,
 			BlinkOpenL:       e.blinkOpenL,
 			BlinkOpenR:       e.blinkOpenR,
 			BlinkClosedL:     e.blinkClosedL,

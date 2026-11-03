@@ -528,6 +528,8 @@ function sampleAudio(opticalHints?: OpticalVisemeHints): AudioState | null {
 
   let pitch = 0;
   let pitchHz = 0;
+  let f1Hz = 0;
+  let f2Hz = 0;
   let viseme: "sil" | "A" | "I" | "U" | "E" | "O" = "sil";
   let visemeA = 0;
   let visemeI = 0;
@@ -537,16 +539,20 @@ function sampleAudio(opticalHints?: OpticalVisemeHints): AudioState | null {
 
   if (isSpeaking && freqDataArray) {
     analyserNode.getByteFrequencyData(freqDataArray as any);
-    const neutralPitchHz = activeSettings?.tracking?.calibration?.neutralPitchHz || 165;
+    const cal = activeSettings?.tracking?.calibration;
+    const neutralPitchHz = cal?.neutralPitchHz || 165;
     const spec = analyzeAudioSpectrum(
       freqDataArray,
       audioContext?.sampleRate || 48000,
       isSpeaking,
       neutralPitchHz,
-      opticalHints
+      opticalHints,
+      cal?.vowelFormants
     );
     pitch = spec.pitch;
     pitchHz = spec.pitchHz;
+    f1Hz = spec.f1Hz;
+    f2Hz = spec.f2Hz;
     viseme = spec.viseme;
     visemeA = spec.visemeA;
     visemeI = spec.visemeI;
@@ -569,6 +575,8 @@ function sampleAudio(opticalHints?: OpticalVisemeHints): AudioState | null {
     isSpeaking,
     pitch,
     pitchHz,
+    f1Hz,
+    f2Hz,
     viseme,
     visemeA,
     visemeI,
@@ -613,7 +621,15 @@ function updateAudioUI(audioState: AudioState | null) {
     if (!audioState.isSpeaking) {
       valVoiceViseme.textContent = "SIL";
     } else {
-      const vLabel = (audioState.viseme || "A").toUpperCase();
+      const soundMap: Record<string, string> = {
+        A: "AH",
+        I: "EE",
+        U: "OO",
+        E: "EH",
+        O: "OH",
+      };
+      const rawV = (audioState.viseme || "A").toUpperCase();
+      const vLabel = soundMap[rawV] || rawV;
       const tag = audioState.isLaughing ? "😂 " : audioState.isShouting ? "🔥 " : "";
       valVoiceViseme.textContent = `${tag}${vLabel}`;
     }
@@ -734,6 +750,8 @@ function connectWebSocket() {
           blendshapes: f.blendshapes || {},
           audioVolume: f.audio?.volume || 0,
           audioPitchHz: f.audio?.pitchHz || 0,
+          audioF1Hz: f.audio?.f1Hz || 0,
+          audioF2Hz: f.audio?.f2Hz || 0,
         });
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg as UpdateProgressMessage);
@@ -1449,6 +1467,8 @@ function processFrame(renderUI = true) {
         blendshapes,
         audioVolume: audioState?.volume || 0,
         audioPitchHz: audioState?.pitchHz || 0,
+        audioF1Hz: audioState?.f1Hz || 0,
+        audioF2Hz: audioState?.f2Hz || 0,
       };
       ingestCalibrationSample(calSample);
       if (calibrationChannel && !isCalibratePopout) {
@@ -3499,6 +3519,7 @@ const btnCalDone = document.getElementById("btn-cal-done") as HTMLButtonElement 
 
 type WizardStepId = "idle" | "step1_neutral" | "step2_blink" | "step3_turn" | "step4_voice" | "summary";
 let wizardStep: WizardStepId = "idle";
+let currentVowelCue: "A" | "I" | "U" | "E" | "O" | undefined = undefined;
 let wizardTimerId: any = null;
 let step1Samples: CalibrationSample[] = [];
 let step2Samples: CalibrationSample[] = [];
@@ -3510,6 +3531,7 @@ let step4Samples: CalibrationSample[] = [];
 function ingestCalibrationSample(sample: CalibrationSample) {
   const stamped: CalibrationSample = {
     ...sample,
+    vowelCue: sample.vowelCue || currentVowelCue,
     timestamp: performance.now(),
   };
   if (wizardStep === "step1_neutral") {
@@ -3686,12 +3708,13 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
   const step1Duration = 3000;
   const step2Duration = 6500;
   const step3Duration = 7200;
-  const step4Duration = 4000;
+  const step4Duration = 8000;
   const totalDuration = step1Duration + step2Duration + step3Duration + step4Duration;
   const startTime = performance.now();
 
   let lastBeepMarker = -1;
   wizardStep = "step1_neutral";
+  currentVowelCue = undefined;
   setReticleTarget(50, 50, "LOOK CENTER", false, true);
   playCalibrationCue(ctx, "tick");
 
@@ -3825,27 +3848,55 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
         setReticleTarget(50, 56, "TILT HEAD & LOOK DOWN (Desk / Keyboard)", true, true, "down");
       }
     } else if (elapsed < totalDuration) {
-      // Step 4: Smile & Speaking Voice (13.8 - 17.8s)
+      // Step 4A (Smile) & Step 4B (Guided Vowel Sounds: AH, EE, OO, EH, OH)
       if (wizardStep !== "step4_voice") {
         wizardStep = "step4_voice";
+        currentVowelCue = undefined;
         lastBeepMarker = -1;
         playCalibrationCue(ctx, "step_done");
       }
       const stepElapsed = elapsed - (step1Duration + step2Duration + step3Duration);
       const rem = ((step4Duration - stepElapsed) / 1000).toFixed(1);
       if (calStepTimer) calStepTimer.textContent = `${rem}s`;
-      if (calStepTitle) calStepTitle.textContent = "Step 4 of 4: Smile & Normal Speaking Voice";
-      if (calStepDesc)
-        calStepDesc.textContent =
-          'Look center, give a big comfortable smile, and say "Testing one, two, three" at your normal speaking volume.';
-      setReticleTarget(50, 50, "SMILE & SPEAK", true, true);
 
-      if (stepElapsed >= 250 && lastBeepMarker < 30) {
-        lastBeepMarker = 30;
-        playCalibrationCue(ctx, "beep");
+      if (stepElapsed < 2500) {
+        currentVowelCue = undefined;
+        if (calStepTitle) calStepTitle.textContent = "Step 4A of 4: Big Smile (No Speaking Needed)";
+        if (calStepDesc)
+          calStepDesc.textContent =
+            "Look center and hold a big, comfortable smile so we can balance your mouth corners and cheeks.";
+        if (stepElapsed >= 200 && lastBeepMarker < 30) {
+          lastBeepMarker = 30;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(50, 50, "😄 HOLD A BIG SMILE", true, true);
+      } else {
+        const vowelElapsed = stepElapsed - 2500; // 0 .. 5500ms (1100ms per vowel sound)
+        const vowelPrompts: Array<{ key: "A" | "I" | "U" | "E" | "O"; sound: string }> = [
+          { key: "A", sound: "AH" },
+          { key: "I", sound: "EE" },
+          { key: "U", sound: "OO" },
+          { key: "E", sound: "EH" },
+          { key: "O", sound: "OH" },
+        ];
+        const vIdx = Math.min(4, Math.floor(vowelElapsed / 1100));
+        const activeVowel = vowelPrompts[vIdx];
+        currentVowelCue = activeVowel.key;
+
+        if (lastBeepMarker < 31 + vIdx) {
+          lastBeepMarker = 31 + vIdx;
+          playCalibrationCue(ctx, vIdx === 0 ? "beep" : "tick");
+        }
+        if (calStepTitle)
+          calStepTitle.textContent = `Step 4B of 4: Voice & Vowel Calibration (${vIdx + 1}/5)`;
+        if (calStepDesc)
+          calStepDesc.textContent =
+            'Say each sound clearly at your normal speaking volume: "AH" → "EE" → "OO" → "EH" → "OH"';
+        setReticleTarget(50, 50, `🗣️ SAY "${activeVowel.sound}"`, true, true);
       }
     } else {
       // Complete!
+      currentVowelCue = undefined;
       clearInterval(wizardTimerId);
       wizardTimerId = null;
       wizardStep = "summary";

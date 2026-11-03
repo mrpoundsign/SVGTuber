@@ -74,6 +74,8 @@ export interface AudioState {
   active: boolean;
   pitch?: number;
   pitchHz?: number;
+  f1Hz?: number;
+  f2Hz?: number;
   viseme?: string;
   visemeA?: number;
   visemeI?: number;
@@ -152,6 +154,7 @@ export interface CalibrationProfile {
   neutralSquintL?: number;
   neutralSquintR?: number;
   neutralPitchHz?: number;
+  vowelFormants?: Record<string, number[]>;
   blinkOpenL: number;
   blinkOpenR: number;
   blinkClosedL: number;

@@ -16,6 +16,9 @@ export interface CalibrationSample {
   blendshapes: Record<string, number>;
   audioVolume: number;
   audioPitchHz?: number;
+  audioF1Hz?: number;
+  audioF2Hz?: number;
+  vowelCue?: "A" | "I" | "U" | "E" | "O";
 }
 
 export interface NeutralStepResult {
@@ -65,6 +68,7 @@ export interface VoiceSmileStepResult {
   mouthGain: number;
   micGain: number;
   neutralPitchHz?: number;
+  vowelFormants?: Record<string, number[]>;
   smileBlinkIntrusionL?: number;
   smileBlinkIntrusionR?: number;
 }
@@ -682,6 +686,24 @@ export function analyzeVoiceAndSmileStep(
       ? Number(clamp(median(activePitchSamples), 80, 380).toFixed(1))
       : 165;
 
+  // Per-vowel F1/F2 formant calibration from guided "AH / EE / OO / EH / OH" step
+  const vowelFormants: Record<string, number[]> = {};
+  const vowelKeys: Array<"A" | "I" | "U" | "E" | "O"> = ["A", "I", "U", "E", "O"];
+  for (const vKey of vowelKeys) {
+    const vSamples = samples.filter(
+      (s) =>
+        s.vowelCue === vKey &&
+        (s.audioVolume || 0) > noiseGate * 0.8 &&
+        (s.audioF1Hz || 0) > 150 &&
+        (s.audioF2Hz || 0) > 500
+    );
+    if (vSamples.length > 0) {
+      const medF1 = Number(median(vSamples.map((s) => s.audioF1Hz as number)).toFixed(0));
+      const medF2 = Number(median(vSamples.map((s) => s.audioF2Hz as number)).toFixed(0));
+      vowelFormants[vKey] = [medF1, medF2];
+    }
+  }
+
   return {
     smileWeightL,
     smileWeightR,
@@ -689,6 +711,7 @@ export function analyzeVoiceAndSmileStep(
     mouthGain,
     micGain,
     neutralPitchHz,
+    vowelFormants: Object.keys(vowelFormants).length > 0 ? vowelFormants : undefined,
     smileBlinkIntrusionL,
     smileBlinkIntrusionR,
   };
@@ -724,6 +747,7 @@ export function buildCalibrationProfile(
     neutralSquintL: neutral.neutralSquintL,
     neutralSquintR: neutral.neutralSquintR,
     neutralPitchHz: voiceSmile.neutralPitchHz || 165,
+    vowelFormants: voiceSmile.vowelFormants,
     blinkOpenL: neutral.blinkOpenL,
     blinkOpenR: neutral.blinkOpenR,
     blinkClosedL: blink.blinkClosedL,

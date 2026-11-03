@@ -591,6 +591,18 @@ function analyzeVoiceAndSmileStep(samples, neutralMouth, neutralSmile, noiseGate
   }
   const activePitchSamples = samples.filter((s) => (s.audioVolume || 0) > noiseGate * 0.8 && (s.audioPitchHz || 0) >= 75).map((s) => s.audioPitchHz);
   const neutralPitchHz = activePitchSamples.length > 0 ? Number(clamp(median(activePitchSamples), 80, 380).toFixed(1)) : 165;
+  const vowelFormants = {};
+  const vowelKeys = ["A", "I", "U", "E", "O"];
+  for (const vKey of vowelKeys) {
+    const vSamples = samples.filter(
+      (s) => s.vowelCue === vKey && (s.audioVolume || 0) > noiseGate * 0.8 && (s.audioF1Hz || 0) > 150 && (s.audioF2Hz || 0) > 500
+    );
+    if (vSamples.length > 0) {
+      const medF1 = Number(median(vSamples.map((s) => s.audioF1Hz)).toFixed(0));
+      const medF2 = Number(median(vSamples.map((s) => s.audioF2Hz)).toFixed(0));
+      vowelFormants[vKey] = [medF1, medF2];
+    }
+  }
   return {
     smileWeightL,
     smileWeightR,
@@ -598,6 +610,7 @@ function analyzeVoiceAndSmileStep(samples, neutralMouth, neutralSmile, noiseGate
     mouthGain,
     micGain,
     neutralPitchHz,
+    vowelFormants: Object.keys(vowelFormants).length > 0 ? vowelFormants : void 0,
     smileBlinkIntrusionL,
     smileBlinkIntrusionR
   };
@@ -625,6 +638,7 @@ function buildCalibrationProfile(neutral, blink, voiceSmile) {
     neutralSquintL: neutral.neutralSquintL,
     neutralSquintR: neutral.neutralSquintR,
     neutralPitchHz: voiceSmile.neutralPitchHz || 165,
+    vowelFormants: voiceSmile.vowelFormants,
     blinkOpenL: neutral.blinkOpenL,
     blinkOpenR: neutral.blinkOpenR,
     blinkClosedL: blink.blinkClosedL,
@@ -692,11 +706,13 @@ function evaluateSpeechGate(volume, micGain = 1.5, noiseGate = 0.04) {
 function clamp01(val) {
   return Math.max(0, Math.min(1, val));
 }
-function analyzeAudioSpectrum(freqBins, sampleRate = 48e3, isSpeaking = true, neutralPitchHz = 165, opticalHints) {
+function analyzeAudioSpectrum(freqBins, sampleRate = 48e3, isSpeaking = true, neutralPitchHz = 165, opticalHints, vowelFormants) {
   if (!isSpeaking || !freqBins || freqBins.length === 0) {
     return {
       pitch: 0,
       pitchHz: 0,
+      f1Hz: 0,
+      f2Hz: 0,
       viseme: "sil",
       visemeA: 0,
       visemeI: 0,
@@ -724,19 +740,24 @@ function analyzeAudioSpectrum(freqBins, sampleRate = 48e3, isSpeaking = true, ne
     }
     return count > 0 ? sum / count : 0;
   };
-  const f0Start = Math.max(1, Math.floor(85 / binHz));
-  const f0End = Math.min(numBins - 1, Math.ceil(420 / binHz));
-  let weightedFreqSum = 0;
-  let weightSum = 0;
-  for (let i = f0Start; i <= f0End; i++) {
-    const mag = getNormBin(i);
-    if (mag > 0.05) {
-      const w = mag * mag;
-      weightedFreqSum += i * binHz * w;
-      weightSum += w;
+  const bandCentroid = (minHz, maxHz) => {
+    const startIdx = Math.max(1, Math.floor(minHz / binHz));
+    const endIdx = Math.min(numBins - 1, Math.ceil(maxHz / binHz));
+    let wFreq = 0;
+    let wSum = 0;
+    for (let i = startIdx; i <= endIdx; i++) {
+      const mag = getNormBin(i);
+      if (mag > 0.04) {
+        const w = mag * mag;
+        wFreq += i * binHz * w;
+        wSum += w;
+      }
     }
-  }
-  const pitchHz = weightSum > 0 ? Number((weightedFreqSum / weightSum).toFixed(1)) : 0;
+    return wSum > 0 ? Number((wFreq / wSum).toFixed(1)) : 0;
+  };
+  const pitchHz = bandCentroid(85, 420);
+  const f1Hz = bandCentroid(220, 1100);
+  const f2Hz = bandCentroid(850, 3400);
   const basePitch = neutralPitchHz >= 75 && neutralPitchHz <= 400 ? neutralPitchHz : 165;
   const pitch = pitchHz > 0 ? Number(clamp01(0.5 + (pitchHz - basePitch) / 160).toFixed(3)) : 0;
   const lowBand = bandAvg(90, 380);
@@ -750,6 +771,20 @@ function analyzeAudioSpectrum(freqBins, sampleRate = 48e3, isSpeaking = true, ne
   let rawU = lowBand * 1.35 * Math.max(0.15, 1 - f2High * 1.3 - f1High * 0.9);
   let rawE = f1Mid * 0.75 + f2Mid * 1.25;
   let rawO = (f1Mid * 1 + f2Low * 0.85) * Math.max(0.2, 1 - f2High * 1.2 - f2Mid * 0.5);
+  if (vowelFormants && f1Hz > 0 && f2Hz > 0) {
+    const formantBoost = (key) => {
+      const pair = vowelFormants[key];
+      if (!pair || pair.length < 2 || pair[0] <= 0 || pair[1] <= 0) return 0;
+      const df1 = (f1Hz - pair[0]) / 260;
+      const df2 = (f2Hz - pair[1]) / 550;
+      return Math.exp(-(df1 * df1 + df2 * df2)) * 0.45;
+    };
+    rawA += formantBoost("A");
+    rawI += formantBoost("I");
+    rawU += formantBoost("U");
+    rawE += formantBoost("E");
+    rawO += formantBoost("O");
+  }
   if (opticalHints) {
     const mOpen = clamp01(opticalHints.mouthOpen ?? 0);
     const mPucker = clamp01(opticalHints.mouthPucker ?? 0);
@@ -776,6 +811,8 @@ function analyzeAudioSpectrum(freqBins, sampleRate = 48e3, isSpeaking = true, ne
     return {
       pitch,
       pitchHz,
+      f1Hz,
+      f2Hz,
       viseme: "sil",
       visemeA: 0,
       visemeI: 0,
@@ -810,6 +847,8 @@ function analyzeAudioSpectrum(freqBins, sampleRate = 48e3, isSpeaking = true, ne
   return {
     pitch,
     pitchHz,
+    f1Hz,
+    f2Hz,
     viseme,
     visemeA,
     visemeI,
@@ -1536,6 +1575,8 @@ function sampleAudio(opticalHints) {
   }
   let pitch = 0;
   let pitchHz = 0;
+  let f1Hz = 0;
+  let f2Hz = 0;
   let viseme = "sil";
   let visemeA = 0;
   let visemeI = 0;
@@ -1544,16 +1585,20 @@ function sampleAudio(opticalHints) {
   let visemeO = 0;
   if (isSpeaking && freqDataArray) {
     analyserNode.getByteFrequencyData(freqDataArray);
-    const neutralPitchHz = activeSettings?.tracking?.calibration?.neutralPitchHz || 165;
+    const cal = activeSettings?.tracking?.calibration;
+    const neutralPitchHz = cal?.neutralPitchHz || 165;
     const spec = analyzeAudioSpectrum(
       freqDataArray,
       audioContext?.sampleRate || 48e3,
       isSpeaking,
       neutralPitchHz,
-      opticalHints
+      opticalHints,
+      cal?.vowelFormants
     );
     pitch = spec.pitch;
     pitchHz = spec.pitchHz;
+    f1Hz = spec.f1Hz;
+    f2Hz = spec.f2Hz;
     viseme = spec.viseme;
     visemeA = spec.visemeA;
     visemeI = spec.visemeI;
@@ -1574,6 +1619,8 @@ function sampleAudio(opticalHints) {
     isSpeaking,
     pitch,
     pitchHz,
+    f1Hz,
+    f2Hz,
     viseme,
     visemeA,
     visemeI,
@@ -1614,7 +1661,15 @@ function updateAudioUI(audioState) {
     if (!audioState.isSpeaking) {
       valVoiceViseme.textContent = "SIL";
     } else {
-      const vLabel = (audioState.viseme || "A").toUpperCase();
+      const soundMap = {
+        A: "AH",
+        I: "EE",
+        U: "OO",
+        E: "EH",
+        O: "OH"
+      };
+      const rawV = (audioState.viseme || "A").toUpperCase();
+      const vLabel = soundMap[rawV] || rawV;
       const tag = audioState.isLaughing ? "\u{1F602} " : audioState.isShouting ? "\u{1F525} " : "";
       valVoiceViseme.textContent = `${tag}${vLabel}`;
     }
@@ -1726,7 +1781,9 @@ function connectWebSocket() {
           z: f.z || 0,
           blendshapes: f.blendshapes || {},
           audioVolume: f.audio?.volume || 0,
-          audioPitchHz: f.audio?.pitchHz || 0
+          audioPitchHz: f.audio?.pitchHz || 0,
+          audioF1Hz: f.audio?.f1Hz || 0,
+          audioF2Hz: f.audio?.f2Hz || 0
         });
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg);
@@ -2365,7 +2422,9 @@ function processFrame(renderUI = true) {
         z: pose.z,
         blendshapes,
         audioVolume: audioState?.volume || 0,
-        audioPitchHz: audioState?.pitchHz || 0
+        audioPitchHz: audioState?.pitchHz || 0,
+        audioF1Hz: audioState?.f1Hz || 0,
+        audioF2Hz: audioState?.f2Hz || 0
       };
       ingestCalibrationSample(calSample);
       if (calibrationChannel && !isCalibratePopout) {
@@ -4187,6 +4246,7 @@ var calSumVoice = document.getElementById("cal-sum-voice");
 var btnCalRerun = document.getElementById("btn-cal-rerun");
 var btnCalDone = document.getElementById("btn-cal-done");
 var wizardStep = "idle";
+var currentVowelCue = void 0;
 var wizardTimerId = null;
 var step1Samples = [];
 var step2Samples = [];
@@ -4197,6 +4257,7 @@ var step4Samples = [];
 function ingestCalibrationSample(sample) {
   const stamped = {
     ...sample,
+    vowelCue: sample.vowelCue || currentVowelCue,
     timestamp: performance.now()
   };
   if (wizardStep === "step1_neutral") {
@@ -4350,11 +4411,12 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
   const step1Duration = 3e3;
   const step2Duration = 6500;
   const step3Duration = 7200;
-  const step4Duration = 4e3;
+  const step4Duration = 8e3;
   const totalDuration = step1Duration + step2Duration + step3Duration + step4Duration;
   const startTime = performance.now();
   let lastBeepMarker = -1;
   wizardStep = "step1_neutral";
+  currentVowelCue = void 0;
   setReticleTarget(50, 50, "LOOK CENTER", false, true);
   playCalibrationCue(ctx, "tick");
   if (wizardTimerId) clearInterval(wizardTimerId);
@@ -4477,21 +4539,47 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
     } else if (elapsed < totalDuration) {
       if (wizardStep !== "step4_voice") {
         wizardStep = "step4_voice";
+        currentVowelCue = void 0;
         lastBeepMarker = -1;
         playCalibrationCue(ctx, "step_done");
       }
       const stepElapsed = elapsed - (step1Duration + step2Duration + step3Duration);
       const rem = ((step4Duration - stepElapsed) / 1e3).toFixed(1);
       if (calStepTimer) calStepTimer.textContent = `${rem}s`;
-      if (calStepTitle) calStepTitle.textContent = "Step 4 of 4: Smile & Normal Speaking Voice";
-      if (calStepDesc)
-        calStepDesc.textContent = 'Look center, give a big comfortable smile, and say "Testing one, two, three" at your normal speaking volume.';
-      setReticleTarget(50, 50, "SMILE & SPEAK", true, true);
-      if (stepElapsed >= 250 && lastBeepMarker < 30) {
-        lastBeepMarker = 30;
-        playCalibrationCue(ctx, "beep");
+      if (stepElapsed < 2500) {
+        currentVowelCue = void 0;
+        if (calStepTitle) calStepTitle.textContent = "Step 4A of 4: Big Smile (No Speaking Needed)";
+        if (calStepDesc)
+          calStepDesc.textContent = "Look center and hold a big, comfortable smile so we can balance your mouth corners and cheeks.";
+        if (stepElapsed >= 200 && lastBeepMarker < 30) {
+          lastBeepMarker = 30;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(50, 50, "\u{1F604} HOLD A BIG SMILE", true, true);
+      } else {
+        const vowelElapsed = stepElapsed - 2500;
+        const vowelPrompts = [
+          { key: "A", sound: "AH" },
+          { key: "I", sound: "EE" },
+          { key: "U", sound: "OO" },
+          { key: "E", sound: "EH" },
+          { key: "O", sound: "OH" }
+        ];
+        const vIdx = Math.min(4, Math.floor(vowelElapsed / 1100));
+        const activeVowel = vowelPrompts[vIdx];
+        currentVowelCue = activeVowel.key;
+        if (lastBeepMarker < 31 + vIdx) {
+          lastBeepMarker = 31 + vIdx;
+          playCalibrationCue(ctx, vIdx === 0 ? "beep" : "tick");
+        }
+        if (calStepTitle)
+          calStepTitle.textContent = `Step 4B of 4: Voice & Vowel Calibration (${vIdx + 1}/5)`;
+        if (calStepDesc)
+          calStepDesc.textContent = 'Say each sound clearly at your normal speaking volume: "AH" \u2192 "EE" \u2192 "OO" \u2192 "EH" \u2192 "OH"';
+        setReticleTarget(50, 50, `\u{1F5E3}\uFE0F SAY "${activeVowel.sound}"`, true, true);
       }
     } else {
+      currentVowelCue = void 0;
       clearInterval(wizardTimerId);
       wizardTimerId = null;
       wizardStep = "summary";

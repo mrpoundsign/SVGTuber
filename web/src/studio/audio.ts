@@ -42,6 +42,8 @@ export interface OpticalVisemeHints {
 export interface AudioSpectrumAnalysis {
   pitch: number;
   pitchHz: number;
+  f1Hz: number;
+  f2Hz: number;
   viseme: "sil" | "A" | "I" | "U" | "E" | "O";
   visemeA: number;
   visemeI: number;
@@ -56,20 +58,24 @@ function clamp01(val: number): number {
 
 /**
  * Analyzes Web Audio API FFT frequency bins (from AnalyserNode.getByteFrequencyData)
- * to extract 5-vowel viseme weights (A, I, U, E, O) and fundamental voice pitch.
- * In Hybrid mode, optional optical mouth cues (mouthOpen, mouthPucker, smile) refine classification.
+ * to extract 5-vowel viseme weights (A, I, U, E, O), F1/F2 formant centroids, and fundamental voice pitch.
+ * In Hybrid mode, optional optical mouth cues (mouthOpen, mouthPucker, smile) and calibrated
+ * per-user vowel formants refine classification.
  */
 export function analyzeAudioSpectrum(
   freqBins: Uint8Array | Float32Array | number[],
   sampleRate: number = 48000,
   isSpeaking: boolean = true,
   neutralPitchHz: number = 165,
-  opticalHints?: OpticalVisemeHints
+  opticalHints?: OpticalVisemeHints,
+  vowelFormants?: Record<string, number[]>
 ): AudioSpectrumAnalysis {
   if (!isSpeaking || !freqBins || freqBins.length === 0) {
     return {
       pitch: 0,
       pitchHz: 0,
+      f1Hz: 0,
+      f2Hz: 0,
       viseme: "sil",
       visemeA: 0,
       visemeI: 0,
@@ -101,20 +107,26 @@ export function analyzeAudioSpectrum(
     return count > 0 ? sum / count : 0;
   };
 
-  // Fundamental voice pitch estimation in [85 .. 420 Hz]
-  const f0Start = Math.max(1, Math.floor(85 / binHz));
-  const f0End = Math.min(numBins - 1, Math.ceil(420 / binHz));
-  let weightedFreqSum = 0;
-  let weightSum = 0;
-  for (let i = f0Start; i <= f0End; i++) {
-    const mag = getNormBin(i);
-    if (mag > 0.05) {
-      const w = mag * mag;
-      weightedFreqSum += i * binHz * w;
-      weightSum += w;
+  const bandCentroid = (minHz: number, maxHz: number): number => {
+    const startIdx = Math.max(1, Math.floor(minHz / binHz));
+    const endIdx = Math.min(numBins - 1, Math.ceil(maxHz / binHz));
+    let wFreq = 0;
+    let wSum = 0;
+    for (let i = startIdx; i <= endIdx; i++) {
+      const mag = getNormBin(i);
+      if (mag > 0.04) {
+        const w = mag * mag;
+        wFreq += i * binHz * w;
+        wSum += w;
+      }
     }
-  }
-  const pitchHz = weightSum > 0 ? Number((weightedFreqSum / weightSum).toFixed(1)) : 0;
+    return wSum > 0 ? Number((wFreq / wSum).toFixed(1)) : 0;
+  };
+
+  // Fundamental voice pitch estimation in [85 .. 420 Hz] and F1/F2 formant centroids
+  const pitchHz = bandCentroid(85, 420);
+  const f1Hz = bandCentroid(220, 1100);
+  const f2Hz = bandCentroid(850, 3400);
   const basePitch = neutralPitchHz >= 75 && neutralPitchHz <= 400 ? neutralPitchHz : 165;
   const pitch =
     pitchHz > 0
@@ -134,6 +146,22 @@ export function analyzeAudioSpectrum(
   let rawU = lowBand * 1.35 * Math.max(0.15, 1.0 - f2High * 1.3 - f1High * 0.9);
   let rawE = f1Mid * 0.75 + f2Mid * 1.25;
   let rawO = (f1Mid * 1.0 + f2Low * 0.85) * Math.max(0.2, 1.0 - f2High * 1.2 - f2Mid * 0.5);
+
+  // Personalized Step 4B vowel formant matching when user calibrated "AH / EE / OO / EH / OH"
+  if (vowelFormants && f1Hz > 0 && f2Hz > 0) {
+    const formantBoost = (key: string): number => {
+      const pair = vowelFormants[key];
+      if (!pair || pair.length < 2 || pair[0] <= 0 || pair[1] <= 0) return 0;
+      const df1 = (f1Hz - pair[0]) / 260.0;
+      const df2 = (f2Hz - pair[1]) / 550.0;
+      return Math.exp(-(df1 * df1 + df2 * df2)) * 0.45;
+    };
+    rawA += formantBoost("A");
+    rawI += formantBoost("I");
+    rawU += formantBoost("U");
+    rawE += formantBoost("E");
+    rawO += formantBoost("O");
+  }
 
   // Hybrid optical mouth synergy when camera blendshapes are available
   if (opticalHints) {
@@ -164,6 +192,8 @@ export function analyzeAudioSpectrum(
     return {
       pitch,
       pitchHz,
+      f1Hz,
+      f2Hz,
       viseme: "sil",
       visemeA: 0,
       visemeI: 0,
@@ -201,6 +231,8 @@ export function analyzeAudioSpectrum(
   return {
     pitch,
     pitchHz,
+    f1Hz,
+    f2Hz,
     viseme,
     visemeA,
     visemeI,
@@ -367,6 +399,8 @@ export class AudioManager {
     let spec: AudioSpectrumAnalysis = {
       pitch: 0,
       pitchHz: 0,
+      f1Hz: 0,
+      f2Hz: 0,
       viseme: "sil",
       visemeA: 0,
       visemeI: 0,

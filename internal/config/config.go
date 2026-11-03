@@ -32,10 +32,11 @@ type CalibrationProfile struct {
 	NeutralCheekPuff float64 `json:"neutralCheekPuff"`
 	NeutralNoseSneer float64 `json:"neutralNoseSneer"`
 	NeutralJawX      float64 `json:"neutralJawX"`
-	NeutralSquintL   float64 `json:"neutralSquintL"`
-	NeutralSquintR   float64 `json:"neutralSquintR"`
-	NeutralPitchHz   float64 `json:"neutralPitchHz"` // Calibrated natural speaking voice fundamental pitch in Hz (default: 165)
-	BlinkOpenL       float64 `json:"blinkOpenL"`   // Resting open-eye floor (default: 0.0)
+	NeutralSquintL   float64              `json:"neutralSquintL"`
+	NeutralSquintR   float64              `json:"neutralSquintR"`
+	NeutralPitchHz   float64              `json:"neutralPitchHz"`          // Calibrated natural speaking voice fundamental pitch in Hz (default: 165)
+	VowelFormants    map[string][]float64 `json:"vowelFormants,omitempty"` // Optional calibrated [F1, F2] formant centroids in Hz per vowel ("A","I","U","E","O")
+	BlinkOpenL       float64              `json:"blinkOpenL"`              // Resting open-eye floor (default: 0.0)
 	BlinkOpenR       float64 `json:"blinkOpenR"`   // Resting open-eye floor (default: 0.0)
 	BlinkClosedL     float64 `json:"blinkClosedL"` // Natural blink ceiling (default: 1.0)
 	BlinkClosedR     float64 `json:"blinkClosedR"` // Natural blink ceiling (default: 1.0)
