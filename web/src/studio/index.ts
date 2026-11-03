@@ -28,7 +28,14 @@ import {
   playCalibrationCue,
   type CalibrationSample,
 } from "./calibration-wizard.ts";
-import { calculateRMS, stepAudioVolume, evaluateSpeechGate } from "./audio.ts";
+import {
+  calculateRMS,
+  stepAudioVolume,
+  evaluateSpeechGate,
+  analyzeAudioSpectrum,
+  detectShoutAndLaugh,
+  type OpticalVisemeHints,
+} from "./audio.ts";
 import {
   createDefaultSettings,
   mergeSettings,
@@ -230,8 +237,12 @@ let micStream: MediaStream | null = null;
 let micSource: MediaStreamAudioSourceNode | null = null;
 let analyserNode: AnalyserNode | null = null;
 let audioDataArray: Float32Array | null = null;
+let freqDataArray: Uint8Array | null = null;
+let rmsHistory: number[] = [];
 let micRunning = false;
 let smoothedAudioVol = 0;
+const gaugeVoicePitch = document.getElementById("gauge-voice-pitch") as HTMLElement | null;
+const valVoiceViseme = document.getElementById("val-voice-viseme") as HTMLElement | null;
 
 // Calibration reference state
 let latestRawPose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
@@ -430,10 +441,12 @@ async function startMic() {
     micStream = stream;
     micSource = ctx.createMediaStreamSource(micStream);
     analyserNode = ctx.createAnalyser();
-    analyserNode.fftSize = 512;
-    analyserNode.smoothingTimeConstant = 0.2;
+    analyserNode.fftSize = 1024;
+    analyserNode.smoothingTimeConstant = 0.25;
     micSource.connect(analyserNode);
     audioDataArray = new Float32Array(analyserNode.fftSize);
+    freqDataArray = new Uint8Array(analyserNode.frequencyBinCount);
+    rmsHistory = [];
 
     micRunning = true;
     localStorage.setItem("svgtuber_mic_active", "true");
@@ -476,6 +489,8 @@ function stopMic() {
   }
   analyserNode = null;
   audioDataArray = null;
+  freqDataArray = null;
+  rmsHistory = [];
   smoothedAudioVol = 0;
 
   if (btnToggleMic) {
@@ -484,6 +499,8 @@ function stopMic() {
   }
   if (vuMeterBar) vuMeterBar.style.width = "0%";
   if (valVuMeter) valVuMeter.textContent = "0%";
+  if (gaugeVoicePitch) gaugeVoicePitch.style.width = "0%";
+  if (valVoiceViseme) valVoiceViseme.textContent = "SIL";
 
   if (!webcamRunning) {
     updateCameraUI();
@@ -491,7 +508,7 @@ function stopMic() {
   }
 }
 
-function sampleAudio(): AudioState | null {
+function sampleAudio(opticalHints?: OpticalVisemeHints): AudioState | null {
   if (!micRunning || !analyserNode || !audioDataArray) {
     return null;
   }
@@ -504,7 +521,63 @@ function sampleAudio(): AudioState | null {
   const noiseGate = parseFloat(sliderNoiseGate?.value || "0.04");
   const isSpeaking = evaluateSpeechGate(smoothedAudioVol, micGain, noiseGate);
 
-  return { active: true, volume: smoothedAudioVol, isSpeaking };
+  rmsHistory.push(rms);
+  if (rmsHistory.length > 24) {
+    rmsHistory.shift();
+  }
+
+  let pitch = 0;
+  let pitchHz = 0;
+  let viseme: "sil" | "A" | "I" | "U" | "E" | "O" = "sil";
+  let visemeA = 0;
+  let visemeI = 0;
+  let visemeU = 0;
+  let visemeE = 0;
+  let visemeO = 0;
+
+  if (isSpeaking && freqDataArray) {
+    analyserNode.getByteFrequencyData(freqDataArray as any);
+    const neutralPitchHz = activeSettings?.tracking?.calibration?.neutralPitchHz || 165;
+    const spec = analyzeAudioSpectrum(
+      freqDataArray,
+      audioContext?.sampleRate || 48000,
+      isSpeaking,
+      neutralPitchHz,
+      opticalHints
+    );
+    pitch = spec.pitch;
+    pitchHz = spec.pitchHz;
+    viseme = spec.viseme;
+    visemeA = spec.visemeA;
+    visemeI = spec.visemeI;
+    visemeU = spec.visemeU;
+    visemeE = spec.visemeE;
+    visemeO = spec.visemeO;
+  }
+
+  const { isShouting, isLaughing } = detectShoutAndLaugh(
+    smoothedAudioVol,
+    micGain,
+    noiseGate,
+    rmsHistory,
+    opticalHints?.smile || 0
+  );
+
+  return {
+    active: true,
+    volume: smoothedAudioVol,
+    isSpeaking,
+    pitch,
+    pitchHz,
+    viseme,
+    visemeA,
+    visemeI,
+    visemeU,
+    visemeE,
+    visemeO,
+    isShouting,
+    isLaughing,
+  };
 }
 
 function updateAudioUI(audioState: AudioState | null) {
@@ -513,6 +586,8 @@ function updateAudioUI(audioState: AudioState | null) {
     vuMeterBar.style.width = "0%";
     valVuMeter.textContent = "0%";
     vuMeterBar.style.background = "#4b5563";
+    if (gaugeVoicePitch) gaugeVoicePitch.style.width = "0%";
+    if (valVoiceViseme) valVoiceViseme.textContent = "SIL";
     return;
   }
   const micGain = parseFloat(sliderMicGain?.value || "1.5");
@@ -522,10 +597,26 @@ function updateAudioUI(audioState: AudioState | null) {
   vuMeterBar.style.width = `${displayPercent}%`;
   valVuMeter.textContent = `${displayPercent}%`;
 
-  if (audioState.isSpeaking) {
+  if (audioState.isShouting) {
+    vuMeterBar.style.background = "#f43f5e";
+  } else if (audioState.isSpeaking) {
     vuMeterBar.style.background = "#22c55e";
   } else {
     vuMeterBar.style.background = "#4b5563";
+  }
+
+  if (gaugeVoicePitch) {
+    const pitchPct = audioState.isSpeaking ? Math.round((audioState.pitch || 0) * 100) : 0;
+    gaugeVoicePitch.style.width = `${pitchPct}%`;
+  }
+  if (valVoiceViseme) {
+    if (!audioState.isSpeaking) {
+      valVoiceViseme.textContent = "SIL";
+    } else {
+      const vLabel = (audioState.viseme || "A").toUpperCase();
+      const tag = audioState.isLaughing ? "😂 " : audioState.isShouting ? "🔥 " : "";
+      valVoiceViseme.textContent = `${tag}${vLabel}`;
+    }
   }
 
   if (noiseGateMarker) {
@@ -642,6 +733,7 @@ function connectWebSocket() {
           z: f.z || 0,
           blendshapes: f.blendshapes || {},
           audioVolume: f.audio?.volume || 0,
+          audioPitchHz: f.audio?.pitchHz || 0,
         });
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg as UpdateProgressMessage);
@@ -1336,7 +1428,11 @@ function processFrame(renderUI = true) {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
       }
 
-      const audioState = sampleAudio();
+      const audioState = sampleAudio({
+        mouthOpen: blendshapes.jawOpen || 0,
+        mouthPucker: Math.max(blendshapes.mouthPucker || 0, (blendshapes.mouthFunnel || 0) * 0.75),
+        smile: ((blendshapes.mouthSmileLeft || 0) + (blendshapes.mouthSmileRight || 0)) * 0.5,
+      });
       if (renderUI) {
         updateAudioUI(audioState);
       }
@@ -1352,6 +1448,7 @@ function processFrame(renderUI = true) {
         z: pose.z,
         blendshapes,
         audioVolume: audioState?.volume || 0,
+        audioPitchHz: audioState?.pitchHz || 0,
       };
       ingestCalibrationSample(calSample);
       if (calibrationChannel && !isCalibratePopout) {
@@ -3827,7 +3924,10 @@ async function finalizeGuidedCalibration() {
         : profile.smileWeightR > 0.6
           ? " • Smile R-Boost"
           : "";
-    calSumVoice.textContent = `Gate ${neutral.noiseGate.toFixed(2)} • Gain ${voiceSmile.micGain.toFixed(1)}x${micNote}`;
+    const pitchNote = profile.neutralPitchHz
+      ? ` • Pitch ${Math.round(profile.neutralPitchHz)}Hz`
+      : "";
+    calSumVoice.textContent = `Gate ${neutral.noiseGate.toFixed(2)} • Gain ${voiceSmile.micGain.toFixed(1)}x${pitchNote}${micNote}`;
   }
 
   // Merge calibrated profile & recommended thresholds into settings and persist

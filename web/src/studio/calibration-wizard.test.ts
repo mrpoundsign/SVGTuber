@@ -124,10 +124,12 @@ describe("Guided Calibration Wizard Analyzers", () => {
       makeSample({
         blendshapes: { mouthSmileLeft: 0.68, mouthSmileRight: 0.18, jawOpen: 0.42 },
         audioVolume: 0.32,
+        audioPitchHz: 142.5,
       }),
       makeSample({
         blendshapes: { mouthSmileLeft: 0.70, mouthSmileRight: 0.20, jawOpen: 0.45 },
         audioVolume: 0.35,
+        audioPitchHz: 146.5,
       }),
     ];
 
@@ -136,6 +138,7 @@ describe("Guided Calibration Wizard Analyzers", () => {
     assert.equal(res.smileWeightR, 0.25);
     assert.ok(res.micGain >= 1.5 && res.micGain <= 2.2);
     assert.ok(res.mouthGain >= 1.5 && res.mouthGain <= 2.2);
+    assert.equal(res.neutralPitchHz, 144.5);
   });
 
   test("fuseBlinkScoreClient rescues glare-suppressed blendshapes using 3D landmark EAR", () => {

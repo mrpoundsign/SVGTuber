@@ -589,12 +589,15 @@ function analyzeVoiceAndSmileStep(samples, neutralMouth, neutralSmile, noiseGate
       micGain = Number(clamp(0.65 / p85Vol, 0.5, 4).toFixed(1));
     }
   }
+  const activePitchSamples = samples.filter((s) => (s.audioVolume || 0) > noiseGate * 0.8 && (s.audioPitchHz || 0) >= 75).map((s) => s.audioPitchHz);
+  const neutralPitchHz = activePitchSamples.length > 0 ? Number(clamp(median(activePitchSamples), 80, 380).toFixed(1)) : 165;
   return {
     smileWeightL,
     smileWeightR,
     smileThreshold,
     mouthGain,
     micGain,
+    neutralPitchHz,
     smileBlinkIntrusionL,
     smileBlinkIntrusionR
   };
@@ -621,6 +624,7 @@ function buildCalibrationProfile(neutral, blink, voiceSmile) {
     neutralJawX: neutral.neutralJawX,
     neutralSquintL: neutral.neutralSquintL,
     neutralSquintR: neutral.neutralSquintR,
+    neutralPitchHz: voiceSmile.neutralPitchHz || 165,
     blinkOpenL: neutral.blinkOpenL,
     blinkOpenR: neutral.blinkOpenR,
     blinkClosedL: blink.blinkClosedL,
@@ -684,6 +688,160 @@ function stepAudioVolume(currentSmoothed, rms, decay = 0.1) {
 }
 function evaluateSpeechGate(volume, micGain = 1.5, noiseGate = 0.04) {
   return volume * micGain >= noiseGate;
+}
+function clamp01(val) {
+  return Math.max(0, Math.min(1, val));
+}
+function analyzeAudioSpectrum(freqBins, sampleRate = 48e3, isSpeaking = true, neutralPitchHz = 165, opticalHints) {
+  if (!isSpeaking || !freqBins || freqBins.length === 0) {
+    return {
+      pitch: 0,
+      pitchHz: 0,
+      viseme: "sil",
+      visemeA: 0,
+      visemeI: 0,
+      visemeU: 0,
+      visemeE: 0,
+      visemeO: 0
+    };
+  }
+  const numBins = freqBins.length;
+  const fftSize = numBins * 2;
+  const binHz = (sampleRate > 0 ? sampleRate : 48e3) / fftSize;
+  const getNormBin = (idx) => {
+    const v = freqBins[idx] || 0;
+    return v > 1 ? clamp01(v / 255) : clamp01(v);
+  };
+  const bandAvg = (minHz, maxHz) => {
+    const startIdx = Math.max(1, Math.floor(minHz / binHz));
+    const endIdx = Math.min(numBins - 1, Math.ceil(maxHz / binHz));
+    if (endIdx < startIdx) return 0;
+    let sum = 0;
+    let count = 0;
+    for (let i = startIdx; i <= endIdx; i++) {
+      sum += getNormBin(i);
+      count++;
+    }
+    return count > 0 ? sum / count : 0;
+  };
+  const f0Start = Math.max(1, Math.floor(85 / binHz));
+  const f0End = Math.min(numBins - 1, Math.ceil(420 / binHz));
+  let weightedFreqSum = 0;
+  let weightSum = 0;
+  for (let i = f0Start; i <= f0End; i++) {
+    const mag = getNormBin(i);
+    if (mag > 0.05) {
+      const w = mag * mag;
+      weightedFreqSum += i * binHz * w;
+      weightSum += w;
+    }
+  }
+  const pitchHz = weightSum > 0 ? Number((weightedFreqSum / weightSum).toFixed(1)) : 0;
+  const basePitch = neutralPitchHz >= 75 && neutralPitchHz <= 400 ? neutralPitchHz : 165;
+  const pitch = pitchHz > 0 ? Number(clamp01(0.5 + (pitchHz - basePitch) / 160).toFixed(3)) : 0;
+  const lowBand = bandAvg(90, 380);
+  const f1Mid = bandAvg(380, 680);
+  const f1High = bandAvg(680, 1100);
+  const f2Low = bandAvg(850, 1450);
+  const f2Mid = bandAvg(1450, 2150);
+  const f2High = bandAvg(2150, 3500);
+  let rawA = f1High * 1.2 + f2Low * 0.55;
+  let rawI = f2High * 1.55 + lowBand * 0.4;
+  let rawU = lowBand * 1.35 * Math.max(0.15, 1 - f2High * 1.3 - f1High * 0.9);
+  let rawE = f1Mid * 0.75 + f2Mid * 1.25;
+  let rawO = (f1Mid * 1 + f2Low * 0.85) * Math.max(0.2, 1 - f2High * 1.2 - f2Mid * 0.5);
+  if (opticalHints) {
+    const mOpen = clamp01(opticalHints.mouthOpen ?? 0);
+    const mPucker = clamp01(opticalHints.mouthPucker ?? 0);
+    const mSmile = clamp01(opticalHints.smile ?? 0);
+    if (mPucker >= 0.22) {
+      rawU += mPucker * 0.45 * (1 - mOpen * 0.5);
+      rawO += mPucker * 0.4 * (0.4 + mOpen * 0.6);
+      rawI *= Math.max(0.25, 1 - mPucker * 0.8);
+      rawE *= Math.max(0.35, 1 - mPucker * 0.6);
+    }
+    if (mSmile >= 0.22) {
+      rawI += mSmile * 0.4 * (1 - mOpen * 0.4);
+      rawE += mSmile * 0.35 * (0.3 + mOpen * 0.7);
+      rawU *= Math.max(0.3, 1 - mSmile * 0.7);
+    }
+    if (mOpen >= 0.45) {
+      rawA += (mOpen - 0.35) * 0.45;
+      rawO += (mOpen - 0.35) * 0.25 * (0.5 + mPucker);
+      rawU *= Math.max(0.3, 1 - (mOpen - 0.4) * 0.8);
+    }
+  }
+  const maxRaw = Math.max(rawA, rawI, rawU, rawE, rawO);
+  if (maxRaw < 0.02) {
+    return {
+      pitch,
+      pitchHz,
+      viseme: "sil",
+      visemeA: 0,
+      visemeI: 0,
+      visemeU: 0,
+      visemeE: 0,
+      visemeO: 0
+    };
+  }
+  const normScale = Math.min(1, Math.max(0.65, maxRaw * 1.6)) / maxRaw;
+  const visemeA = Number(clamp01(rawA * normScale).toFixed(3));
+  const visemeI = Number(clamp01(rawI * normScale).toFixed(3));
+  const visemeU = Number(clamp01(rawU * normScale).toFixed(3));
+  const visemeE = Number(clamp01(rawE * normScale).toFixed(3));
+  const visemeO = Number(clamp01(rawO * normScale).toFixed(3));
+  let viseme = "A";
+  let best = visemeA;
+  if (visemeI > best) {
+    best = visemeI;
+    viseme = "I";
+  }
+  if (visemeU > best) {
+    best = visemeU;
+    viseme = "U";
+  }
+  if (visemeE > best) {
+    best = visemeE;
+    viseme = "E";
+  }
+  if (visemeO > best) {
+    viseme = "O";
+  }
+  return {
+    pitch,
+    pitchHz,
+    viseme,
+    visemeA,
+    visemeI,
+    visemeU,
+    visemeE,
+    visemeO
+  };
+}
+function detectShoutAndLaugh(volume, micGain = 1.5, noiseGate = 0.04, rmsHistory2 = [], smile = 0) {
+  const amplified = volume * micGain;
+  const isSpeaking = amplified >= noiseGate;
+  const isShouting = Boolean(isSpeaking && amplified >= 0.82);
+  let isLaughing = false;
+  if (rmsHistory2 && rmsHistory2.length >= 6) {
+    const gateRaw = noiseGate / Math.max(0.1, micGain);
+    let peaks = 0;
+    let valleys = 0;
+    for (let i = 1; i < rmsHistory2.length - 1; i++) {
+      const prev = rmsHistory2[i - 1];
+      const cur = rmsHistory2[i];
+      const next = rmsHistory2[i + 1];
+      if (cur > gateRaw * 1.4 && cur >= prev + 0.012 && cur >= next + 0.012) {
+        peaks++;
+      } else if (cur < prev - 0.01 && cur <= next - 0.01) {
+        valleys++;
+      }
+    }
+    if (peaks >= 3 && valleys >= 2 || smile >= 0.38 && isSpeaking && peaks >= 2 && valleys >= 1) {
+      isLaughing = true;
+    }
+  }
+  return { isShouting, isLaughing };
 }
 
 // web/src/studio/settings.ts
@@ -1121,8 +1279,12 @@ var micStream = null;
 var micSource = null;
 var analyserNode = null;
 var audioDataArray = null;
+var freqDataArray = null;
+var rmsHistory = [];
 var micRunning = false;
 var smoothedAudioVol = 0;
+var gaugeVoicePitch = document.getElementById("gauge-voice-pitch");
+var valVoiceViseme = document.getElementById("val-voice-viseme");
 var latestRawPose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
 var latestRawBlendshapes = {};
 var lastRafProcessTime = 0;
@@ -1297,10 +1459,12 @@ async function startMic() {
     micStream = stream;
     micSource = ctx.createMediaStreamSource(micStream);
     analyserNode = ctx.createAnalyser();
-    analyserNode.fftSize = 512;
-    analyserNode.smoothingTimeConstant = 0.2;
+    analyserNode.fftSize = 1024;
+    analyserNode.smoothingTimeConstant = 0.25;
     micSource.connect(analyserNode);
     audioDataArray = new Float32Array(analyserNode.fftSize);
+    freqDataArray = new Uint8Array(analyserNode.frequencyBinCount);
+    rmsHistory = [];
     micRunning = true;
     localStorage.setItem("svgtuber_mic_active", "true");
     if (micSelect && micSelect.value) {
@@ -1339,6 +1503,8 @@ function stopMic() {
   }
   analyserNode = null;
   audioDataArray = null;
+  freqDataArray = null;
+  rmsHistory = [];
   smoothedAudioVol = 0;
   if (btnToggleMic) {
     btnToggleMic.textContent = "Start Mic";
@@ -1346,12 +1512,14 @@ function stopMic() {
   }
   if (vuMeterBar) vuMeterBar.style.width = "0%";
   if (valVuMeter) valVuMeter.textContent = "0%";
+  if (gaugeVoicePitch) gaugeVoicePitch.style.width = "0%";
+  if (valVoiceViseme) valVoiceViseme.textContent = "SIL";
   if (!webcamRunning) {
     updateCameraUI();
     startCameraOffLoop();
   }
 }
-function sampleAudio() {
+function sampleAudio(opticalHints) {
   if (!micRunning || !analyserNode || !audioDataArray) {
     return null;
   }
@@ -1362,7 +1530,59 @@ function sampleAudio() {
   const micGain = parseFloat(sliderMicGain?.value || "1.5");
   const noiseGate = parseFloat(sliderNoiseGate?.value || "0.04");
   const isSpeaking = evaluateSpeechGate(smoothedAudioVol, micGain, noiseGate);
-  return { active: true, volume: smoothedAudioVol, isSpeaking };
+  rmsHistory.push(rms);
+  if (rmsHistory.length > 24) {
+    rmsHistory.shift();
+  }
+  let pitch = 0;
+  let pitchHz = 0;
+  let viseme = "sil";
+  let visemeA = 0;
+  let visemeI = 0;
+  let visemeU = 0;
+  let visemeE = 0;
+  let visemeO = 0;
+  if (isSpeaking && freqDataArray) {
+    analyserNode.getByteFrequencyData(freqDataArray);
+    const neutralPitchHz = activeSettings?.tracking?.calibration?.neutralPitchHz || 165;
+    const spec = analyzeAudioSpectrum(
+      freqDataArray,
+      audioContext?.sampleRate || 48e3,
+      isSpeaking,
+      neutralPitchHz,
+      opticalHints
+    );
+    pitch = spec.pitch;
+    pitchHz = spec.pitchHz;
+    viseme = spec.viseme;
+    visemeA = spec.visemeA;
+    visemeI = spec.visemeI;
+    visemeU = spec.visemeU;
+    visemeE = spec.visemeE;
+    visemeO = spec.visemeO;
+  }
+  const { isShouting, isLaughing } = detectShoutAndLaugh(
+    smoothedAudioVol,
+    micGain,
+    noiseGate,
+    rmsHistory,
+    opticalHints?.smile || 0
+  );
+  return {
+    active: true,
+    volume: smoothedAudioVol,
+    isSpeaking,
+    pitch,
+    pitchHz,
+    viseme,
+    visemeA,
+    visemeI,
+    visemeU,
+    visemeE,
+    visemeO,
+    isShouting,
+    isLaughing
+  };
 }
 function updateAudioUI(audioState) {
   if (!vuMeterBar || !valVuMeter) return;
@@ -1370,6 +1590,8 @@ function updateAudioUI(audioState) {
     vuMeterBar.style.width = "0%";
     valVuMeter.textContent = "0%";
     vuMeterBar.style.background = "#4b5563";
+    if (gaugeVoicePitch) gaugeVoicePitch.style.width = "0%";
+    if (valVoiceViseme) valVoiceViseme.textContent = "SIL";
     return;
   }
   const micGain = parseFloat(sliderMicGain?.value || "1.5");
@@ -1377,10 +1599,25 @@ function updateAudioUI(audioState) {
   const displayPercent = Math.min(100, Math.round(audioState.volume * micGain * 100));
   vuMeterBar.style.width = `${displayPercent}%`;
   valVuMeter.textContent = `${displayPercent}%`;
-  if (audioState.isSpeaking) {
+  if (audioState.isShouting) {
+    vuMeterBar.style.background = "#f43f5e";
+  } else if (audioState.isSpeaking) {
     vuMeterBar.style.background = "#22c55e";
   } else {
     vuMeterBar.style.background = "#4b5563";
+  }
+  if (gaugeVoicePitch) {
+    const pitchPct = audioState.isSpeaking ? Math.round((audioState.pitch || 0) * 100) : 0;
+    gaugeVoicePitch.style.width = `${pitchPct}%`;
+  }
+  if (valVoiceViseme) {
+    if (!audioState.isSpeaking) {
+      valVoiceViseme.textContent = "SIL";
+    } else {
+      const vLabel = (audioState.viseme || "A").toUpperCase();
+      const tag = audioState.isLaughing ? "\u{1F602} " : audioState.isShouting ? "\u{1F525} " : "";
+      valVoiceViseme.textContent = `${tag}${vLabel}`;
+    }
   }
   if (noiseGateMarker) {
     const gatePercent = Math.min(100, Math.round(noiseGate * 100));
@@ -1488,7 +1725,8 @@ function connectWebSocket() {
           y: f.y || 0,
           z: f.z || 0,
           blendshapes: f.blendshapes || {},
-          audioVolume: f.audio?.volume || 0
+          audioVolume: f.audio?.volume || 0,
+          audioPitchHz: f.audio?.pitchHz || 0
         });
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg);
@@ -2108,7 +2346,11 @@ function processFrame(renderUI = true) {
       if (results.facialTransformationMatrixes && results.facialTransformationMatrixes[0]) {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
       }
-      const audioState = sampleAudio();
+      const audioState = sampleAudio({
+        mouthOpen: blendshapes.jawOpen || 0,
+        mouthPucker: Math.max(blendshapes.mouthPucker || 0, (blendshapes.mouthFunnel || 0) * 0.75),
+        smile: ((blendshapes.mouthSmileLeft || 0) + (blendshapes.mouthSmileRight || 0)) * 0.5
+      });
       if (renderUI) {
         updateAudioUI(audioState);
       }
@@ -2122,7 +2364,8 @@ function processFrame(renderUI = true) {
         y: pose.y,
         z: pose.z,
         blendshapes,
-        audioVolume: audioState?.volume || 0
+        audioVolume: audioState?.volume || 0,
+        audioPitchHz: audioState?.pitchHz || 0
       };
       ingestCalibrationSample(calSample);
       if (calibrationChannel && !isCalibratePopout) {
@@ -4314,7 +4557,8 @@ async function finalizeGuidedCalibration() {
   }
   if (calSumVoice) {
     const micNote = profile.smileWeightL > 0.6 ? " \u2022 Smile L-Boost" : profile.smileWeightR > 0.6 ? " \u2022 Smile R-Boost" : "";
-    calSumVoice.textContent = `Gate ${neutral.noiseGate.toFixed(2)} \u2022 Gain ${voiceSmile.micGain.toFixed(1)}x${micNote}`;
+    const pitchNote = profile.neutralPitchHz ? ` \u2022 Pitch ${Math.round(profile.neutralPitchHz)}Hz` : "";
+    calSumVoice.textContent = `Gate ${neutral.noiseGate.toFixed(2)} \u2022 Gain ${voiceSmile.micGain.toFixed(1)}x${pitchNote}${micNote}`;
   }
   const current = collectSettingsFromUI();
   current.tracking.calibration = profile;

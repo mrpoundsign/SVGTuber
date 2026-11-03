@@ -27,6 +27,12 @@ describe("Directives Condition Evaluation", () => {
     assert.equal(evaluateCondition("isFrowning", { isFrowning: true }), true);
     assert.equal(evaluateCondition("isSneering", { isSneering: true }), true);
     assert.equal(evaluateCondition("eyeSquint", { eyeSquint: 0.45 }), true);
+    assert.equal(evaluateCondition("isShouting", { isShouting: true }), true);
+    assert.equal(evaluateCondition("shouting", { isShouting: true }), true);
+    assert.equal(evaluateCondition("isLaughing", { isLaughing: true }), true);
+    assert.equal(evaluateCondition("laughing", { isLaughing: true }), true);
+    assert.equal(evaluateCondition("visemeA", { viseme: "A", visemeA: 0.85 }), true);
+    assert.equal(evaluateCondition("visemeU", { viseme: "U", visemeU: 0.8 }), true);
   });
 
   test("evaluates numeric comparisons", () => {

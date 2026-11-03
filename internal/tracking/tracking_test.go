@@ -1005,7 +1005,54 @@ func TestFuseBlinkScoreWithSquint_SuppressesSmileFalseBlink(t *testing.T) {
 	}
 }
 
+func TestEngine_AudioVisemesPitchShoutAndLaugh(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
 
+	_ = cfgMgr.SetCalibration(config.CalibrationProfile{
+		Calibrated:     true,
+		NeutralPitchHz: 150.0,
+	})
 
+	eng := NewEngine(cfgMgr)
 
+	var out ParamFrame
+	for i := 1; i <= 12; i++ {
+		out = eng.Process(FaceFrame{
+			Timestamp: float64(1000 + i*33),
+			Present:   true,
+			Blendshapes: map[string]float64{
+				"jawOpen": 0.45,
+			},
+			Audio: &AudioPayload{
+				Active:     true,
+				Volume:     0.65,
+				IsSpeaking: true,
+				PitchHz:    230.0, // +80 Hz above calibrated 150 Hz -> normalized pitch = 1.0
+				Viseme:     "A",
+				VisemeA:    0.92,
+				VisemeO:    0.35,
+				IsShouting: true,
+				IsLaughing: true,
+			},
+		})
+	}
+
+	if !out.IsSpeaking || !out.IsShouting || !out.IsLaughing {
+		t.Errorf("Expected IsSpeaking, IsShouting, IsLaughing to be true, got %v %v %v", out.IsSpeaking, out.IsShouting, out.IsLaughing)
+	}
+	if out.Viseme != "A" || out.VisemeA < 0.70 {
+		t.Errorf("Expected Viseme='A' and VisemeA >= 0.70, got Viseme=%q VisemeA=%v", out.Viseme, out.VisemeA)
+	}
+	if out.AudioPitch < 0.80 {
+		t.Errorf("Expected calibrated high AudioPitch >= 0.80, got %v", out.AudioPitch)
+	}
+	if !out.IsSmiling {
+		t.Errorf("Expected IsLaughing to boost avatar smile, got Smile=%v IsSmiling=%v", out.Smile, out.IsSmiling)
+	}
+}
 

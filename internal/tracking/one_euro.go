@@ -122,6 +122,12 @@ type PoseFilter struct {
 	noseSneer   *OneEuroFilter
 	eyeSquintL  *OneEuroFilter
 	eyeSquintR  *OneEuroFilter
+	audioPitch  *OneEuroFilter
+	visemeA     *OneEuroFilter
+	visemeI     *OneEuroFilter
+	visemeU     *OneEuroFilter
+	visemeE     *OneEuroFilter
+	visemeO     *OneEuroFilter
 }
 
 // NewPoseFilter initializes a full set of filters tuned for avatar animation.
@@ -150,6 +156,12 @@ func NewPoseFilter() *PoseFilter {
 		noseSneer:   NewOneEuroFilter(1.2, 0.01, 1.0),
 		eyeSquintL:  NewOneEuroFilter(1.2, 0.01, 1.0),
 		eyeSquintR:  NewOneEuroFilter(1.2, 0.01, 1.0),
+		audioPitch:  NewOneEuroFilter(1.2, 0.01, 1.0),
+		visemeA:     NewOneEuroFilter(1.6, 0.02, 1.0),
+		visemeI:     NewOneEuroFilter(1.6, 0.02, 1.0),
+		visemeU:     NewOneEuroFilter(1.6, 0.02, 1.0),
+		visemeE:     NewOneEuroFilter(1.6, 0.02, 1.0),
+		visemeO:     NewOneEuroFilter(1.6, 0.02, 1.0),
 	}
 }
 
@@ -178,4 +190,10 @@ func (pf *PoseFilter) Reset() {
 	pf.noseSneer.Reset()
 	pf.eyeSquintL.Reset()
 	pf.eyeSquintR.Reset()
+	pf.audioPitch.Reset()
+	pf.visemeA.Reset()
+	pf.visemeI.Reset()
+	pf.visemeU.Reset()
+	pf.visemeE.Reset()
+	pf.visemeO.Reset()
 }

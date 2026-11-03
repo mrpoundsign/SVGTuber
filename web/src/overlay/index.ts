@@ -29,6 +29,14 @@ import {
   let boundMouthNeutral: SVGGraphicsElement | null = null;
   let boundMouthSmile: SVGGraphicsElement | null = null;
   let boundMouthOpen: SVGGraphicsElement | null = null;
+  let boundMouthOpenBaseTransform = "";
+  let boundOpenCx = 256;
+  let boundOpenCy = 310;
+  let boundMouthA: SVGGraphicsElement | null = null;
+  let boundMouthI: SVGGraphicsElement | null = null;
+  let boundMouthU: SVGGraphicsElement | null = null;
+  let boundMouthE: SVGGraphicsElement | null = null;
+  let boundMouthO: SVGGraphicsElement | null = null;
   let boundMouthFrown: SVGGraphicsElement | null = null;
   let boundMouthFrownIsAuto = false;
   let boundFrownCx = 256;
@@ -104,6 +112,12 @@ import {
     boundMouthNeutral = null;
     boundMouthSmile = null;
     boundMouthOpen = null;
+    boundMouthOpenBaseTransform = "";
+    boundMouthA = null;
+    boundMouthI = null;
+    boundMouthU = null;
+    boundMouthE = null;
+    boundMouthO = null;
     boundMouthFrown = null;
     boundMouthFrownIsAuto = false;
     boundMouthTongue = null;
@@ -178,6 +192,21 @@ import {
         lowerLabel.includes("mouth_frown")
       ) {
         boundMouthFrown = el;
+      }
+      if (lowerId === "mouth_a" || lowerLabel.includes("mouth a") || lowerLabel.includes("viseme_a")) {
+        boundMouthA = el;
+      }
+      if (lowerId === "mouth_i" || lowerLabel.includes("mouth i") || lowerLabel.includes("viseme_i")) {
+        boundMouthI = el;
+      }
+      if (lowerId === "mouth_u" || lowerLabel.includes("mouth u") || lowerLabel.includes("viseme_u")) {
+        boundMouthU = el;
+      }
+      if (lowerId === "mouth_e" || lowerLabel.includes("mouth e") || lowerLabel.includes("viseme_e")) {
+        boundMouthE = el;
+      }
+      if (lowerId === "mouth_o" || lowerLabel.includes("mouth o") || lowerLabel.includes("viseme_o")) {
+        boundMouthO = el;
       }
       if (lowerId === "eyes_open" || lowerLabel.includes("eyes open")) boundEyesOpen = el;
       if (lowerId === "eyes_closed" || lowerLabel.includes("eyes closed")) boundEyesClosed = el;
@@ -257,8 +286,19 @@ import {
       }
     }
 
-    // Bind tongue sub-element inside open mouth for procedural tongue-out extension
+    // Bind open mouth center and tongue sub-element inside open mouth for procedural vowel & tongue shaping
     const openEl = boundMouthOpen as SVGGraphicsElement | null;
+    if (openEl) {
+      boundMouthOpenBaseTransform = openEl.getAttribute("transform") || "";
+      try {
+        const prevOpenDisp = openEl.style.display;
+        openEl.style.display = "inline";
+        const ob = openEl.getBBox();
+        openEl.style.display = prevOpenDisp;
+        boundOpenCx = ob.x + ob.width / 2;
+        boundOpenCy = ob.y + ob.height / 2;
+      } catch {}
+    }
     const tongueScope = openEl || svg;
     boundMouthTongue = tongueScope.querySelector<SVGGraphicsElement>(
       "#Mouth_Tongue, #mouth_tongue, #path18"
@@ -872,14 +912,22 @@ import {
             const minVol = parseFloat(params.minvolume || params.gate || "0.03");
             const vol = parseFloat(String(p.audioVolume || 0));
             const isSpeaking = Boolean(p.isSpeaking || vol > minVol);
-            if (isSpeaking && vol > 0.01) {
-              const normVol = Math.min(1.0, Math.max(0.2, (vol - minVol) / (1.0 - minVol)));
-              const speed = parseFloat(params.speed || "16");
+            const isLaughing = Boolean(p.isLaughing);
+            const isShouting = Boolean(p.isShouting);
+            if ((isSpeaking && vol > 0.01) || isLaughing) {
+              const normVol = Math.min(1.0, Math.max(isLaughing ? 0.55 : 0.2, (vol - minVol) / (1.0 - minVol)));
+              const baseSpeed = parseFloat(params.speed || "16");
+              const speed = isLaughing ? baseSpeed * 1.35 : baseSpeed;
               const hop = Math.abs(Math.sin(now * speed * 0.001));
-              const bounceOffset = -hop * height * normVol * bounceMult;
+              const laughBoost = isLaughing ? 1.25 : 1.0;
+              const bounceOffset = -hop * height * normVol * bounceMult * laughBoost;
               ty += bounceOffset;
+              if (isShouting) {
+                // High-energy vocal peak excitement vibration
+                tx += Math.sin(now * 0.085) * 1.4 * bounceMult;
+              }
               if (squash > 0) {
-                sy *= 1.0 + hop * squash * normVol * bounceMult;
+                sy *= 1.0 + hop * squash * normVol * bounceMult * laughBoost;
                 sx *= 1.0 - hop * squash * 0.5 * normVol * bounceMult;
               }
             }
@@ -1177,7 +1225,70 @@ import {
         }
       }
       if (boundMouthSmile) boundMouthSmile.style.display = mResult.showSmile ? "inline" : "none";
-      if (boundMouthOpen) boundMouthOpen.style.display = mResult.showOpen ? "inline" : "none";
+
+      // Explicit vowel viseme layers (#mouth_a, #mouth_i, #mouth_u, #mouth_e, #mouth_o) or procedural vowel shaping on #mouth_open
+      const activeViseme = !isTongue && mResult.showOpen ? String(p.viseme || "") : "";
+      const explicitVisemeEl =
+        activeViseme === "A"
+          ? boundMouthA
+          : activeViseme === "I"
+            ? boundMouthI
+            : activeViseme === "U"
+              ? boundMouthU
+              : activeViseme === "E"
+                ? boundMouthE
+                : activeViseme === "O"
+                  ? boundMouthO
+                  : null;
+
+      if (boundMouthA) boundMouthA.style.display = explicitVisemeEl === boundMouthA ? "inline" : "none";
+      if (boundMouthI) boundMouthI.style.display = explicitVisemeEl === boundMouthI ? "inline" : "none";
+      if (boundMouthU) boundMouthU.style.display = explicitVisemeEl === boundMouthU ? "inline" : "none";
+      if (boundMouthE) boundMouthE.style.display = explicitVisemeEl === boundMouthE ? "inline" : "none";
+      if (boundMouthO) boundMouthO.style.display = explicitVisemeEl === boundMouthO ? "inline" : "none";
+
+      if (boundMouthOpen) {
+        const showGenericOpen = Boolean(mResult.showOpen && !explicitVisemeEl);
+        boundMouthOpen.style.display = showGenericOpen ? "inline" : "none";
+        if (showGenericOpen) {
+          const vA = Math.max(0, Math.min(1, parseFloat(String(p.visemeA || 0))));
+          const vI = Math.max(0, Math.min(1, parseFloat(String(p.visemeI || 0))));
+          const vU = Math.max(0, Math.min(1, parseFloat(String(p.visemeU || 0))));
+          const vE = Math.max(0, Math.min(1, parseFloat(String(p.visemeE || 0))));
+          const vO = Math.max(0, Math.min(1, parseFloat(String(p.visemeO || 0))));
+          const hasVowelOrPose =
+            vA > 0.05 ||
+            vI > 0.05 ||
+            vU > 0.05 ||
+            vE > 0.05 ||
+            vO > 0.05 ||
+            puckerVal > 0.06 ||
+            Math.abs(jawXVal) > 0.04;
+          if (hasVowelOrPose) {
+            const sxOpen = Math.max(
+              0.52,
+              Math.min(
+                1.35,
+                1.0 + vA * 0.10 + vI * 0.22 + vE * 0.14 - vU * 0.34 - vO * 0.22 - puckerVal * 0.25
+              )
+            );
+            const syOpen = Math.max(
+              0.65,
+              Math.min(
+                1.35,
+                1.0 + vA * 0.16 + vO * 0.15 - vI * 0.24 - vE * 0.10 - vU * 0.06 + puckerVal * 0.12
+              )
+            );
+            const jx = jawXVal * 7.0;
+            const vowelTransform = `translate(${jx.toFixed(2)}, 0) translate(${boundOpenCx.toFixed(2)}, ${boundOpenCy.toFixed(2)}) scale(${sxOpen.toFixed(3)}, ${syOpen.toFixed(3)}) translate(${(-boundOpenCx).toFixed(2)}, ${(-boundOpenCy).toFixed(2)})`;
+            const curOpenTransform = boundMouthOpen.getAttribute("transform") || boundMouthOpenBaseTransform;
+            boundMouthOpen.setAttribute(
+              "transform",
+              curOpenTransform ? `${curOpenTransform.trim()} ${vowelTransform}` : vowelTransform
+            );
+          }
+        }
+      }
       if (boundMouthFrown) {
         boundMouthFrown.style.display = showFrown ? "inline" : "none";
         if (showFrown && boundMouthFrownIsAuto) {

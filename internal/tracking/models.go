@@ -1,10 +1,20 @@
 package tracking
 
-// AudioPayload represents microphone audio level and speech state from the Studio.
+// AudioPayload represents microphone audio level, vowel visemes, voice pitch, and speech state from the Studio.
 type AudioPayload struct {
-	Active     bool    `json:"active"`     // true if microphone is active/running
-	Volume     float64 `json:"volume"`     // normalized RMS volume [0.0, 1.0]
-	IsSpeaking bool    `json:"isSpeaking"` // noise-gated speech trigger
+	Active     bool    `json:"active"`               // true if microphone is active/running
+	Volume     float64 `json:"volume"`               // normalized RMS volume [0.0, 1.0]
+	IsSpeaking bool    `json:"isSpeaking"`           // noise-gated speech trigger
+	Pitch      float64 `json:"pitch,omitempty"`      // normalized voice pitch [0.0, 1.0] (0.5 = calibrated neutral voice)
+	PitchHz    float64 `json:"pitchHz,omitempty"`    // fundamental voice pitch in Hz
+	Viseme     string  `json:"viseme,omitempty"`     // dominant vowel viseme ("sil", "A", "I", "U", "E", "O")
+	VisemeA    float64 `json:"visemeA,omitempty"`    // open vowel 'A' weight [0.0, 1.0]
+	VisemeI    float64 `json:"visemeI,omitempty"`    // front vowel 'I' weight [0.0, 1.0]
+	VisemeU    float64 `json:"visemeU,omitempty"`    // close-back vowel 'U' weight [0.0, 1.0]
+	VisemeE    float64 `json:"visemeE,omitempty"`    // mid-front vowel 'E' weight [0.0, 1.0]
+	VisemeO    float64 `json:"visemeO,omitempty"`    // mid-back vowel 'O' weight [0.0, 1.0]
+	IsShouting bool    `json:"isShouting,omitempty"` // high-energy vocal peak trigger
+	IsLaughing bool    `json:"isLaughing,omitempty"` // rhythmic staccato laugh trigger
 }
 
 // FaceFrame represents raw tracking data received from the Studio webcam tracker.
@@ -60,11 +70,20 @@ type ParamFrame struct {
 	BlinkMaxHeadYaw  float64            `json:"blinkMaxHeadYaw"`
 	SmileThreshold   float64            `json:"smileThreshold"`
 	AudioVolume      float64            `json:"audioVolume,omitempty"`
+	AudioPitch       float64            `json:"audioPitch,omitempty"`
+	Viseme           string             `json:"viseme,omitempty"`
+	VisemeA          float64            `json:"visemeA,omitempty"`
+	VisemeI          float64            `json:"visemeI,omitempty"`
+	VisemeU          float64            `json:"visemeU,omitempty"`
+	VisemeE          float64            `json:"visemeE,omitempty"`
+	VisemeO          float64            `json:"visemeO,omitempty"`
 	BounceAmount     float64            `json:"bounceAmount"`
 	PhysicsEnabled   bool               `json:"physicsEnabled"`
 	PhysicsAmount    float64            `json:"physicsAmount"`
 	DepthZoomAmount  float64            `json:"depthZoomAmount"`
 	IsSpeaking       bool               `json:"isSpeaking,omitempty"`
+	IsShouting       bool               `json:"isShouting,omitempty"`
+	IsLaughing       bool               `json:"isLaughing,omitempty"`
 	IsBlinkL         bool               `json:"isBlinkL"`
 	IsBlinkR         bool               `json:"isBlinkR"`
 	AutoBlink        bool               `json:"autoBlink,omitempty"`

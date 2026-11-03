@@ -34,6 +34,7 @@ type CalibrationProfile struct {
 	NeutralJawX      float64 `json:"neutralJawX"`
 	NeutralSquintL   float64 `json:"neutralSquintL"`
 	NeutralSquintR   float64 `json:"neutralSquintR"`
+	NeutralPitchHz   float64 `json:"neutralPitchHz"` // Calibrated natural speaking voice fundamental pitch in Hz (default: 165)
 	BlinkOpenL       float64 `json:"blinkOpenL"`   // Resting open-eye floor (default: 0.0)
 	BlinkOpenR       float64 `json:"blinkOpenR"`   // Resting open-eye floor (default: 0.0)
 	BlinkClosedL     float64 `json:"blinkClosedL"` // Natural blink ceiling (default: 1.0)

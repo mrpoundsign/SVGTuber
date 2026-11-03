@@ -31,6 +31,7 @@ type Engine struct {
 	neutralJawX      float64
 	neutralSquintL   float64
 	neutralSquintR   float64
+	neutralPitchHz   float64
 	blinkOpenL       float64
 	blinkOpenR       float64
 	blinkClosedL     float64
@@ -171,6 +172,9 @@ func (e *Engine) Calibrate() {
 			e.smileWeightL = existing.SmileWeightL
 			e.smileWeightR = existing.SmileWeightR
 		}
+		if existing.NeutralPitchHz > 0 {
+			e.neutralPitchHz = existing.NeutralPitchHz
+		}
 		calProfile = config.CalibrationProfile{
 			Calibrated:       true,
 			NeutralYaw:       e.neutralYaw,
@@ -192,6 +196,7 @@ func (e *Engine) Calibrate() {
 			NeutralJawX:      e.neutralJawX,
 			NeutralSquintL:   e.neutralSquintL,
 			NeutralSquintR:   e.neutralSquintR,
+			NeutralPitchHz:   e.neutralPitchHz,
 			BlinkOpenL:       e.blinkOpenL,
 			BlinkOpenR:       e.blinkOpenR,
 			BlinkClosedL:     e.blinkClosedL,
@@ -384,6 +389,7 @@ func (e *Engine) ResetCalibration() {
 	e.neutralJawX = 0
 	e.neutralSquintL = 0
 	e.neutralSquintR = 0
+	e.neutralPitchHz = 0
 	e.blinkOpenL = 0
 	e.blinkOpenR = 0
 	e.blinkClosedL = 1.0
@@ -474,6 +480,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			e.neutralJawX = ts.Calibration.NeutralJawX
 			e.neutralSquintL = ts.Calibration.NeutralSquintL
 			e.neutralSquintR = ts.Calibration.NeutralSquintR
+			e.neutralPitchHz = ts.Calibration.NeutralPitchHz
 			e.blinkOpenL = ts.Calibration.BlinkOpenL
 			e.blinkOpenR = ts.Calibration.BlinkOpenR
 			e.blinkClosedL = ts.Calibration.BlinkClosedL
@@ -537,10 +544,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		maxYawDeg = 25.0
 	}
 
-	// Compute audio volume and speech state
+	// Compute audio volume, vowel visemes, voice pitch, and speech/shout/laugh state
 	var audioMouth float64
-	var isSpeaking bool
-	var audioVolume float64
+	var isSpeaking, isShouting, isLaughing bool
+	var audioVolume, rawAudioPitch, rawVisemeA, rawVisemeI, rawVisemeU, rawVisemeE, rawVisemeO float64
+	rawViseme := "sil"
 	hasActiveAudio := raw.Audio != nil && (raw.Audio.Active || raw.Audio.Volume > 0 || raw.Audio.IsSpeaking)
 	if hasActiveAudio {
 		audioVolume = raw.Audio.Volume
@@ -549,11 +557,40 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			audioMouth = math.Min(1.0, (gainVol-as.NoiseGate)/(1.0-as.NoiseGate))
 			isSpeaking = true
 		}
+		isShouting = raw.Audio.IsShouting || (isSpeaking && gainVol >= 0.82)
+		isLaughing = raw.Audio.IsLaughing
+		if isSpeaking {
+			if raw.Audio.PitchHz > 0 && e.neutralPitchHz >= 75 && e.neutralPitchHz <= 400 {
+				rawAudioPitch = math.Max(0.0, math.Min(1.0, 0.5+(raw.Audio.PitchHz-e.neutralPitchHz)/160.0))
+			} else {
+				rawAudioPitch = math.Max(0.0, math.Min(1.0, raw.Audio.Pitch))
+			}
+			rawVisemeA = math.Max(0.0, math.Min(1.0, raw.Audio.VisemeA))
+			rawVisemeI = math.Max(0.0, math.Min(1.0, raw.Audio.VisemeI))
+			rawVisemeU = math.Max(0.0, math.Min(1.0, raw.Audio.VisemeU))
+			rawVisemeE = math.Max(0.0, math.Min(1.0, raw.Audio.VisemeE))
+			rawVisemeO = math.Max(0.0, math.Min(1.0, raw.Audio.VisemeO))
+			if raw.Audio.Viseme != "" {
+				rawViseme = raw.Audio.Viseme
+			}
+		}
 	}
+
+	filtAudioPitch := e.filter.audioPitch.Filter(rawAudioPitch, tSec)
+	filtVisemeA := e.filter.visemeA.Filter(rawVisemeA, tSec)
+	filtVisemeI := e.filter.visemeI.Filter(rawVisemeI, tSec)
+	filtVisemeU := e.filter.visemeU.Filter(rawVisemeU, tSec)
+	filtVisemeE := e.filter.visemeE.Filter(rawVisemeE, tSec)
+	filtVisemeO := e.filter.visemeO.Filter(rawVisemeO, tSec)
 
 	// Audio-driven mode without camera present
 	if !raw.Present && (mode == "audio" || (mode == "hybrid" && isSpeaking)) {
 		filtMouth := e.filter.mouthOpen.Filter(audioMouth, tSec)
+		audioSmile := 0.0
+		if isLaughing && ts.EnableSmile {
+			audioSmile = 0.65
+		}
+		filtAudioSmile := e.filter.smile.Filter(audioSmile, tSec)
 		e.pendingCloseL = false
 		e.pendingCloseR = false
 		e.pendingOpenL = false
@@ -581,7 +618,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BlinkL:           filtBlinkL,
 			BlinkR:           filtBlinkR,
 			MouthOpen:        filtMouth,
-			Smile:            e.filter.smile.Filter(0, tSec),
+			Smile:            filtAudioSmile,
 			BrowUp:           e.filter.browUp.Filter(0, tSec),
 			BrowL:            e.filter.browL.Filter(0, tSec),
 			BrowR:            e.filter.browR.Filter(0, tSec),
@@ -595,16 +632,25 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BlinkMaxHeadYaw:  maxYawDeg,
 			SmileThreshold:   ts.SmileThreshold,
 			AudioVolume:      audioVolume,
+			AudioPitch:       filtAudioPitch,
+			Viseme:           rawViseme,
+			VisemeA:          filtVisemeA,
+			VisemeI:          filtVisemeI,
+			VisemeU:          filtVisemeU,
+			VisemeE:          filtVisemeE,
+			VisemeO:          filtVisemeO,
 			BounceAmount:     bounceAmount,
 			PhysicsEnabled:   physicsEnabled,
 			PhysicsAmount:    physicsAmount,
 			DepthZoomAmount:  ts.DepthZoomAmount,
 			IsSpeaking:       isSpeaking,
+			IsShouting:       isShouting,
+			IsLaughing:       isLaughing,
 			IsBlinkL:         isAutoClosed,
 			IsBlinkR:         isAutoClosed,
 			AutoBlink:        autoActive,
 			IsMouthOpen:      filtMouth >= ts.MouthThreshold,
-			IsSmiling:        false,
+			IsSmiling:        filtAudioSmile >= ts.SmileThreshold,
 			Expressions:      activeExprs,
 		}
 	}
@@ -823,6 +869,10 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		}
 	}
 
+	if isLaughing && ts.EnableSmile {
+		smile = math.Max(smile, math.Max(ts.SmileThreshold+0.05, 0.55))
+	}
+
 	filtBlinkL := e.filter.blinkL.Filter(blinkL, tSec)
 	filtBlinkR := e.filter.blinkR.Filter(blinkR, tSec)
 	filtMouth := e.filter.mouthOpen.Filter(finalMouth, tSec)
@@ -909,11 +959,20 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		BlinkMaxHeadYaw:  maxYawDeg,
 		SmileThreshold:   ts.SmileThreshold,
 		AudioVolume:      audioVolume,
+		AudioPitch:       filtAudioPitch,
+		Viseme:           rawViseme,
+		VisemeA:          filtVisemeA,
+		VisemeI:          filtVisemeI,
+		VisemeU:          filtVisemeU,
+		VisemeE:          filtVisemeE,
+		VisemeO:          filtVisemeO,
 		BounceAmount:     bounceAmount,
 		PhysicsEnabled:   physicsEnabled,
 		PhysicsAmount:    physicsAmount,
 		DepthZoomAmount:  ts.DepthZoomAmount,
 		IsSpeaking:       isSpeaking,
+		IsShouting:       isShouting,
+		IsLaughing:       isLaughing,
 		IsBlinkL:         isBlinkL,
 		IsBlinkR:         isBlinkR,
 		AutoBlink:        false,

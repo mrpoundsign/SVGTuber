@@ -98,6 +98,27 @@ export function evaluateCondition(
         if (lower === "eyesquint" || lower === "iseyesquint") {
           return String(getParam("eyeSquint", 0) >= 0.35);
         }
+        if (lower === "shouting" || lower === "isshouting" || lower === "shout") {
+          return String(Boolean(getParam("isShouting", false)));
+        }
+        if (lower === "laughing" || lower === "islaughing" || lower === "laugh") {
+          return String(Boolean(getParam("isLaughing", false)));
+        }
+        if (lower === "visemea" || lower === "isvisemea") {
+          return String(getParam("viseme", "") === "A" || getParam("visemeA", 0) >= 0.45);
+        }
+        if (lower === "visemei" || lower === "isvisemei") {
+          return String(getParam("viseme", "") === "I" || getParam("visemeI", 0) >= 0.45);
+        }
+        if (lower === "visemeu" || lower === "isvisemeu") {
+          return String(getParam("viseme", "") === "U" || getParam("visemeU", 0) >= 0.45);
+        }
+        if (lower === "visemee" || lower === "isvisemee") {
+          return String(getParam("viseme", "") === "E" || getParam("visemeE", 0) >= 0.45);
+        }
+        if (lower === "visemeo" || lower === "isvisemeo") {
+          return String(getParam("viseme", "") === "O" || getParam("visemeO", 0) >= 0.45);
+        }
       }
 
       const val = getParam(match, null);

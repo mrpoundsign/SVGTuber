@@ -40,11 +40,20 @@ export interface ParamFrame {
   blinkMaxHeadYaw?: number;
   smileThreshold?: number;
   audioVolume?: number;
+  audioPitch?: number;
+  viseme?: string;
+  visemeA?: number;
+  visemeI?: number;
+  visemeU?: number;
+  visemeE?: number;
+  visemeO?: number;
   bounceAmount?: number;
   physicsEnabled?: boolean;
   physicsAmount?: number;
   depthZoomAmount?: number;
   isSpeaking?: boolean;
+  isShouting?: boolean;
+  isLaughing?: boolean;
   isBlinkL?: boolean;
   isBlinkR?: boolean;
   autoBlink?: boolean;
@@ -63,6 +72,16 @@ export interface AudioState {
   volume: number;
   isSpeaking: boolean;
   active: boolean;
+  pitch?: number;
+  pitchHz?: number;
+  viseme?: string;
+  visemeA?: number;
+  visemeI?: number;
+  visemeU?: number;
+  visemeE?: number;
+  visemeO?: number;
+  isShouting?: boolean;
+  isLaughing?: boolean;
 }
 
 export interface FaceFrame {
@@ -132,6 +151,7 @@ export interface CalibrationProfile {
   neutralJawX?: number;
   neutralSquintL?: number;
   neutralSquintR?: number;
+  neutralPitchHz?: number;
   blinkOpenL: number;
   blinkOpenR: number;
   blinkClosedL: number;

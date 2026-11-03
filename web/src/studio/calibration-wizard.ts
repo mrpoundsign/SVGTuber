@@ -15,6 +15,7 @@ export interface CalibrationSample {
   z: number;
   blendshapes: Record<string, number>;
   audioVolume: number;
+  audioPitchHz?: number;
 }
 
 export interface NeutralStepResult {
@@ -63,6 +64,7 @@ export interface VoiceSmileStepResult {
   smileThreshold: number;
   mouthGain: number;
   micGain: number;
+  neutralPitchHz?: number;
   smileBlinkIntrusionL?: number;
   smileBlinkIntrusionR?: number;
 }
@@ -662,7 +664,7 @@ export function analyzeVoiceAndSmileStep(
     }
   }
 
-  // Speaking volume auto-gain
+  // Speaking volume auto-gain & natural voice fundamental pitch baseline
   const activeSpeechVols = audioVolumes.filter((v) => v > noiseGate * 0.8);
   let micGain = 1.5;
   if (activeSpeechVols.length > 0) {
@@ -672,12 +674,21 @@ export function analyzeVoiceAndSmileStep(
     }
   }
 
+  const activePitchSamples = samples
+    .filter((s) => (s.audioVolume || 0) > noiseGate * 0.8 && (s.audioPitchHz || 0) >= 75)
+    .map((s) => s.audioPitchHz as number);
+  const neutralPitchHz =
+    activePitchSamples.length > 0
+      ? Number(clamp(median(activePitchSamples), 80, 380).toFixed(1))
+      : 165;
+
   return {
     smileWeightL,
     smileWeightR,
     smileThreshold,
     mouthGain,
     micGain,
+    neutralPitchHz,
     smileBlinkIntrusionL,
     smileBlinkIntrusionR,
   };
@@ -712,6 +723,7 @@ export function buildCalibrationProfile(
     neutralJawX: neutral.neutralJawX,
     neutralSquintL: neutral.neutralSquintL,
     neutralSquintR: neutral.neutralSquintR,
+    neutralPitchHz: voiceSmile.neutralPitchHz || 165,
     blinkOpenL: neutral.blinkOpenL,
     blinkOpenR: neutral.blinkOpenR,
     blinkClosedL: blink.blinkClosedL,
