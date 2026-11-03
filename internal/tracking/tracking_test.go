@@ -811,4 +811,116 @@ func TestEngine_HeadTurnSuppressesFalseWink(t *testing.T) {
 	}
 }
 
+func TestEngine_GlassesBlinkRemapAndGlareAssist(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	// Simulate user with glasses:
+	// Resting open eyes sit at 0.24 (L) and 0.20 (R).
+	// Closed eyes reach only 0.44 (L, lens glare) and 0.52 (R).
+	err = cfgMgr.SetCalibration(config.CalibrationProfile{
+		Calibrated:   true,
+		BlinkOpenL:   0.24,
+		BlinkOpenR:   0.20,
+		BlinkClosedL: 0.44,
+		BlinkClosedR: 0.52,
+		GlareAssist:  true,
+		SmileWeightL: 0.5,
+		SmileWeightR: 0.5,
+	})
+	if err != nil {
+		t.Fatalf("SetCalibration failed: %v", err)
+	}
+
+	eng := NewEngine(cfgMgr)
+
+	// 1. Resting open eyes behind glasses (raw L=0.25, R=0.21) -> should remap near 0 and NOT blink
+	outOpen := eng.Process(FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.25,
+			"eyeBlinkRight": 0.21,
+		},
+	})
+	if outOpen.IsBlinkL || outOpen.IsBlinkR || outOpen.BlinkL > 0.15 || outOpen.BlinkR > 0.15 {
+		t.Errorf("Expected resting glasses eyes to remain open, got BlinkL=%v BlinkR=%v IsBlinkL=%v IsBlinkR=%v",
+			outOpen.BlinkL, outOpen.BlinkR, outOpen.IsBlinkL, outOpen.IsBlinkR)
+	}
+
+	// 2. Bilateral blink where left lens has heavy glare (raw L=0.29 -> remapped 0.25, raw R=0.48 -> remapped 0.875).
+	// GlareAssist couples the glare-weakened left eye with the clearer right eye!
+	outBlink := eng.Process(FaceFrame{
+		Timestamp: 1100,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"eyeBlinkLeft":  0.29,
+			"eyeBlinkRight": 0.48,
+		},
+	})
+	if !outBlink.IsBlinkL || !outBlink.IsBlinkR {
+		t.Errorf("Expected GlareAssist to trigger clean bilateral blink, got IsBlinkL=%v IsBlinkR=%v (BlinkL=%v, BlinkR=%v)",
+			outBlink.IsBlinkL, outBlink.IsBlinkR, outBlink.BlinkL, outBlink.BlinkR)
+	}
+}
+
+func TestFuseBlinkScore_EARRescueOnLensGlare(t *testing.T) {
+	// Blendshape is washed out by lens reflection (0.18), but 3D landmark EAR closure is 0.80
+	fused := FuseBlinkScore(0.18, 0.80, true)
+	if fused < 0.70 {
+		t.Errorf("Expected 3D landmark EAR closure (0.80) to rescue glare-suppressed blendshape (0.18), got %v", fused)
+	}
+}
+
+func TestEngine_WinkHoldResistsGlareFlutter(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	eng := NewEngine(cfgMgr)
+
+	// Confirm Left wink across syncDelay (50ms)
+	_ = eng.Process(FaceFrame{
+		Timestamp:   1000,
+		Present:     true,
+		Blendshapes: map[string]float64{"eyeBlinkLeft": 0.75, "eyeBlinkRight": 0.12},
+	})
+	outConfirmed := eng.Process(FaceFrame{
+		Timestamp:   1060,
+		Present:     true,
+		Blendshapes: map[string]float64{"eyeBlinkLeft": 0.75, "eyeBlinkRight": 0.12},
+	})
+	if !outConfirmed.IsBlinkL || outConfirmed.IsBlinkR {
+		t.Fatalf("Expected confirmed Left wink at t=1060, got L=%v R=%v", outConfirmed.IsBlinkL, outConfirmed.IsBlinkR)
+	}
+
+	// Simulate a transient 1-frame lens reflection dip to 0.22 (16ms later at t=1076) followed by recovery to 0.70 at t=1092
+	outDip := eng.Process(FaceFrame{
+		Timestamp:   1076,
+		Present:     true,
+		Blendshapes: map[string]float64{"eyeBlinkLeft": 0.22, "eyeBlinkRight": 0.12},
+	})
+	if !outDip.IsBlinkL || outDip.IsBlinkR {
+		t.Errorf("Expected Left wink to hold steady across 1-frame glare dip, got L=%v R=%v", outDip.IsBlinkL, outDip.IsBlinkR)
+	}
+
+	outRecovered := eng.Process(FaceFrame{
+		Timestamp:   1092,
+		Present:     true,
+		Blendshapes: map[string]float64{"eyeBlinkLeft": 0.70, "eyeBlinkRight": 0.12},
+	})
+	if !outRecovered.IsBlinkL || outRecovered.IsBlinkR {
+		t.Errorf("Expected Left wink to stay closed after glare dip without restarting syncDelay, got L=%v R=%v", outRecovered.IsBlinkL, outRecovered.IsBlinkR)
+	}
+}
+
+
+
 

@@ -11,36 +11,75 @@ import (
 	"sync"
 )
 
+// CalibrationProfile stores the user's calibrated neutral pose, open/closed eye range (for glasses),
+// gaze center, and asymmetric smile weights so calibration persists across restarts.
+type CalibrationProfile struct {
+	Calibrated   bool    `json:"calibrated"`
+	NeutralYaw   float64 `json:"neutralYaw"`
+	NeutralPitch float64 `json:"neutralPitch"`
+	NeutralRoll  float64 `json:"neutralRoll"`
+	NeutralX     float64 `json:"neutralX"`
+	NeutralY     float64 `json:"neutralY"`
+	NeutralZ     float64 `json:"neutralZ"`
+	NeutralEyeX  float64 `json:"neutralEyeX"`
+	NeutralEyeY  float64 `json:"neutralEyeY"`
+	NeutralSmile float64 `json:"neutralSmile"`
+	NeutralMouth float64 `json:"neutralMouth"`
+	NeutralBrowL float64 `json:"neutralBrowL"`
+	NeutralBrowR float64 `json:"neutralBrowR"`
+	BlinkOpenL   float64 `json:"blinkOpenL"`   // Resting open-eye floor (default: 0.0)
+	BlinkOpenR   float64 `json:"blinkOpenR"`   // Resting open-eye floor (default: 0.0)
+	BlinkClosedL float64 `json:"blinkClosedL"` // Natural blink ceiling (default: 1.0)
+	BlinkClosedR float64 `json:"blinkClosedR"` // Natural blink ceiling (default: 1.0)
+	GlareAssist  bool    `json:"glareAssist"`  // Couple clearer eye when one lens has reflection glare
+	SmileWeightL float64 `json:"smileWeightL"` // Left mouth corner weight (default: 0.5)
+	SmileWeightR float64 `json:"smileWeightR"` // Right mouth corner weight (default: 0.5)
+}
+
+// DefaultCalibrationProfile returns an uncalibrated profile with full [0..1] eye range and balanced smile weights.
+func DefaultCalibrationProfile() CalibrationProfile {
+	return CalibrationProfile{
+		BlinkOpenL:   0.0,
+		BlinkOpenR:   0.0,
+		BlinkClosedL: 1.0,
+		BlinkClosedR: 1.0,
+		SmileWeightL: 0.5,
+		SmileWeightR: 0.5,
+	}
+}
+
 // TrackingSettings contains tunable multipliers and thresholds for avatar tracking.
 type TrackingSettings struct {
-	MouthGain       float64 `json:"mouthGain"`       // Multiplier on raw jawOpen (default: 1.4)
-	MouthThreshold  float64 `json:"mouthThreshold"`  // Open mouth trigger threshold (default: 0.08)
-	BlinkThreshold   float64 `json:"blinkThreshold"`   // Closed eye trigger threshold (legacy fallback, default: 0.45)
-	BlinkThresholdL  float64 `json:"blinkThresholdL"`  // Left eye closed trigger threshold (default: 0.45)
-	BlinkThresholdR  float64 `json:"blinkThresholdR"`  // Right eye closed trigger threshold (default: 0.45)
-	BlinkSyncDelayMs float64 `json:"blinkSyncDelayMs"` // Window to synchronize bilateral blinks in ms (default: 50.0)
-	WinkIsBlink      bool    `json:"winkIsBlink"`      // When true, closing either eye closes both eyes (default: false)
-	StabilizeBlink   bool    `json:"stabilizeBlink"`   // Stabilize blinks and suppress head-turn foreshortening winks (default: true)
-	BlinkMaxHeadYaw  float64 `json:"blinkMaxHeadYaw"`  // Head yaw cutoff in degrees beyond which far-side eye mirrors camera-side eye (default: 25.0)
-	SmileThreshold   float64 `json:"smileThreshold"`   // Smile trigger threshold (default: 0.50)
-	EnableSmile          bool    `json:"enableSmile"`          // Enable smile expression tracking (default: true)
-	EyeGazeGain          float64 `json:"eyeGazeGain"`          // Multiplier on pupil gaze range (default: 1.0)
-	BrowGain             float64 `json:"browGain"`             // Multiplier on eyebrow raise/furrow range (default: 1.5)
-	YawMultiplier        float64 `json:"yawMultiplier"`        // Head yaw rotation sensitivity (default: 1.0)
-	PitchMultiplier  float64 `json:"pitchMultiplier"`  // Head pitch rotation sensitivity (default: 1.0)
-	RollMultiplier       float64 `json:"rollMultiplier"`       // Head roll tilt sensitivity (default: 1.0)
-	PoseSmoothing        float64 `json:"poseSmoothing"`        // Smoothing strength multiplier (default: 1.0)
-	AutoBlink            bool    `json:"autoBlink"`            // Autonomous natural blinking (default: true)
-	AutoBlinkMode        string  `json:"autoBlinkMode"`        // "always", "face_lost_only", "tracked_only" (default: "always")
-	AutoBlinkIntervalSec float64 `json:"autoBlinkIntervalSec"` // Interval between auto-blinks in seconds (default: 4.0)
-	AutoGaze             bool    `json:"autoGaze"`             // Autonomous subtle eye gaze saccades (default: true)
-	AutoGazeMode         string  `json:"autoGazeMode"`         // "always", "face_lost_only", "tracked_only" (default: "always")
-	AutoGazeRange        float64 `json:"autoGazeRange"`        // Scale multiplier on gaze micro-movements (default: 1.0)
-	AutoTilt             bool    `json:"autoTilt"`             // Autonomous gentle head tilt and sway (default: true)
-	AutoTiltMode         string  `json:"autoTiltMode"`         // "always", "face_lost_only", "tracked_only" (default: "always")
-	AutoTiltAmount       float64 `json:"autoTiltAmount"`       // Scale multiplier on head sway/tilt (default: 1.0)
-	PhysicsEnabled       bool    `json:"physicsEnabled"`       // Enable secondary spring physics and sway (default: true)
-	PhysicsAmount        float64 `json:"physicsAmount"`        // Multiplier on physics spring/sway displacement (default: 1.0)
+	MouthGain            float64            `json:"mouthGain"`            // Multiplier on raw jawOpen (default: 1.4)
+	MouthThreshold       float64            `json:"mouthThreshold"`       // Open mouth trigger threshold (default: 0.08)
+	BlinkThreshold       float64            `json:"blinkThreshold"`       // Closed eye trigger threshold (legacy fallback, default: 0.45)
+	BlinkThresholdL      float64            `json:"blinkThresholdL"`      // Left eye closed trigger threshold (default: 0.45)
+	BlinkThresholdR      float64            `json:"blinkThresholdR"`      // Right eye closed trigger threshold (default: 0.45)
+	BlinkSyncDelayMs     float64            `json:"blinkSyncDelayMs"`     // Window to synchronize bilateral blinks in ms (default: 50.0)
+	WinkIsBlink          bool               `json:"winkIsBlink"`          // When true, closing either eye closes both eyes (default: false)
+	StabilizeBlink       bool               `json:"stabilizeBlink"`       // Stabilize blinks and suppress head-turn foreshortening winks (default: true)
+	BlinkMaxHeadYaw      float64            `json:"blinkMaxHeadYaw"`      // Head yaw cutoff in degrees beyond which far-side eye mirrors camera-side eye (default: 25.0)
+	SmileThreshold       float64            `json:"smileThreshold"`       // Smile trigger threshold (default: 0.50)
+	EnableSmile          bool               `json:"enableSmile"`          // Enable smile expression tracking (default: true)
+	EyeGazeGain          float64            `json:"eyeGazeGain"`          // Multiplier on pupil gaze range (default: 1.0)
+	GazeDeadzone         float64            `json:"gazeDeadzone"`         // Deadzone to suppress lens-glare iris jitter (default: 0.03)
+	BrowGain             float64            `json:"browGain"`             // Multiplier on eyebrow raise/furrow range (default: 1.5)
+	YawMultiplier        float64            `json:"yawMultiplier"`        // Head yaw rotation sensitivity (default: 1.0)
+	PitchMultiplier      float64            `json:"pitchMultiplier"`      // Head pitch rotation sensitivity (default: 1.0)
+	RollMultiplier       float64            `json:"rollMultiplier"`       // Head roll tilt sensitivity (default: 1.0)
+	PoseSmoothing        float64            `json:"poseSmoothing"`        // Smoothing strength multiplier (default: 1.0)
+	AutoBlink            bool               `json:"autoBlink"`            // Autonomous natural blinking (default: true)
+	AutoBlinkMode        string             `json:"autoBlinkMode"`        // "always", "face_lost_only", "tracked_only" (default: "always")
+	AutoBlinkIntervalSec float64            `json:"autoBlinkIntervalSec"` // Interval between auto-blinks in seconds (default: 4.0)
+	AutoGaze             bool               `json:"autoGaze"`             // Autonomous subtle eye gaze saccades (default: true)
+	AutoGazeMode         string             `json:"autoGazeMode"`         // "always", "face_lost_only", "tracked_only" (default: "always")
+	AutoGazeRange        float64            `json:"autoGazeRange"`        // Scale multiplier on gaze micro-movements (default: 1.0)
+	AutoTilt             bool               `json:"autoTilt"`             // Autonomous gentle head tilt and sway (default: true)
+	AutoTiltMode         string             `json:"autoTiltMode"`         // "always", "face_lost_only", "tracked_only" (default: "always")
+	AutoTiltAmount       float64            `json:"autoTiltAmount"`       // Scale multiplier on head sway/tilt (default: 1.0)
+	PhysicsEnabled       bool               `json:"physicsEnabled"`       // Enable secondary spring physics and sway (default: true)
+	PhysicsAmount        float64            `json:"physicsAmount"`        // Multiplier on physics spring/sway displacement (default: 1.0)
+	Calibration          CalibrationProfile `json:"calibration"`          // Persisted user face/glasses/setup calibration profile
 }
 
 // AudioSettings contains microphone lip-sync and blending configuration.
@@ -103,9 +142,10 @@ func DefaultSettings() Settings {
 			SmileThreshold:       0.50,
 			EnableSmile:          true,
 			EyeGazeGain:          1.0,
+			GazeDeadzone:         0.03,
 			BrowGain:             1.5,
 			YawMultiplier:        1.0,
-			PitchMultiplier:  1.0,
+			PitchMultiplier:      1.0,
 			RollMultiplier:       1.0,
 			PoseSmoothing:        1.0,
 			AutoBlink:            true,
@@ -119,6 +159,7 @@ func DefaultSettings() Settings {
 			AutoTiltAmount:       1.0,
 			PhysicsEnabled:       true,
 			PhysicsAmount:        1.0,
+			Calibration:          DefaultCalibrationProfile(),
 		},
 		Audio: AudioSettings{
 			Mode:         "hybrid",
@@ -510,10 +551,72 @@ func (m *Manager) Update(newSettings Settings) error {
 	if len(newSettings.Accessories) == 0 && len(m.settings.Accessories) > 0 {
 		newSettings.Accessories = m.settings.Accessories
 	}
+	// Preserve existing CalibrationProfile if incoming payload omitted calibration fields
+	if !newSettings.Tracking.Calibration.Calibrated &&
+		newSettings.Tracking.Calibration.BlinkClosedL == 0 &&
+		newSettings.Tracking.Calibration.BlinkClosedR == 0 {
+		if m.settings.Tracking.Calibration.Calibrated ||
+			m.settings.Tracking.Calibration.BlinkClosedL > 0 ||
+			m.settings.Tracking.Calibration.BlinkClosedR > 0 {
+			newSettings.Tracking.Calibration = m.settings.Tracking.Calibration
+		} else {
+			newSettings.Tracking.Calibration = DefaultCalibrationProfile()
+		}
+	} else {
+		sanitizeCalibrationProfile(&newSettings.Tracking.Calibration)
+	}
+	if newSettings.Tracking.GazeDeadzone <= 0 && m.settings.Tracking.GazeDeadzone > 0 {
+		newSettings.Tracking.GazeDeadzone = m.settings.Tracking.GazeDeadzone
+	}
 	m.settings = newSettings
 	m.mu.Unlock()
 
 	return m.Save()
+}
+
+// SetCalibration updates and persists only the CalibrationProfile in TrackingSettings.
+func (m *Manager) SetCalibration(cal CalibrationProfile) error {
+	sanitizeCalibrationProfile(&cal)
+	m.mu.Lock()
+	m.settings.Tracking.Calibration = cal
+	m.mu.Unlock()
+	return m.Save()
+}
+
+// ResetCalibration resets the CalibrationProfile to uncalibrated defaults and persists to disk.
+func (m *Manager) ResetCalibration() error {
+	return m.SetCalibration(DefaultCalibrationProfile())
+}
+
+func sanitizeCalibrationProfile(cal *CalibrationProfile) {
+	if cal.BlinkClosedL <= 0 {
+		cal.BlinkClosedL = 1.0
+	}
+	if cal.BlinkClosedR <= 0 {
+		cal.BlinkClosedR = 1.0
+	}
+	if cal.BlinkOpenL < 0 {
+		cal.BlinkOpenL = 0
+	}
+	if cal.BlinkOpenR < 0 {
+		cal.BlinkOpenR = 0
+	}
+	if cal.BlinkClosedL <= cal.BlinkOpenL+0.05 {
+		cal.BlinkClosedL = cal.BlinkOpenL + 0.35
+		if cal.BlinkClosedL > 1.0 {
+			cal.BlinkClosedL = 1.0
+		}
+	}
+	if cal.BlinkClosedR <= cal.BlinkOpenR+0.05 {
+		cal.BlinkClosedR = cal.BlinkOpenR + 0.35
+		if cal.BlinkClosedR > 1.0 {
+			cal.BlinkClosedR = 1.0
+		}
+	}
+	if cal.SmileWeightL <= 0 && cal.SmileWeightR <= 0 {
+		cal.SmileWeightL = 0.5
+		cal.SmileWeightR = 0.5
+	}
 }
 
 // Reset restores settings to default values and saves to disk while preserving avatar directory, paths, streamerMode, and accessories.
@@ -675,6 +778,10 @@ func (m *Manager) Load() error {
 	if s.Tracking.BlinkMaxHeadYaw <= 0 {
 		s.Tracking.BlinkMaxHeadYaw = 25.0
 	}
+	if s.Tracking.GazeDeadzone < 0 || (s.Tracking.GazeDeadzone == 0 && !strings.Contains(string(data), "gazeDeadzone")) {
+		s.Tracking.GazeDeadzone = 0.03
+	}
+	sanitizeCalibrationProfile(&s.Tracking.Calibration)
 
 	m.mu.Lock()
 	m.settings = s

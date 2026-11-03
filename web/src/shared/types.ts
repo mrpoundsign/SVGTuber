@@ -96,6 +96,29 @@ export interface RigDefinition {
   expressions: string[];
 }
 
+export interface CalibrationProfile {
+  calibrated: boolean;
+  neutralYaw: number;
+  neutralPitch: number;
+  neutralRoll: number;
+  neutralX: number;
+  neutralY: number;
+  neutralZ: number;
+  neutralEyeX: number;
+  neutralEyeY: number;
+  neutralSmile: number;
+  neutralMouth: number;
+  neutralBrowL: number;
+  neutralBrowR: number;
+  blinkOpenL: number;
+  blinkOpenR: number;
+  blinkClosedL: number;
+  blinkClosedR: number;
+  glareAssist: boolean;
+  smileWeightL: number;
+  smileWeightR: number;
+}
+
 export interface TrackingSettings {
   mode: "camera" | "audio" | "hybrid";
   mouthGain: number;
@@ -114,6 +137,7 @@ export interface TrackingSettings {
   rollMultiplier: number;
   poseSmoothing: number;
   eyeGazeGain: number;
+  gazeDeadzone?: number;
   browGain?: number;
   autoBlink: boolean;
   autoBlinkMode: string;
@@ -124,4 +148,5 @@ export interface TrackingSettings {
   autoTilt: boolean;
   autoTiltMode: string;
   autoTiltAmount: number;
+  calibration?: CalibrationProfile;
 }

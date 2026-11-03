@@ -9,8 +9,19 @@ import {
   DrawingUtils,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
-import type { AudioState, AccessoryConfig, FaceFrame } from "../shared/types.ts";
-import { extractEulerAngles } from "./pose.ts";
+import type { AudioState, AccessoryConfig, CalibrationProfile, FaceFrame } from "../shared/types.ts";
+import { extractEulerAngles, computeEyeAspectRatios } from "./pose.ts";
+import {
+  analyzeNeutralStep,
+  analyzeBeepBlinkStep,
+  analyzeHeadTurnStep,
+  analyzeVoiceAndSmileStep,
+  buildCalibrationProfile,
+  fuseBlinkScoreClient,
+  remapBlinkClient,
+  playCalibrationCue,
+  type CalibrationSample,
+} from "./calibration-wizard.ts";
 import { calculateRMS, stepAudioVolume, evaluateSpeechGate } from "./audio.ts";
 import {
   createDefaultSettings,
@@ -216,6 +227,8 @@ let neutralSmile = 0;
 let neutralMouth = 0;
 let isCalibrated = false;
 
+let lastRafProcessTime = 0;
+
 function initTickerWorker() {
   if (tickerWorker) return;
   try {
@@ -244,12 +257,13 @@ function initTickerWorker() {
 
     tickerWorker = new Worker(URL.createObjectURL(workerBlob));
     tickerWorker.onmessage = () => {
+      const rafStalled = performance.now() - lastRafProcessTime > 45;
       if (webcamRunning) {
-        if (document.hidden) {
+        if (document.hidden || rafStalled) {
           processFrame(false);
         }
       } else {
-        if (document.hidden) {
+        if (document.hidden || rafStalled) {
           processCameraOffFrame(false);
         }
       }
@@ -539,12 +553,22 @@ function processCameraOffFrame(renderUI = true) {
   }
 }
 
+const isCalibratePopout = new URLSearchParams(window.location.search).has("calibrate");
+let calibrationChannel: BroadcastChannel | null = null;
+let lastBroadcastSampleTime = 0;
+try {
+  if (typeof BroadcastChannel !== "undefined") {
+    calibrationChannel = new BroadcastChannel("svgtuber_calibration");
+  }
+} catch {}
+
 function connectWebSocket() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return;
   }
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${location.host}/ws/tracker`;
+  const roleParam = isCalibratePopout && !webcamRunning ? "?role=control" : "";
+  const wsUrl = `${protocol}//${location.host}/ws/tracker${roleParam}`;
 
   socket = new WebSocket(wsUrl);
 
@@ -580,12 +604,31 @@ function connectWebSocket() {
         loadAccessories();
         reloadAvatarFrame();
       } else if (msg.type === "mode_update") {
+        if (msg.settings) {
+          activeSettings = msg.settings;
+          syncSettingsToUI(activeSettings);
+        }
         if (typeof msg.mode === "string") {
           applyMode(msg.mode, false);
         }
         if (typeof msg.streamerMode === "boolean" && msg.streamerMode !== streamerModeEnabled) {
           applyStreamerMode(msg.streamerMode, true, false);
         }
+      } else if (msg.type === "cal_sample" && msg.face) {
+        lastBroadcastSampleTime = performance.now();
+        const f = msg.face as FaceFrame;
+        ingestCalibrationSample({
+          timestamp: performance.now(),
+          present: Boolean(f.present),
+          yaw: f.yaw || 0,
+          pitch: f.pitch || 0,
+          roll: f.roll || 0,
+          x: f.x || 0,
+          y: f.y || 0,
+          z: f.z || 0,
+          blendshapes: f.blendshapes || {},
+          audioVolume: f.audio?.volume || 0,
+        });
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg as UpdateProgressMessage);
       }
@@ -884,7 +927,18 @@ async function initMediaPipe() {
 
     const currentMode = getCurrentMode();
     const cameraActive = localStorage.getItem("svgtuber_camera_active");
-    if (shouldAutoStartCamera(currentMode, cameraActive)) {
+    if (isCalibratePopout) {
+      updateCameraUI();
+      startCameraOffLoop();
+      // Give the main Studio tab 700ms to stream CalibrationSample frames over BroadcastChannel
+      // before falling back to opening the webcam directly in the pop-out window.
+      setTimeout(() => {
+        if (performance.now() - lastBroadcastSampleTime > 650 && !webcamRunning) {
+          console.log("[Studio Calibration] No BroadcastChannel stream detected; starting camera in pop-out.");
+          startCamera().catch((e) => console.warn("[Studio Calibration] Pop-out camera warning:", e));
+        }
+      }, 700);
+    } else if (shouldAutoStartCamera(currentMode, cameraActive)) {
       console.log("[Studio Tracker] Auto-starting camera stream on load...");
       startCamera().catch((e) => {
         console.warn("[Studio Tracker] Auto-start camera warning:", e);
@@ -1167,6 +1221,13 @@ function processFrame(renderUI = true) {
         });
       }
 
+      // Compute 3D Landmark EAR (Eye Aspect Ratio) backup for glasses resilience
+      const ear = computeEyeAspectRatios(landmarks);
+      if (ear) {
+        blendshapes.earBlinkLeft = ear.earBlinkLeft;
+        blendshapes.earBlinkRight = ear.earBlinkRight;
+      }
+
       let pose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
       if (results.facialTransformationMatrixes && results.facialTransformationMatrixes[0]) {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
@@ -1175,6 +1236,25 @@ function processFrame(renderUI = true) {
       const audioState = sampleAudio();
       if (renderUI) {
         updateAudioUI(audioState);
+      }
+
+      const calSample: CalibrationSample = {
+        timestamp: now,
+        present: true,
+        yaw: pose.yaw,
+        pitch: pose.pitch,
+        roll: pose.roll,
+        x: pose.x,
+        y: pose.y,
+        z: pose.z,
+        blendshapes,
+        audioVolume: audioState?.volume || 0,
+      };
+      ingestCalibrationSample(calSample);
+      if (calibrationChannel && !isCalibratePopout) {
+        try {
+          calibrationChannel.postMessage({ type: "sample", sample: calSample });
+        } catch {}
       }
 
       if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
@@ -1231,6 +1311,7 @@ function processFrame(renderUI = true) {
 
 function predictLoop() {
   if (!webcamRunning) return;
+  lastRafProcessTime = performance.now();
   processFrame(true);
 
   frameCount++;
@@ -1263,8 +1344,18 @@ function updateTrackingGauges(pose: any, blendshapes: Record<string, number>) {
   if (valPitch) valPitch.textContent = `${pose.pitch > 0 ? "+" : ""}${pose.pitch.toFixed(1)}°`;
   if (valRoll) valRoll.textContent = `${pose.roll > 0 ? "+" : ""}${pose.roll.toFixed(1)}°`;
 
-  const blinkL = blendshapes.eyeBlinkLeft || 0;
-  const blinkR = blendshapes.eyeBlinkRight || 0;
+  const cal = activeSettings?.tracking?.calibration;
+  const fusedBlinkL = fuseBlinkScoreClient(blendshapes.eyeBlinkLeft || 0, blendshapes.earBlinkLeft || 0);
+  const fusedBlinkR = fuseBlinkScoreClient(blendshapes.eyeBlinkRight || 0, blendshapes.earBlinkRight || 0);
+  const blinkL =
+    cal && cal.calibrated
+      ? remapBlinkClient(fusedBlinkL, cal.blinkOpenL || 0, cal.blinkClosedL || 1)
+      : fusedBlinkL;
+  const blinkR =
+    cal && cal.calibrated
+      ? remapBlinkClient(fusedBlinkR, cal.blinkOpenR || 0, cal.blinkClosedR || 1)
+      : fusedBlinkR;
+
   if (valBlinkL) valBlinkL.textContent = `${Math.round(blinkL * 100)}%`;
   if (valBlinkR) valBlinkR.textContent = `${Math.round(blinkR * 100)}%`;
   if (gaugeBlinkL) gaugeBlinkL.style.width = `${Math.min(100, Math.round(blinkL * 100))}%`;
@@ -1286,7 +1377,11 @@ function updateTrackingGauges(pose: any, blendshapes: Record<string, number>) {
   const jawOpen = blendshapes.jawOpen || 0;
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = `${Math.min(100, Math.round(jawOpen * 100))}%`;
 
-  const smile = Math.max(blendshapes.mouthSmileLeft || 0, blendshapes.mouthSmileRight || 0);
+  const wL = cal && cal.smileWeightL > 0 ? cal.smileWeightL : 0.5;
+  const wR = cal && cal.smileWeightR > 0 ? cal.smileWeightR : 0.5;
+  const smileBase = cal && cal.calibrated ? cal.neutralSmile : 0;
+  const smileRaw = (blendshapes.mouthSmileLeft || 0) * wL + (blendshapes.mouthSmileRight || 0) * wR;
+  const smile = Math.max(0, Math.min(1, smileRaw - smileBase));
   if (valSmile) valSmile.textContent = `${Math.round(smile * 100)}%`;
   if (gaugeSmile) gaugeSmile.style.width = `${Math.min(100, Math.round(smile * 100))}%`;
 }
@@ -1558,6 +1653,7 @@ function collectSettingsFromUI(): SettingsPayload {
         sliderPhysicsAmount?.value !== undefined ? sliderPhysicsAmount.value : "1.0"
       ),
       eyeGazeGain: parseFloat(sliderEyeGain?.value || "1.0"),
+      gazeDeadzone: activeSettings?.tracking?.gazeDeadzone ?? 0.03,
       browGain: parseFloat(
         sliderBrowGain?.value !== undefined ? sliderBrowGain.value : "1.5"
       ),
@@ -1565,6 +1661,7 @@ function collectSettingsFromUI(): SettingsPayload {
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || "1.0"),
       rollMultiplier: 1.0,
       poseSmoothing: 1.0,
+      calibration: activeSettings?.tracking?.calibration,
     },
     audio: {
       mode: settingsModeSelect?.value || modeSelect?.value || "hybrid",
@@ -3131,6 +3228,515 @@ function initStreamerMode() {
       applyStreamerMode(!streamerModeEnabled, true, true);
     });
   }
+}
+
+// ============================================================================
+// Guided Audio-Visual Pop-Out Calibration Wizard (Glasses & Headphone Setup)
+// ============================================================================
+const btnGuidedCalibrate = document.getElementById("btn-guided-calibrate") as HTMLButtonElement | null;
+const btnGuidedCalibrateTuning = document.getElementById("btn-guided-calibrate-tuning") as HTMLButtonElement | null;
+const guidedCalOverlay = document.getElementById("guided-calibration-overlay") as HTMLElement | null;
+const calPillFace = document.getElementById("cal-pill-face") as HTMLElement | null;
+const calPillMic = document.getElementById("cal-pill-mic") as HTMLElement | null;
+const btnCalTestBeep = document.getElementById("btn-cal-test-beep") as HTMLButtonElement | null;
+const btnCalClose = document.getElementById("btn-cal-close") as HTMLButtonElement | null;
+const calReticle = document.getElementById("cal-reticle") as HTMLElement | null;
+const calReticleDot = document.getElementById("cal-reticle-dot") as HTMLElement | null;
+const calReticleArrow = document.getElementById("cal-reticle-arrow") as HTMLElement | null;
+const calReticlePrompt = document.getElementById("cal-reticle-prompt") as HTMLElement | null;
+const calCardIntro = document.getElementById("cal-card-intro") as HTMLElement | null;
+const btnCalStartWindowed = document.getElementById("btn-cal-start-windowed") as HTMLButtonElement | null;
+const btnCalStartFullscreen = document.getElementById("btn-cal-start-fullscreen") as HTMLButtonElement | null;
+const calHudActive = document.getElementById("cal-hud-active") as HTMLElement | null;
+const calStepTitle = document.getElementById("cal-step-title") as HTMLElement | null;
+const calStepTimer = document.getElementById("cal-step-timer") as HTMLElement | null;
+const calStepDesc = document.getElementById("cal-step-desc") as HTMLElement | null;
+const calStepProgress = document.getElementById("cal-step-progress") as HTMLElement | null;
+const calCardSummary = document.getElementById("cal-card-summary") as HTMLElement | null;
+const calSumBlinkRange = document.getElementById("cal-sum-blink-range") as HTMLElement | null;
+const calSumGlare = document.getElementById("cal-sum-glare") as HTMLElement | null;
+const calSumYawCutoff = document.getElementById("cal-sum-yaw-cutoff") as HTMLElement | null;
+const calSumVoice = document.getElementById("cal-sum-voice") as HTMLElement | null;
+const btnCalRerun = document.getElementById("btn-cal-rerun") as HTMLButtonElement | null;
+const btnCalDone = document.getElementById("btn-cal-done") as HTMLButtonElement | null;
+
+type WizardStepId = "idle" | "step1_neutral" | "step2_blink" | "step3_turn" | "step4_voice" | "summary";
+let wizardStep: WizardStepId = "idle";
+let wizardTimerId: any = null;
+let step1Samples: CalibrationSample[] = [];
+let step2Samples: CalibrationSample[] = [];
+let step2BeepTimestamps: number[] = [];
+let step2WinkTimestamps: number[] = [];
+let step3Samples: CalibrationSample[] = [];
+let step4Samples: CalibrationSample[] = [];
+
+function ingestCalibrationSample(sample: CalibrationSample) {
+  const stamped: CalibrationSample = {
+    ...sample,
+    timestamp: performance.now(),
+  };
+  if (wizardStep === "step1_neutral") {
+    step1Samples.push(stamped);
+  } else if (wizardStep === "step2_blink") {
+    step2Samples.push(stamped);
+  } else if (wizardStep === "step3_turn") {
+    step3Samples.push(stamped);
+  } else if (wizardStep === "step4_voice") {
+    step4Samples.push(stamped);
+  }
+
+  if (guidedCalOverlay && guidedCalOverlay.style.display !== "none") {
+    if (calPillFace) {
+      if (sample.present) {
+        const bL = fuseBlinkScoreClient(
+          sample.blendshapes.eyeBlinkLeft || 0,
+          sample.blendshapes.earBlinkLeft || 0
+        );
+        const bR = fuseBlinkScoreClient(
+          sample.blendshapes.eyeBlinkRight || 0,
+          sample.blendshapes.earBlinkRight || 0
+        );
+        calPillFace.textContent = `📷 Face: Ready (Blink L ${(bL * 100).toFixed(0)}% · R ${(bR * 100).toFixed(0)}% | Yaw ${sample.yaw > 0 ? "+" : ""}${sample.yaw.toFixed(0)}°)`;
+        calPillFace.className = "cal-pill ok";
+      } else {
+        calPillFace.textContent = "📷 Face: Waiting...";
+        calPillFace.className = "cal-pill warn";
+      }
+    }
+    if (calPillMic) {
+      const micPct = Math.min(100, Math.round((sample.audioVolume || 0) * 150));
+      calPillMic.textContent = `🎙️ Mic: ${micPct}%`;
+      calPillMic.className = micPct > 4 ? "cal-pill ok" : "cal-pill";
+    }
+  }
+}
+
+if (calibrationChannel) {
+  calibrationChannel.onmessage = (ev) => {
+    const data = ev.data;
+    if (!data || typeof data !== "object") return;
+    if (data.type === "sample" && data.sample) {
+      lastBroadcastSampleTime = performance.now();
+      ingestCalibrationSample(data.sample as CalibrationSample);
+    } else if (data.type === "calibrated_settings" && data.settings) {
+      activeSettings = data.settings;
+      syncSettingsToUI(activeSettings);
+      showCalibratedFlash();
+    }
+  };
+}
+
+function setReticleTarget(
+  leftPct: number,
+  topPct: number,
+  label: string,
+  cuePulse = false,
+  visible = true,
+  arrowDir: "left" | "right" | "up" | "down" | null = null
+) {
+  if (!calReticle) return;
+  calReticle.style.display = visible ? "flex" : "none";
+  calReticle.style.left = `${leftPct}%`;
+  calReticle.style.top = `${topPct}%`;
+  calReticle.classList.toggle("beep-pulse", cuePulse);
+  if (calReticleDot) {
+    calReticleDot.style.display = arrowDir ? "none" : "block";
+  }
+  if (calReticleArrow) {
+    if (arrowDir) {
+      calReticleArrow.className = `cal-reticle-arrow dir-${arrowDir}`;
+      calReticleArrow.textContent =
+        arrowDir === "left"
+          ? "⬅"
+          : arrowDir === "right"
+            ? "➡"
+            : arrowDir === "up"
+              ? "⬆"
+              : "⬇";
+    } else {
+      calReticleArrow.className = "cal-reticle-arrow";
+    }
+  }
+  if (calReticlePrompt) {
+    calReticlePrompt.textContent = label;
+  }
+}
+
+function showGuidedOverlayInPage() {
+  if (!guidedCalOverlay) return;
+  wizardStep = "idle";
+  if (wizardTimerId) {
+    clearInterval(wizardTimerId);
+    wizardTimerId = null;
+  }
+  guidedCalOverlay.style.display = "flex";
+  if (calCardIntro) calCardIntro.style.display = "flex";
+  if (calHudActive) calHudActive.style.display = "none";
+  if (calCardSummary) calCardSummary.style.display = "none";
+  setReticleTarget(50, 50, "Look Here", false, false);
+}
+
+function closeGuidedOverlay() {
+  if (wizardTimerId) {
+    clearInterval(wizardTimerId);
+    wizardTimerId = null;
+  }
+  wizardStep = "idle";
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+  }
+  if (isCalibratePopout) {
+    window.close();
+  }
+  if (guidedCalOverlay) {
+    guidedCalOverlay.style.display = "none";
+  }
+}
+
+function launchGuidedCalibration(e?: MouseEvent) {
+  if (isCalibratePopout || (e && e.shiftKey)) {
+    showGuidedOverlayInPage();
+    return;
+  }
+  const popup = window.open(
+    "/studio/?calibrate=1",
+    "SVGTuberCalibration",
+    "popup=yes,width=1200,height=820,left=100,top=60"
+  );
+  if (!popup) {
+    showGuidedOverlayInPage();
+  } else {
+    popup.focus();
+  }
+}
+
+async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
+  if (requestFullscreenFirst && !document.fullscreenElement) {
+    try {
+      await document.documentElement.requestFullscreen?.();
+    } catch {}
+  }
+
+  const ctx = getOrCreateAudioContext();
+  if (performance.now() - lastBroadcastSampleTime > 650) {
+    if (!webcamRunning && isCameraAllowedInMode(getCurrentMode())) {
+      try {
+        await startCamera();
+      } catch (e) {
+        console.warn("[Studio Calibration] Could not start camera:", e);
+      }
+    }
+    if (!micRunning) {
+      try {
+        await startMic();
+      } catch (e) {
+        console.warn("[Studio Calibration] Could not start mic:", e);
+      }
+    }
+  }
+
+  step1Samples = [];
+  step2Samples = [];
+  step2BeepTimestamps = [];
+  step2WinkTimestamps = [];
+  step3Samples = [];
+  step4Samples = [];
+
+  if (calCardIntro) calCardIntro.style.display = "none";
+  if (calCardSummary) calCardSummary.style.display = "none";
+  if (calHudActive) calHudActive.style.display = "flex";
+
+  const step1Duration = 3000;
+  const step2Duration = 6500;
+  const step3Duration = 7200;
+  const step4Duration = 4000;
+  const totalDuration = step1Duration + step2Duration + step3Duration + step4Duration;
+  const startTime = performance.now();
+
+  let lastBeepMarker = -1;
+  wizardStep = "step1_neutral";
+  setReticleTarget(50, 50, "LOOK CENTER", false, true);
+  playCalibrationCue(ctx, "tick");
+
+  if (wizardTimerId) clearInterval(wizardTimerId);
+  wizardTimerId = setInterval(() => {
+    const elapsed = performance.now() - startTime;
+    const progressPct = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+    if (calStepProgress) calStepProgress.style.width = `${progressPct}%`;
+
+    if (elapsed < step1Duration) {
+      // Step 1: Neutral Rest & Silence (0 - 3.0s)
+      wizardStep = "step1_neutral";
+      const rem = ((step1Duration - elapsed) / 1000).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+      if (calStepTitle) calStepTitle.textContent = "Step 1 of 4: Neutral Rest & Silence";
+      if (calStepDesc)
+        calStepDesc.textContent =
+          "Look comfortably at the center ring with a relaxed face and stay quiet.";
+      setReticleTarget(50, 50, `HOLD CENTER (${Math.ceil((step1Duration - elapsed) / 1000)}s)`, false, true);
+
+      const secIdx = Math.floor(elapsed / 1000);
+      if (secIdx > 0 && secIdx !== lastBeepMarker) {
+        lastBeepMarker = secIdx;
+        playCalibrationCue(ctx, "tick");
+      }
+    } else if (elapsed < step1Duration + step2Duration) {
+      // Step 2: 2 Blinks + Left Wink + Right Wink (3.0 - 9.5s)
+      if (wizardStep !== "step2_blink") {
+        wizardStep = "step2_blink";
+        lastBeepMarker = -1;
+        playCalibrationCue(ctx, "step_done");
+      }
+      const stepElapsed = elapsed - step1Duration;
+      const rem = ((step2Duration - stepElapsed) / 1000).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+
+      if (stepElapsed < 3100) {
+        if (calStepTitle) calStepTitle.textContent = "Step 2A of 4: 2 Audio-Cued Blinks (Both Eyes)";
+        if (calStepDesc)
+          calStepDesc.textContent =
+            "Keep looking center. Blink BOTH eyes firmly on Beep 1 and Beep 2.";
+        const biCueTimes = [700, 1950];
+        let isPulsing = false;
+        biCueTimes.forEach((cueMs, idx) => {
+          if (stepElapsed >= cueMs && lastBeepMarker < idx + 10) {
+            lastBeepMarker = idx + 10;
+            step2BeepTimestamps.push(performance.now());
+            playCalibrationCue(ctx, "beep");
+          }
+          if (stepElapsed >= cueMs && stepElapsed <= cueMs + 500) {
+            isPulsing = true;
+          }
+        });
+        setReticleTarget(50, 50, isPulsing ? "BLINK BOTH EYES!" : "GET READY TO BLINK", isPulsing, true);
+      } else if (stepElapsed < 4800) {
+        if (calStepTitle) calStepTitle.textContent = "Step 2B of 4: Left Eye Wink Calibration";
+        if (calStepDesc)
+          calStepDesc.textContent =
+            "On the BEEP, close ONLY your LEFT eye for ~1 second while keeping your Right eye open.";
+        if (stepElapsed >= 3400 && lastBeepMarker < 12) {
+          lastBeepMarker = 12;
+          step2WinkTimestamps.push(performance.now());
+          playCalibrationCue(ctx, "beep");
+        }
+        const isPulsing = stepElapsed >= 3400 && stepElapsed <= 4400;
+        setReticleTarget(
+          38,
+          50,
+          isPulsing ? "😉 CLOSE LEFT EYE NOW!" : "GET READY: LEFT EYE",
+          isPulsing,
+          true
+        );
+      } else {
+        if (calStepTitle) calStepTitle.textContent = "Step 2C of 4: Right Eye Wink Calibration";
+        if (calStepDesc)
+          calStepDesc.textContent =
+            "On the BEEP, close ONLY your RIGHT eye for ~1 second while keeping your Left eye open.";
+        if (stepElapsed >= 5000 && lastBeepMarker < 13) {
+          lastBeepMarker = 13;
+          step2WinkTimestamps.push(performance.now());
+          playCalibrationCue(ctx, "beep");
+        }
+        const isPulsing = stepElapsed >= 5000 && stepElapsed <= 6000;
+        setReticleTarget(
+          62,
+          50,
+          isPulsing ? "😜 CLOSE RIGHT EYE NOW!" : "GET READY: RIGHT EYE",
+          isPulsing,
+          true
+        );
+      }
+    } else if (elapsed < step1Duration + step2Duration + step3Duration) {
+      // Step 3: Directional Head Turns (Off-Screen / Side Monitors OK)
+      if (wizardStep !== "step3_turn") {
+        wizardStep = "step3_turn";
+        lastBeepMarker = -1;
+        playCalibrationCue(ctx, "step_done");
+      }
+      const stepElapsed = elapsed - (step1Duration + step2Duration);
+      const rem = ((step3Duration - stepElapsed) / 1000).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+      if (calStepTitle)
+        calStepTitle.textContent = "Step 3 of 4: Directional Head Turns (Off-Screen / Side Monitor)";
+      if (calStepDesc)
+        calStepDesc.textContent =
+          "Turn your head & look naturally in the arrow's direction (e.g. side monitor or room). Listen for the BEEP to switch!";
+
+      if (stepElapsed < 1800) {
+        if (lastBeepMarker < 20) {
+          lastBeepMarker = 20;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(44, 50, "TURN HEAD & LOOK LEFT (Side Monitor / Off-Screen)", true, true, "left");
+      } else if (stepElapsed < 3600) {
+        if (lastBeepMarker < 21) {
+          lastBeepMarker = 21;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(56, 50, "TURN HEAD & LOOK RIGHT (Side Monitor / Off-Screen)", true, true, "right");
+      } else if (stepElapsed < 5400) {
+        if (lastBeepMarker < 22) {
+          lastBeepMarker = 22;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(50, 44, "TILT HEAD & LOOK UP (Above Monitor)", true, true, "up");
+      } else {
+        if (lastBeepMarker < 23) {
+          lastBeepMarker = 23;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(50, 56, "TILT HEAD & LOOK DOWN (Desk / Keyboard)", true, true, "down");
+      }
+    } else if (elapsed < totalDuration) {
+      // Step 4: Smile & Speaking Voice (13.8 - 17.8s)
+      if (wizardStep !== "step4_voice") {
+        wizardStep = "step4_voice";
+        lastBeepMarker = -1;
+        playCalibrationCue(ctx, "step_done");
+      }
+      const stepElapsed = elapsed - (step1Duration + step2Duration + step3Duration);
+      const rem = ((step4Duration - stepElapsed) / 1000).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+      if (calStepTitle) calStepTitle.textContent = "Step 4 of 4: Smile & Normal Speaking Voice";
+      if (calStepDesc)
+        calStepDesc.textContent =
+          'Look center, give a big comfortable smile, and say "Testing one, two, three" at your normal speaking volume.';
+      setReticleTarget(50, 50, "SMILE & SPEAK", true, true);
+
+      if (stepElapsed >= 250 && lastBeepMarker < 30) {
+        lastBeepMarker = 30;
+        playCalibrationCue(ctx, "beep");
+      }
+    } else {
+      // Complete!
+      clearInterval(wizardTimerId);
+      wizardTimerId = null;
+      wizardStep = "summary";
+      playCalibrationCue(ctx, "complete");
+      finalizeGuidedCalibration();
+    }
+  }, 50);
+}
+
+async function finalizeGuidedCalibration() {
+  setReticleTarget(50, 50, "CALIBRATED ✓", false, false);
+  if (calHudActive) calHudActive.style.display = "none";
+  if (calCardSummary) calCardSummary.style.display = "flex";
+
+  const neutral = analyzeNeutralStep(step1Samples);
+  const blink = analyzeBeepBlinkStep(
+    step2Samples,
+    step2BeepTimestamps,
+    neutral.blinkOpenL,
+    neutral.blinkOpenR,
+    step2WinkTimestamps
+  );
+  const headTurn = analyzeHeadTurnStep(
+    step3Samples,
+    neutral.neutralYaw,
+    neutral.neutralPitch,
+    neutral.blinkOpenL,
+    neutral.blinkOpenR,
+    blink.blinkClosedL,
+    blink.blinkClosedR
+  );
+  const voiceSmile = analyzeVoiceAndSmileStep(
+    step4Samples,
+    neutral.neutralMouth,
+    neutral.neutralSmile,
+    neutral.noiseGate
+  );
+
+  const profile = buildCalibrationProfile(neutral, blink, voiceSmile);
+
+  if (calSumBlinkRange) {
+    calSumBlinkRange.textContent = `L: ${Math.round(profile.blinkOpenL * 100)}%→${Math.round(profile.blinkClosedL * 100)}% (T:${Math.round(blink.blinkThresholdL * 100)}%) • R: ${Math.round(profile.blinkOpenR * 100)}%→${Math.round(profile.blinkClosedR * 100)}% (T:${Math.round(blink.blinkThresholdR * 100)}%)`;
+  }
+  if (calSumGlare) {
+    calSumGlare.textContent = profile.glareAssist
+      ? "Glare Assist ON + 3D EAR"
+      : "3D EAR Hybrid Active";
+  }
+  if (calSumYawCutoff) {
+    calSumYawCutoff.textContent = `±${headTurn.blinkMaxHeadYaw}° (Yaw ${headTurn.yawMultiplier.toFixed(1)}x, Pitch ${headTurn.pitchMultiplier.toFixed(1)}x)`;
+  }
+  if (calSumVoice) {
+    const micNote =
+      profile.smileWeightL > 0.6
+        ? " • Smile L-Boost"
+        : profile.smileWeightR > 0.6
+          ? " • Smile R-Boost"
+          : "";
+    calSumVoice.textContent = `Gate ${neutral.noiseGate.toFixed(2)} • Gain ${voiceSmile.micGain.toFixed(1)}x${micNote}`;
+  }
+
+  // Merge calibrated profile & recommended thresholds into settings and persist
+  const current = collectSettingsFromUI();
+  current.tracking.calibration = profile;
+  current.tracking.blinkThreshold = blink.blinkThresholdL;
+  current.tracking.blinkThresholdL = blink.blinkThresholdL;
+  current.tracking.blinkThresholdR = blink.blinkThresholdR;
+  current.tracking.blinkMaxHeadYaw = headTurn.blinkMaxHeadYaw;
+  current.tracking.yawMultiplier = headTurn.yawMultiplier;
+  current.tracking.pitchMultiplier = headTurn.pitchMultiplier;
+  current.tracking.smileThreshold = voiceSmile.smileThreshold;
+  current.tracking.mouthGain = voiceSmile.mouthGain;
+  current.tracking.stabilizeBlink = true;
+  current.audio.noiseGate = neutral.noiseGate;
+  current.audio.micGain = voiceSmile.micGain;
+
+  activeSettings = current;
+  syncSettingsToUI(activeSettings);
+
+  try {
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(current),
+    });
+    if (calibrationChannel) {
+      calibrationChannel.postMessage({ type: "calibrated_settings", settings: current });
+    }
+  } catch (err) {
+    console.error("[Studio Calibration] Failed to save calibrated profile:", err);
+  }
+}
+
+if (btnGuidedCalibrate) {
+  btnGuidedCalibrate.addEventListener("click", (e) => launchGuidedCalibration(e));
+}
+if (btnGuidedCalibrateTuning) {
+  btnGuidedCalibrateTuning.addEventListener("click", (e) => launchGuidedCalibration(e));
+}
+if (btnCalTestBeep) {
+  btnCalTestBeep.addEventListener("click", () => {
+    playCalibrationCue(getOrCreateAudioContext(), "beep");
+  });
+}
+if (btnCalStartWindowed) {
+  btnCalStartWindowed.addEventListener("click", () => {
+    runGuidedCalibrationSequence(false);
+  });
+}
+if (btnCalStartFullscreen) {
+  btnCalStartFullscreen.addEventListener("click", () => {
+    runGuidedCalibrationSequence(true);
+  });
+}
+if (btnCalRerun) {
+  btnCalRerun.addEventListener("click", () => {
+    runGuidedCalibrationSequence(false);
+  });
+}
+if (btnCalClose) {
+  btnCalClose.addEventListener("click", closeGuidedOverlay);
+}
+if (btnCalDone) {
+  btnCalDone.addEventListener("click", closeGuidedOverlay);
+}
+
+if (isCalibratePopout) {
+  showGuidedOverlayInPage();
 }
 
 // Initial Bootstrap

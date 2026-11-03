@@ -170,6 +170,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/studio", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/studio/", http.StatusMovedPermanently)
 	})
+	mux.HandleFunc("/calibrate", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/studio/?calibrate=1", http.StatusFound)
+	})
+	mux.HandleFunc("/calibrate/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/studio/?calibrate=1", http.StatusFound)
+	})
 
 	// Avatar SVG and Rig endpoints
 	mux.HandleFunc("/avatar.svg", s.handleAvatarSVG)
@@ -488,11 +494,28 @@ func (s *Server) handleTrackerWS(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(data, &face); err == nil {
 			s.trackerMu.RLock()
 			isActive := (conn == s.activeTrackerConn)
+			hasControlClients := len(s.controlConns) > 0
 			s.trackerMu.RUnlock()
 
 			if !isActive {
 				// Drop tracking frames from secondary tabs to prevent jitter/thrashing
 				continue
+			}
+
+			if hasControlClients {
+				if calPayload, err := json.Marshal(map[string]any{
+					"type": "cal_sample",
+					"face": face,
+				}); err == nil {
+					s.trackerMu.RLock()
+					for _, ch := range s.controlConns {
+						select {
+						case ch <- calPayload:
+						default:
+						}
+					}
+					s.trackerMu.RUnlock()
+				}
 			}
 
 			if s.engine != nil {
@@ -545,6 +568,7 @@ func (s *Server) handleAPISettings(w http.ResponseWriter, r *http.Request) {
 			"type":         "mode_update",
 			"mode":         NormalizeTrackingMode(newSettings.Audio.Mode),
 			"streamerMode": newSettings.StreamerMode,
+			"settings":     s.configMgr.Get(),
 		})
 
 		cfgPath, _ := s.configMgr.ConfigPath()

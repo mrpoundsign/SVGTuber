@@ -28,6 +28,452 @@ function extractEulerAngles(matrix) {
     z: normalizeZero(m23)
   };
 }
+function dist3D(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = (a.z || 0) - (b.z || 0);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+function earToBlinkClosure(ear, openEar = 0.28, closedEar = 0.11) {
+  const span = Math.max(0.05, openEar - closedEar);
+  const closure = (openEar - ear) / span;
+  return Math.max(0, Math.min(1, closure));
+}
+function computeEyeAspectRatios(landmarks) {
+  if (!landmarks || landmarks.length < 387) {
+    return null;
+  }
+  const lOuter = landmarks[263];
+  const lInner = landmarks[362];
+  const lUp1 = landmarks[386];
+  const lLow1 = landmarks[374];
+  const lUp2 = landmarks[385];
+  const lLow2 = landmarks[380];
+  const rOuter = landmarks[33];
+  const rInner = landmarks[133];
+  const rUp1 = landmarks[159];
+  const rLow1 = landmarks[145];
+  const rUp2 = landmarks[158];
+  const rLow2 = landmarks[153];
+  if (!lOuter || !lInner || !lUp1 || !lLow1 || !lUp2 || !lLow2 || !rOuter || !rInner || !rUp1 || !rLow1 || !rUp2 || !rLow2) {
+    return null;
+  }
+  const horizL = dist3D(lOuter, lInner);
+  const horizR = dist3D(rOuter, rInner);
+  if (horizL < 1e-5 || horizR < 1e-5) {
+    return null;
+  }
+  const earL = (dist3D(lUp1, lLow1) + dist3D(lUp2, lLow2)) / (2 * horizL);
+  const earR = (dist3D(rUp1, rLow1) + dist3D(rUp2, rLow2)) / (2 * horizR);
+  return {
+    earL,
+    earR,
+    earBlinkLeft: earToBlinkClosure(earL),
+    earBlinkRight: earToBlinkClosure(earR)
+  };
+}
+
+// web/src/studio/calibration-wizard.ts
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
+function percentile(values, p) {
+  if (!values || values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = clamp((sorted.length - 1) * p, 0, sorted.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const frac = idx - lo;
+  return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+}
+function median(values) {
+  return percentile(values, 0.5);
+}
+function fuseBlinkScoreClient(blendshapeBlink, earBlink) {
+  const b = clamp(blendshapeBlink || 0, 0, 1);
+  if (earBlink === void 0 || earBlink === null || isNaN(earBlink)) {
+    return b;
+  }
+  const e = clamp(earBlink, 0, 1);
+  let blended = b * 0.65 + e * 0.35;
+  if (e > b + 0.12) {
+    blended = Math.max(blended, e * 0.9);
+  }
+  return clamp(blended, 0, 1);
+}
+function remapBlinkClient(raw, openFloor = 0, closedCeiling = 1) {
+  const r = clamp(raw || 0, 0, 1);
+  if (openFloor <= 0 && (closedCeiling <= 0 || closedCeiling >= 0.999)) {
+    return r;
+  }
+  const ceil = closedCeiling <= 0 ? 1 : closedCeiling;
+  const span = Math.max(0.08, ceil - openFloor);
+  return clamp((r - openFloor) / span, 0, 1);
+}
+function extractRawGazeSample(bs) {
+  const lookRight = ((bs.eyeLookInLeft || 0) + (bs.eyeLookOutRight || 0)) / 2;
+  const lookLeft = ((bs.eyeLookOutLeft || 0) + (bs.eyeLookInRight || 0)) / 2;
+  const lookUp = ((bs.eyeLookUpLeft || 0) + (bs.eyeLookUpRight || 0)) / 2;
+  const lookDown = ((bs.eyeLookDownLeft || 0) + (bs.eyeLookDownRight || 0)) / 2;
+  return {
+    x: lookLeft - lookRight,
+    y: lookDown - lookUp
+  };
+}
+function extractRawBrowsSample(bs) {
+  const inner = bs.browInnerUp || 0;
+  const upL = Math.max(bs.browOuterUpLeft || 0, inner);
+  const upR = Math.max(bs.browOuterUpRight || 0, inner);
+  return {
+    l: upL - (bs.browDownLeft || 0),
+    r: upR - (bs.browDownRight || 0)
+  };
+}
+function analyzeNeutralStep(samples) {
+  const faceSamples = samples.filter((s) => s.present);
+  const audioVolumes = samples.map((s) => s.audioVolume || 0).filter((v) => v >= 0);
+  const p95Noise = audioVolumes.length > 0 ? percentile(audioVolumes, 0.95) : 0.025;
+  const noiseGate = Number(clamp(Math.max(0.02, p95Noise * 1.45), 0.02, 0.25).toFixed(3));
+  if (faceSamples.length === 0) {
+    return {
+      neutralYaw: 0,
+      neutralPitch: 0,
+      neutralRoll: 0,
+      neutralX: 0,
+      neutralY: 0,
+      neutralZ: 0,
+      neutralEyeX: 0,
+      neutralEyeY: 0,
+      neutralSmile: 0,
+      neutralMouth: 0,
+      neutralBrowL: 0,
+      neutralBrowR: 0,
+      blinkOpenL: 0,
+      blinkOpenR: 0,
+      noiseGate
+    };
+  }
+  const fusedL = faceSamples.map(
+    (s) => fuseBlinkScoreClient(s.blendshapes.eyeBlinkLeft || 0, s.blendshapes.earBlinkLeft)
+  );
+  const fusedR = faceSamples.map(
+    (s) => fuseBlinkScoreClient(s.blendshapes.eyeBlinkRight || 0, s.blendshapes.earBlinkRight)
+  );
+  const blinkOpenL = Number(clamp(percentile(fusedL, 0.3), 0, 0.45).toFixed(3));
+  const blinkOpenR = Number(clamp(percentile(fusedR, 0.3), 0, 0.45).toFixed(3));
+  const gazes = faceSamples.map((s) => extractRawGazeSample(s.blendshapes));
+  const brows = faceSamples.map((s) => extractRawBrowsSample(s.blendshapes));
+  return {
+    neutralYaw: Number(median(faceSamples.map((s) => s.yaw)).toFixed(2)),
+    neutralPitch: Number(median(faceSamples.map((s) => s.pitch)).toFixed(2)),
+    neutralRoll: Number(median(faceSamples.map((s) => s.roll)).toFixed(2)),
+    neutralX: Number(median(faceSamples.map((s) => s.x)).toFixed(3)),
+    neutralY: Number(median(faceSamples.map((s) => s.y)).toFixed(3)),
+    neutralZ: Number(median(faceSamples.map((s) => s.z)).toFixed(3)),
+    neutralEyeX: Number(median(gazes.map((g) => g.x)).toFixed(3)),
+    neutralEyeY: Number(median(gazes.map((g) => g.y)).toFixed(3)),
+    neutralSmile: Number(
+      median(
+        faceSamples.map(
+          (s) => ((s.blendshapes.mouthSmileLeft || 0) + (s.blendshapes.mouthSmileRight || 0)) / 2
+        )
+      ).toFixed(3)
+    ),
+    neutralMouth: Number(
+      percentile(
+        faceSamples.map((s) => s.blendshapes.jawOpen || 0),
+        0.3
+      ).toFixed(3)
+    ),
+    neutralBrowL: Number(median(brows.map((b) => b.l)).toFixed(3)),
+    neutralBrowR: Number(median(brows.map((b) => b.r)).toFixed(3)),
+    blinkOpenL,
+    blinkOpenR,
+    noiseGate
+  };
+}
+function analyzeBeepBlinkStep(samples, beepTimestamps, openL, openR, winkTimestamps = []) {
+  const faceSamples = samples.filter((s) => s.present);
+  if (faceSamples.length === 0) {
+    return {
+      blinkClosedL: 1,
+      blinkClosedR: 1,
+      glareAssist: false,
+      blinkThresholdL: 0.45,
+      blinkThresholdR: 0.45
+    };
+  }
+  const windowPeaksL = [];
+  const windowPeaksR = [];
+  for (const tBeep of beepTimestamps) {
+    const inWin = faceSamples.filter(
+      (s) => s.timestamp >= tBeep + 60 && s.timestamp <= tBeep + 900
+    );
+    if (inWin.length > 0) {
+      const maxL = Math.max(
+        ...inWin.map(
+          (s) => fuseBlinkScoreClient(s.blendshapes.eyeBlinkLeft || 0, s.blendshapes.earBlinkLeft)
+        )
+      );
+      const maxR = Math.max(
+        ...inWin.map(
+          (s) => fuseBlinkScoreClient(s.blendshapes.eyeBlinkRight || 0, s.blendshapes.earBlinkRight)
+        )
+      );
+      if (maxL > openL + 0.05) windowPeaksL.push(maxL);
+      if (maxR > openR + 0.05) windowPeaksR.push(maxR);
+    }
+  }
+  const winkPeaksL = [];
+  const winkPeaksR = [];
+  const crossTalkL = [];
+  const crossTalkR = [];
+  for (const tWink of winkTimestamps) {
+    const inWin = faceSamples.filter(
+      (s) => s.timestamp >= tWink + 60 && s.timestamp <= tWink + 1250
+    );
+    if (inWin.length === 0) continue;
+    let bestDiff = 0;
+    let bestFusedL = openL;
+    let bestFusedR = openR;
+    for (const s of inWin) {
+      const fL = fuseBlinkScoreClient(s.blendshapes.eyeBlinkLeft || 0, s.blendshapes.earBlinkLeft);
+      const fR = fuseBlinkScoreClient(s.blendshapes.eyeBlinkRight || 0, s.blendshapes.earBlinkRight);
+      const relL = Math.max(0, fL - openL);
+      const relR = Math.max(0, fR - openR);
+      const diff = Math.abs(relL - relR);
+      if (diff > bestDiff) {
+        bestDiff = diff;
+        bestFusedL = fL;
+        bestFusedR = fR;
+      }
+    }
+    const bestRelL = bestFusedL - openL;
+    const bestRelR = bestFusedR - openR;
+    if (bestRelL > bestRelR + 0.04 && bestRelL > 0.06) {
+      winkPeaksL.push(bestFusedL);
+      crossTalkR.push(bestFusedR);
+    } else if (bestRelR > bestRelL + 0.04 && bestRelR > 0.06) {
+      winkPeaksR.push(bestFusedR);
+      crossTalkL.push(bestFusedL);
+    }
+  }
+  const allFusedL = faceSamples.map(
+    (s) => fuseBlinkScoreClient(s.blendshapes.eyeBlinkLeft || 0, s.blendshapes.earBlinkLeft)
+  );
+  const allFusedR = faceSamples.map(
+    (s) => fuseBlinkScoreClient(s.blendshapes.eyeBlinkRight || 0, s.blendshapes.earBlinkRight)
+  );
+  let rawClosedL = windowPeaksL.length > 0 ? median(windowPeaksL) : percentile(allFusedL, 0.92);
+  let rawClosedR = windowPeaksR.length > 0 ? median(windowPeaksR) : percentile(allFusedR, 0.92);
+  if (winkPeaksL.length > 0) {
+    rawClosedL = Math.min(rawClosedL, median(winkPeaksL) * 0.96);
+  }
+  if (winkPeaksR.length > 0) {
+    rawClosedR = Math.min(rawClosedR, median(winkPeaksR) * 0.96);
+  }
+  let blinkClosedL = Number(clamp(rawClosedL, openL + 0.1, 1).toFixed(3));
+  let blinkClosedR = Number(clamp(rawClosedR, openR + 0.1, 1).toFixed(3));
+  const spanL = blinkClosedL - openL;
+  const spanR = blinkClosedR - openR;
+  const maxSpan = Math.max(spanL, spanR);
+  const minSpan = Math.min(spanL, spanR);
+  const bothWinkedCleanly = winkPeaksL.length > 0 && winkPeaksR.length > 0;
+  const glareAssist = bothWinkedCleanly ? false : spanL < 0.28 || spanR < 0.28 || maxSpan > 0.12 && minSpan < maxSpan * 0.68;
+  if (spanL < 0.12 && spanR >= 0.2) {
+    blinkClosedL = Number(clamp(openL + spanR * 0.85, openL + 0.15, 1).toFixed(3));
+  } else if (spanR < 0.12 && spanL >= 0.2) {
+    blinkClosedR = Number(clamp(openR + spanL * 0.85, openR + 0.15, 1).toFixed(3));
+  }
+  let blinkThresholdL = 0.48;
+  let blinkThresholdR = 0.48;
+  if (crossTalkL.length > 0) {
+    const remappedCrossL = remapBlinkClient(Math.max(...crossTalkL), openL, blinkClosedL);
+    blinkThresholdL = Number(
+      clamp(Math.max(0.45, (remappedCrossL + 0.85) / 2), 0.45, 0.72).toFixed(2)
+    );
+  }
+  if (crossTalkR.length > 0) {
+    const remappedCrossR = remapBlinkClient(Math.max(...crossTalkR), openR, blinkClosedR);
+    blinkThresholdR = Number(
+      clamp(Math.max(0.45, (remappedCrossR + 0.85) / 2), 0.45, 0.72).toFixed(2)
+    );
+  }
+  return {
+    blinkClosedL,
+    blinkClosedR,
+    glareAssist,
+    blinkThresholdL,
+    blinkThresholdR
+  };
+}
+function analyzeHeadTurnStep(samples, neutralYaw, neutralPitch, openL, openR, closedL, closedR) {
+  const faceSamples = samples.filter((s) => s.present);
+  if (faceSamples.length === 0) {
+    return {
+      blinkMaxHeadYaw: 25,
+      yawMultiplier: 1,
+      pitchMultiplier: 1,
+      earlyOcclusionDetected: false
+    };
+  }
+  const absYaws = faceSamples.map((s) => Math.abs(s.yaw - neutralYaw));
+  const absPitches = faceSamples.map((s) => Math.abs(s.pitch - neutralPitch));
+  const p90Yaw = percentile(absYaws, 0.9);
+  const p90Pitch = percentile(absPitches, 0.9);
+  const yawMultiplier = p90Yaw >= 6 ? Number(clamp(22 / p90Yaw, 0.7, 2).toFixed(2)) : 1;
+  const pitchMultiplier = p90Pitch >= 4 ? Number(clamp(14 / p90Pitch, 0.7, 2).toFixed(2)) : 1;
+  let earliestOcclusionYaw = 27;
+  let earlyOcclusionDetected = false;
+  for (const s of faceSamples) {
+    const calYaw = s.yaw - neutralYaw;
+    const absYaw = Math.abs(calYaw);
+    if (absYaw < 12 || absYaw >= earliestOcclusionYaw) continue;
+    const remappedL = remapBlinkClient(
+      fuseBlinkScoreClient(s.blendshapes.eyeBlinkLeft || 0, s.blendshapes.earBlinkLeft),
+      openL,
+      closedL
+    );
+    const remappedR = remapBlinkClient(
+      fuseBlinkScoreClient(s.blendshapes.eyeBlinkRight || 0, s.blendshapes.earBlinkRight),
+      openR,
+      closedR
+    );
+    if (calYaw > 12 && remappedL >= 0.48 && remappedR < 0.28) {
+      earliestOcclusionYaw = absYaw;
+      earlyOcclusionDetected = true;
+    }
+    if (calYaw < -12 && remappedR >= 0.48 && remappedL < 0.28) {
+      earliestOcclusionYaw = absYaw;
+      earlyOcclusionDetected = true;
+    }
+  }
+  const blinkMaxHeadYaw = earlyOcclusionDetected ? Math.round(clamp(earliestOcclusionYaw - 2, 12, 25)) : 25;
+  return {
+    blinkMaxHeadYaw,
+    yawMultiplier,
+    pitchMultiplier,
+    earlyOcclusionDetected
+  };
+}
+function analyzeVoiceAndSmileStep(samples, neutralMouth, neutralSmile, noiseGate) {
+  const faceSamples = samples.filter((s) => s.present);
+  const audioVolumes = samples.map((s) => s.audioVolume || 0);
+  let smileWeightL = 0.5;
+  let smileWeightR = 0.5;
+  let smileThreshold = 0.5;
+  let mouthGain = 1.4;
+  if (faceSamples.length > 0) {
+    const p90SmileL = percentile(
+      faceSamples.map((s) => s.blendshapes.mouthSmileLeft || 0),
+      0.9
+    );
+    const p90SmileR = percentile(
+      faceSamples.map((s) => s.blendshapes.mouthSmileRight || 0),
+      0.9
+    );
+    const maxSide = Math.max(p90SmileL, p90SmileR);
+    const minSide = Math.min(p90SmileL, p90SmileR);
+    if (maxSide >= 0.25 && minSide < maxSide * 0.65) {
+      if (p90SmileL > p90SmileR) {
+        smileWeightL = 0.75;
+        smileWeightR = 0.25;
+      } else {
+        smileWeightL = 0.25;
+        smileWeightR = 0.75;
+      }
+    }
+    const weightedPeakSmile = p90SmileL * smileWeightL + p90SmileR * smileWeightR;
+    const calSmileSpan = Math.max(0, weightedPeakSmile - neutralSmile);
+    if (calSmileSpan >= 0.15) {
+      const normalizedPeak = neutralSmile > 0 && neutralSmile < 0.95 ? calSmileSpan / (1 - neutralSmile) : weightedPeakSmile;
+      smileThreshold = Number(clamp(normalizedPeak * 0.62, 0.25, 0.75).toFixed(2));
+    }
+    const p90Jaw = percentile(
+      faceSamples.map((s) => s.blendshapes.jawOpen || 0),
+      0.9
+    );
+    const jawSpan = Math.max(0, p90Jaw - neutralMouth);
+    if (jawSpan >= 0.08) {
+      mouthGain = Number(clamp(0.75 / jawSpan, 0.9, 2.8).toFixed(1));
+    }
+  }
+  const activeSpeechVols = audioVolumes.filter((v) => v > noiseGate * 0.8);
+  let micGain = 1.5;
+  if (activeSpeechVols.length > 0) {
+    const p85Vol = percentile(activeSpeechVols, 0.85);
+    if (p85Vol > 0.015) {
+      micGain = Number(clamp(0.65 / p85Vol, 0.5, 4).toFixed(1));
+    }
+  }
+  return {
+    smileWeightL,
+    smileWeightR,
+    smileThreshold,
+    mouthGain,
+    micGain
+  };
+}
+function buildCalibrationProfile(neutral, blink, voiceSmile) {
+  return {
+    calibrated: true,
+    neutralYaw: neutral.neutralYaw,
+    neutralPitch: neutral.neutralPitch,
+    neutralRoll: neutral.neutralRoll,
+    neutralX: neutral.neutralX,
+    neutralY: neutral.neutralY,
+    neutralZ: neutral.neutralZ,
+    neutralEyeX: neutral.neutralEyeX,
+    neutralEyeY: neutral.neutralEyeY,
+    neutralSmile: neutral.neutralSmile,
+    neutralMouth: neutral.neutralMouth,
+    neutralBrowL: neutral.neutralBrowL,
+    neutralBrowR: neutral.neutralBrowR,
+    blinkOpenL: neutral.blinkOpenL,
+    blinkOpenR: neutral.blinkOpenR,
+    blinkClosedL: blink.blinkClosedL,
+    blinkClosedR: blink.blinkClosedR,
+    glareAssist: blink.glareAssist,
+    smileWeightL: voiceSmile.smileWeightL,
+    smileWeightR: voiceSmile.smileWeightR
+  };
+}
+function playCalibrationCue(ctx, cue) {
+  if (!ctx) return;
+  try {
+    if (ctx.state === "suspended") {
+      ctx.resume();
+    }
+    const now = ctx.currentTime;
+    const playNote = (freq, startOffset, duration, peakGain = 0.14, type = "sine") => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now + startOffset);
+      gain.gain.setValueAtTime(1e-4, now + startOffset);
+      gain.gain.exponentialRampToValueAtTime(peakGain, now + startOffset + 0.015);
+      gain.gain.exponentialRampToValueAtTime(1e-4, now + startOffset + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + startOffset);
+      osc.stop(now + startOffset + duration + 0.01);
+    };
+    if (cue === "tick") {
+      playNote(440, 0, 0.055, 0.08, "sine");
+    } else if (cue === "beep") {
+      playNote(880, 0, 0.11, 0.18, "triangle");
+    } else if (cue === "step_done") {
+      playNote(523.25, 0, 0.11, 0.14, "sine");
+      playNote(659.25, 0.1, 0.16, 0.15, "sine");
+    } else if (cue === "complete") {
+      playNote(523.25, 0, 0.11, 0.14, "sine");
+      playNote(659.25, 0.1, 0.11, 0.15, "sine");
+      playNote(783.99, 0.2, 0.24, 0.16, "sine");
+    }
+  } catch (e) {
+  }
+}
 
 // web/src/studio/audio.ts
 function calculateRMS(data) {
@@ -480,6 +926,7 @@ var micRunning = false;
 var smoothedAudioVol = 0;
 var latestRawPose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
 var latestRawBlendshapes = {};
+var lastRafProcessTime = 0;
 function initTickerWorker() {
   if (tickerWorker) return;
   try {
@@ -507,12 +954,13 @@ function initTickerWorker() {
     );
     tickerWorker = new Worker(URL.createObjectURL(workerBlob));
     tickerWorker.onmessage = () => {
+      const rafStalled = performance.now() - lastRafProcessTime > 45;
       if (webcamRunning) {
-        if (document.hidden) {
+        if (document.hidden || rafStalled) {
           processFrame(false);
         }
       } else {
-        if (document.hidden) {
+        if (document.hidden || rafStalled) {
           processCameraOffFrame(false);
         }
       }
@@ -770,12 +1218,22 @@ function processCameraOffFrame(renderUI = true) {
     socket.send(JSON.stringify(frame));
   }
 }
+var isCalibratePopout = new URLSearchParams(window.location.search).has("calibrate");
+var calibrationChannel = null;
+var lastBroadcastSampleTime = 0;
+try {
+  if (typeof BroadcastChannel !== "undefined") {
+    calibrationChannel = new BroadcastChannel("svgtuber_calibration");
+  }
+} catch {
+}
 function connectWebSocket() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return;
   }
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${location.host}/ws/tracker`;
+  const roleParam = isCalibratePopout && !webcamRunning ? "?role=control" : "";
+  const wsUrl = `${protocol}//${location.host}/ws/tracker${roleParam}`;
   socket = new WebSocket(wsUrl);
   socket.onopen = () => {
     console.log("[Studio Tracker] Connected to Go server.");
@@ -808,12 +1266,31 @@ function connectWebSocket() {
         loadAccessories();
         reloadAvatarFrame();
       } else if (msg.type === "mode_update") {
+        if (msg.settings) {
+          activeSettings = msg.settings;
+          syncSettingsToUI(activeSettings);
+        }
         if (typeof msg.mode === "string") {
           applyMode(msg.mode, false);
         }
         if (typeof msg.streamerMode === "boolean" && msg.streamerMode !== streamerModeEnabled) {
           applyStreamerMode(msg.streamerMode, true, false);
         }
+      } else if (msg.type === "cal_sample" && msg.face) {
+        lastBroadcastSampleTime = performance.now();
+        const f = msg.face;
+        ingestCalibrationSample({
+          timestamp: performance.now(),
+          present: Boolean(f.present),
+          yaw: f.yaw || 0,
+          pitch: f.pitch || 0,
+          roll: f.roll || 0,
+          x: f.x || 0,
+          y: f.y || 0,
+          z: f.z || 0,
+          blendshapes: f.blendshapes || {},
+          audioVolume: f.audio?.volume || 0
+        });
       } else if (msg.type === "update_progress") {
         handleUpdateProgress(msg);
       }
@@ -1090,7 +1567,16 @@ async function initMediaPipe() {
     await populateAudioDevices();
     const currentMode = getCurrentMode();
     const cameraActive = localStorage.getItem("svgtuber_camera_active");
-    if (shouldAutoStartCamera(currentMode, cameraActive)) {
+    if (isCalibratePopout) {
+      updateCameraUI();
+      startCameraOffLoop();
+      setTimeout(() => {
+        if (performance.now() - lastBroadcastSampleTime > 650 && !webcamRunning) {
+          console.log("[Studio Calibration] No BroadcastChannel stream detected; starting camera in pop-out.");
+          startCamera().catch((e) => console.warn("[Studio Calibration] Pop-out camera warning:", e));
+        }
+      }, 700);
+    } else if (shouldAutoStartCamera(currentMode, cameraActive)) {
       console.log("[Studio Tracker] Auto-starting camera stream on load...");
       startCamera().catch((e) => {
         console.warn("[Studio Tracker] Auto-start camera warning:", e);
@@ -1341,6 +1827,11 @@ function processFrame(renderUI = true) {
           blendshapes[c.categoryName] = c.score;
         });
       }
+      const ear = computeEyeAspectRatios(landmarks);
+      if (ear) {
+        blendshapes.earBlinkLeft = ear.earBlinkLeft;
+        blendshapes.earBlinkRight = ear.earBlinkRight;
+      }
       let pose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
       if (results.facialTransformationMatrixes && results.facialTransformationMatrixes[0]) {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
@@ -1348,6 +1839,25 @@ function processFrame(renderUI = true) {
       const audioState = sampleAudio();
       if (renderUI) {
         updateAudioUI(audioState);
+      }
+      const calSample = {
+        timestamp: now,
+        present: true,
+        yaw: pose.yaw,
+        pitch: pose.pitch,
+        roll: pose.roll,
+        x: pose.x,
+        y: pose.y,
+        z: pose.z,
+        blendshapes,
+        audioVolume: audioState?.volume || 0
+      };
+      ingestCalibrationSample(calSample);
+      if (calibrationChannel && !isCalibratePopout) {
+        try {
+          calibrationChannel.postMessage({ type: "sample", sample: calSample });
+        } catch {
+        }
       }
       if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
         const frame = {
@@ -1398,6 +1908,7 @@ function processFrame(renderUI = true) {
 }
 function predictLoop() {
   if (!webcamRunning) return;
+  lastRafProcessTime = performance.now();
   processFrame(true);
   frameCount++;
   const now = performance.now();
@@ -1424,8 +1935,11 @@ function updateTrackingGauges(pose, blendshapes) {
   if (valYaw) valYaw.textContent = `${pose.yaw > 0 ? "+" : ""}${pose.yaw.toFixed(1)}\xB0`;
   if (valPitch) valPitch.textContent = `${pose.pitch > 0 ? "+" : ""}${pose.pitch.toFixed(1)}\xB0`;
   if (valRoll) valRoll.textContent = `${pose.roll > 0 ? "+" : ""}${pose.roll.toFixed(1)}\xB0`;
-  const blinkL = blendshapes.eyeBlinkLeft || 0;
-  const blinkR = blendshapes.eyeBlinkRight || 0;
+  const cal = activeSettings?.tracking?.calibration;
+  const fusedBlinkL = fuseBlinkScoreClient(blendshapes.eyeBlinkLeft || 0, blendshapes.earBlinkLeft || 0);
+  const fusedBlinkR = fuseBlinkScoreClient(blendshapes.eyeBlinkRight || 0, blendshapes.earBlinkRight || 0);
+  const blinkL = cal && cal.calibrated ? remapBlinkClient(fusedBlinkL, cal.blinkOpenL || 0, cal.blinkClosedL || 1) : fusedBlinkL;
+  const blinkR = cal && cal.calibrated ? remapBlinkClient(fusedBlinkR, cal.blinkOpenR || 0, cal.blinkClosedR || 1) : fusedBlinkR;
   if (valBlinkL) valBlinkL.textContent = `${Math.round(blinkL * 100)}%`;
   if (valBlinkR) valBlinkR.textContent = `${Math.round(blinkR * 100)}%`;
   if (gaugeBlinkL) gaugeBlinkL.style.width = `${Math.min(100, Math.round(blinkL * 100))}%`;
@@ -1444,7 +1958,11 @@ function updateTrackingGauges(pose, blendshapes) {
   if (gaugeBrowR) gaugeBrowR.style.width = `${Math.min(100, Math.max(0, Math.round((browR + 1) * 50)))}%`;
   const jawOpen = blendshapes.jawOpen || 0;
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = `${Math.min(100, Math.round(jawOpen * 100))}%`;
-  const smile = Math.max(blendshapes.mouthSmileLeft || 0, blendshapes.mouthSmileRight || 0);
+  const wL = cal && cal.smileWeightL > 0 ? cal.smileWeightL : 0.5;
+  const wR = cal && cal.smileWeightR > 0 ? cal.smileWeightR : 0.5;
+  const smileBase = cal && cal.calibrated ? cal.neutralSmile : 0;
+  const smileRaw = (blendshapes.mouthSmileLeft || 0) * wL + (blendshapes.mouthSmileRight || 0) * wR;
+  const smile = Math.max(0, Math.min(1, smileRaw - smileBase));
   if (valSmile) valSmile.textContent = `${Math.round(smile * 100)}%`;
   if (gaugeSmile) gaugeSmile.style.width = `${Math.min(100, Math.round(smile * 100))}%`;
 }
@@ -1693,13 +2211,15 @@ function collectSettingsFromUI() {
         sliderPhysicsAmount?.value !== void 0 ? sliderPhysicsAmount.value : "1.0"
       ),
       eyeGazeGain: parseFloat(sliderEyeGain?.value || "1.0"),
+      gazeDeadzone: activeSettings?.tracking?.gazeDeadzone ?? 0.03,
       browGain: parseFloat(
         sliderBrowGain?.value !== void 0 ? sliderBrowGain.value : "1.5"
       ),
       yawMultiplier: parseFloat(sliderYawMultiplier?.value || "1.0"),
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || "1.0"),
       rollMultiplier: 1,
-      poseSmoothing: 1
+      poseSmoothing: 1,
+      calibration: activeSettings?.tracking?.calibration
     },
     audio: {
       mode: settingsModeSelect?.value || modeSelect?.value || "hybrid",
@@ -3090,6 +3610,450 @@ function initStreamerMode() {
       applyStreamerMode(!streamerModeEnabled, true, true);
     });
   }
+}
+var btnGuidedCalibrate = document.getElementById("btn-guided-calibrate");
+var btnGuidedCalibrateTuning = document.getElementById("btn-guided-calibrate-tuning");
+var guidedCalOverlay = document.getElementById("guided-calibration-overlay");
+var calPillFace = document.getElementById("cal-pill-face");
+var calPillMic = document.getElementById("cal-pill-mic");
+var btnCalTestBeep = document.getElementById("btn-cal-test-beep");
+var btnCalClose = document.getElementById("btn-cal-close");
+var calReticle = document.getElementById("cal-reticle");
+var calReticleDot = document.getElementById("cal-reticle-dot");
+var calReticleArrow = document.getElementById("cal-reticle-arrow");
+var calReticlePrompt = document.getElementById("cal-reticle-prompt");
+var calCardIntro = document.getElementById("cal-card-intro");
+var btnCalStartWindowed = document.getElementById("btn-cal-start-windowed");
+var btnCalStartFullscreen = document.getElementById("btn-cal-start-fullscreen");
+var calHudActive = document.getElementById("cal-hud-active");
+var calStepTitle = document.getElementById("cal-step-title");
+var calStepTimer = document.getElementById("cal-step-timer");
+var calStepDesc = document.getElementById("cal-step-desc");
+var calStepProgress = document.getElementById("cal-step-progress");
+var calCardSummary = document.getElementById("cal-card-summary");
+var calSumBlinkRange = document.getElementById("cal-sum-blink-range");
+var calSumGlare = document.getElementById("cal-sum-glare");
+var calSumYawCutoff = document.getElementById("cal-sum-yaw-cutoff");
+var calSumVoice = document.getElementById("cal-sum-voice");
+var btnCalRerun = document.getElementById("btn-cal-rerun");
+var btnCalDone = document.getElementById("btn-cal-done");
+var wizardStep = "idle";
+var wizardTimerId = null;
+var step1Samples = [];
+var step2Samples = [];
+var step2BeepTimestamps = [];
+var step2WinkTimestamps = [];
+var step3Samples = [];
+var step4Samples = [];
+function ingestCalibrationSample(sample) {
+  const stamped = {
+    ...sample,
+    timestamp: performance.now()
+  };
+  if (wizardStep === "step1_neutral") {
+    step1Samples.push(stamped);
+  } else if (wizardStep === "step2_blink") {
+    step2Samples.push(stamped);
+  } else if (wizardStep === "step3_turn") {
+    step3Samples.push(stamped);
+  } else if (wizardStep === "step4_voice") {
+    step4Samples.push(stamped);
+  }
+  if (guidedCalOverlay && guidedCalOverlay.style.display !== "none") {
+    if (calPillFace) {
+      if (sample.present) {
+        const bL = fuseBlinkScoreClient(
+          sample.blendshapes.eyeBlinkLeft || 0,
+          sample.blendshapes.earBlinkLeft || 0
+        );
+        const bR = fuseBlinkScoreClient(
+          sample.blendshapes.eyeBlinkRight || 0,
+          sample.blendshapes.earBlinkRight || 0
+        );
+        calPillFace.textContent = `\u{1F4F7} Face: Ready (Blink L ${(bL * 100).toFixed(0)}% \xB7 R ${(bR * 100).toFixed(0)}% | Yaw ${sample.yaw > 0 ? "+" : ""}${sample.yaw.toFixed(0)}\xB0)`;
+        calPillFace.className = "cal-pill ok";
+      } else {
+        calPillFace.textContent = "\u{1F4F7} Face: Waiting...";
+        calPillFace.className = "cal-pill warn";
+      }
+    }
+    if (calPillMic) {
+      const micPct = Math.min(100, Math.round((sample.audioVolume || 0) * 150));
+      calPillMic.textContent = `\u{1F399}\uFE0F Mic: ${micPct}%`;
+      calPillMic.className = micPct > 4 ? "cal-pill ok" : "cal-pill";
+    }
+  }
+}
+if (calibrationChannel) {
+  calibrationChannel.onmessage = (ev) => {
+    const data = ev.data;
+    if (!data || typeof data !== "object") return;
+    if (data.type === "sample" && data.sample) {
+      lastBroadcastSampleTime = performance.now();
+      ingestCalibrationSample(data.sample);
+    } else if (data.type === "calibrated_settings" && data.settings) {
+      activeSettings = data.settings;
+      syncSettingsToUI(activeSettings);
+      showCalibratedFlash();
+    }
+  };
+}
+function setReticleTarget(leftPct, topPct, label, cuePulse = false, visible = true, arrowDir = null) {
+  if (!calReticle) return;
+  calReticle.style.display = visible ? "flex" : "none";
+  calReticle.style.left = `${leftPct}%`;
+  calReticle.style.top = `${topPct}%`;
+  calReticle.classList.toggle("beep-pulse", cuePulse);
+  if (calReticleDot) {
+    calReticleDot.style.display = arrowDir ? "none" : "block";
+  }
+  if (calReticleArrow) {
+    if (arrowDir) {
+      calReticleArrow.className = `cal-reticle-arrow dir-${arrowDir}`;
+      calReticleArrow.textContent = arrowDir === "left" ? "\u2B05" : arrowDir === "right" ? "\u27A1" : arrowDir === "up" ? "\u2B06" : "\u2B07";
+    } else {
+      calReticleArrow.className = "cal-reticle-arrow";
+    }
+  }
+  if (calReticlePrompt) {
+    calReticlePrompt.textContent = label;
+  }
+}
+function showGuidedOverlayInPage() {
+  if (!guidedCalOverlay) return;
+  wizardStep = "idle";
+  if (wizardTimerId) {
+    clearInterval(wizardTimerId);
+    wizardTimerId = null;
+  }
+  guidedCalOverlay.style.display = "flex";
+  if (calCardIntro) calCardIntro.style.display = "flex";
+  if (calHudActive) calHudActive.style.display = "none";
+  if (calCardSummary) calCardSummary.style.display = "none";
+  setReticleTarget(50, 50, "Look Here", false, false);
+}
+function closeGuidedOverlay() {
+  if (wizardTimerId) {
+    clearInterval(wizardTimerId);
+    wizardTimerId = null;
+  }
+  wizardStep = "idle";
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {
+    });
+  }
+  if (isCalibratePopout) {
+    window.close();
+  }
+  if (guidedCalOverlay) {
+    guidedCalOverlay.style.display = "none";
+  }
+}
+function launchGuidedCalibration(e) {
+  if (isCalibratePopout || e && e.shiftKey) {
+    showGuidedOverlayInPage();
+    return;
+  }
+  const popup = window.open(
+    "/studio/?calibrate=1",
+    "SVGTuberCalibration",
+    "popup=yes,width=1200,height=820,left=100,top=60"
+  );
+  if (!popup) {
+    showGuidedOverlayInPage();
+  } else {
+    popup.focus();
+  }
+}
+async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
+  if (requestFullscreenFirst && !document.fullscreenElement) {
+    try {
+      await document.documentElement.requestFullscreen?.();
+    } catch {
+    }
+  }
+  const ctx = getOrCreateAudioContext();
+  if (performance.now() - lastBroadcastSampleTime > 650) {
+    if (!webcamRunning && isCameraAllowedInMode(getCurrentMode())) {
+      try {
+        await startCamera();
+      } catch (e) {
+        console.warn("[Studio Calibration] Could not start camera:", e);
+      }
+    }
+    if (!micRunning) {
+      try {
+        await startMic();
+      } catch (e) {
+        console.warn("[Studio Calibration] Could not start mic:", e);
+      }
+    }
+  }
+  step1Samples = [];
+  step2Samples = [];
+  step2BeepTimestamps = [];
+  step2WinkTimestamps = [];
+  step3Samples = [];
+  step4Samples = [];
+  if (calCardIntro) calCardIntro.style.display = "none";
+  if (calCardSummary) calCardSummary.style.display = "none";
+  if (calHudActive) calHudActive.style.display = "flex";
+  const step1Duration = 3e3;
+  const step2Duration = 6500;
+  const step3Duration = 7200;
+  const step4Duration = 4e3;
+  const totalDuration = step1Duration + step2Duration + step3Duration + step4Duration;
+  const startTime = performance.now();
+  let lastBeepMarker = -1;
+  wizardStep = "step1_neutral";
+  setReticleTarget(50, 50, "LOOK CENTER", false, true);
+  playCalibrationCue(ctx, "tick");
+  if (wizardTimerId) clearInterval(wizardTimerId);
+  wizardTimerId = setInterval(() => {
+    const elapsed = performance.now() - startTime;
+    const progressPct = Math.min(100, Math.round(elapsed / totalDuration * 100));
+    if (calStepProgress) calStepProgress.style.width = `${progressPct}%`;
+    if (elapsed < step1Duration) {
+      wizardStep = "step1_neutral";
+      const rem = ((step1Duration - elapsed) / 1e3).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+      if (calStepTitle) calStepTitle.textContent = "Step 1 of 4: Neutral Rest & Silence";
+      if (calStepDesc)
+        calStepDesc.textContent = "Look comfortably at the center ring with a relaxed face and stay quiet.";
+      setReticleTarget(50, 50, `HOLD CENTER (${Math.ceil((step1Duration - elapsed) / 1e3)}s)`, false, true);
+      const secIdx = Math.floor(elapsed / 1e3);
+      if (secIdx > 0 && secIdx !== lastBeepMarker) {
+        lastBeepMarker = secIdx;
+        playCalibrationCue(ctx, "tick");
+      }
+    } else if (elapsed < step1Duration + step2Duration) {
+      if (wizardStep !== "step2_blink") {
+        wizardStep = "step2_blink";
+        lastBeepMarker = -1;
+        playCalibrationCue(ctx, "step_done");
+      }
+      const stepElapsed = elapsed - step1Duration;
+      const rem = ((step2Duration - stepElapsed) / 1e3).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+      if (stepElapsed < 3100) {
+        if (calStepTitle) calStepTitle.textContent = "Step 2A of 4: 2 Audio-Cued Blinks (Both Eyes)";
+        if (calStepDesc)
+          calStepDesc.textContent = "Keep looking center. Blink BOTH eyes firmly on Beep 1 and Beep 2.";
+        const biCueTimes = [700, 1950];
+        let isPulsing = false;
+        biCueTimes.forEach((cueMs, idx) => {
+          if (stepElapsed >= cueMs && lastBeepMarker < idx + 10) {
+            lastBeepMarker = idx + 10;
+            step2BeepTimestamps.push(performance.now());
+            playCalibrationCue(ctx, "beep");
+          }
+          if (stepElapsed >= cueMs && stepElapsed <= cueMs + 500) {
+            isPulsing = true;
+          }
+        });
+        setReticleTarget(50, 50, isPulsing ? "BLINK BOTH EYES!" : "GET READY TO BLINK", isPulsing, true);
+      } else if (stepElapsed < 4800) {
+        if (calStepTitle) calStepTitle.textContent = "Step 2B of 4: Left Eye Wink Calibration";
+        if (calStepDesc)
+          calStepDesc.textContent = "On the BEEP, close ONLY your LEFT eye for ~1 second while keeping your Right eye open.";
+        if (stepElapsed >= 3400 && lastBeepMarker < 12) {
+          lastBeepMarker = 12;
+          step2WinkTimestamps.push(performance.now());
+          playCalibrationCue(ctx, "beep");
+        }
+        const isPulsing = stepElapsed >= 3400 && stepElapsed <= 4400;
+        setReticleTarget(
+          38,
+          50,
+          isPulsing ? "\u{1F609} CLOSE LEFT EYE NOW!" : "GET READY: LEFT EYE",
+          isPulsing,
+          true
+        );
+      } else {
+        if (calStepTitle) calStepTitle.textContent = "Step 2C of 4: Right Eye Wink Calibration";
+        if (calStepDesc)
+          calStepDesc.textContent = "On the BEEP, close ONLY your RIGHT eye for ~1 second while keeping your Left eye open.";
+        if (stepElapsed >= 5e3 && lastBeepMarker < 13) {
+          lastBeepMarker = 13;
+          step2WinkTimestamps.push(performance.now());
+          playCalibrationCue(ctx, "beep");
+        }
+        const isPulsing = stepElapsed >= 5e3 && stepElapsed <= 6e3;
+        setReticleTarget(
+          62,
+          50,
+          isPulsing ? "\u{1F61C} CLOSE RIGHT EYE NOW!" : "GET READY: RIGHT EYE",
+          isPulsing,
+          true
+        );
+      }
+    } else if (elapsed < step1Duration + step2Duration + step3Duration) {
+      if (wizardStep !== "step3_turn") {
+        wizardStep = "step3_turn";
+        lastBeepMarker = -1;
+        playCalibrationCue(ctx, "step_done");
+      }
+      const stepElapsed = elapsed - (step1Duration + step2Duration);
+      const rem = ((step3Duration - stepElapsed) / 1e3).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+      if (calStepTitle)
+        calStepTitle.textContent = "Step 3 of 4: Directional Head Turns (Off-Screen / Side Monitor)";
+      if (calStepDesc)
+        calStepDesc.textContent = "Turn your head & look naturally in the arrow's direction (e.g. side monitor or room). Listen for the BEEP to switch!";
+      if (stepElapsed < 1800) {
+        if (lastBeepMarker < 20) {
+          lastBeepMarker = 20;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(44, 50, "TURN HEAD & LOOK LEFT (Side Monitor / Off-Screen)", true, true, "left");
+      } else if (stepElapsed < 3600) {
+        if (lastBeepMarker < 21) {
+          lastBeepMarker = 21;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(56, 50, "TURN HEAD & LOOK RIGHT (Side Monitor / Off-Screen)", true, true, "right");
+      } else if (stepElapsed < 5400) {
+        if (lastBeepMarker < 22) {
+          lastBeepMarker = 22;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(50, 44, "TILT HEAD & LOOK UP (Above Monitor)", true, true, "up");
+      } else {
+        if (lastBeepMarker < 23) {
+          lastBeepMarker = 23;
+          playCalibrationCue(ctx, "beep");
+        }
+        setReticleTarget(50, 56, "TILT HEAD & LOOK DOWN (Desk / Keyboard)", true, true, "down");
+      }
+    } else if (elapsed < totalDuration) {
+      if (wizardStep !== "step4_voice") {
+        wizardStep = "step4_voice";
+        lastBeepMarker = -1;
+        playCalibrationCue(ctx, "step_done");
+      }
+      const stepElapsed = elapsed - (step1Duration + step2Duration + step3Duration);
+      const rem = ((step4Duration - stepElapsed) / 1e3).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
+      if (calStepTitle) calStepTitle.textContent = "Step 4 of 4: Smile & Normal Speaking Voice";
+      if (calStepDesc)
+        calStepDesc.textContent = 'Look center, give a big comfortable smile, and say "Testing one, two, three" at your normal speaking volume.';
+      setReticleTarget(50, 50, "SMILE & SPEAK", true, true);
+      if (stepElapsed >= 250 && lastBeepMarker < 30) {
+        lastBeepMarker = 30;
+        playCalibrationCue(ctx, "beep");
+      }
+    } else {
+      clearInterval(wizardTimerId);
+      wizardTimerId = null;
+      wizardStep = "summary";
+      playCalibrationCue(ctx, "complete");
+      finalizeGuidedCalibration();
+    }
+  }, 50);
+}
+async function finalizeGuidedCalibration() {
+  setReticleTarget(50, 50, "CALIBRATED \u2713", false, false);
+  if (calHudActive) calHudActive.style.display = "none";
+  if (calCardSummary) calCardSummary.style.display = "flex";
+  const neutral = analyzeNeutralStep(step1Samples);
+  const blink = analyzeBeepBlinkStep(
+    step2Samples,
+    step2BeepTimestamps,
+    neutral.blinkOpenL,
+    neutral.blinkOpenR,
+    step2WinkTimestamps
+  );
+  const headTurn = analyzeHeadTurnStep(
+    step3Samples,
+    neutral.neutralYaw,
+    neutral.neutralPitch,
+    neutral.blinkOpenL,
+    neutral.blinkOpenR,
+    blink.blinkClosedL,
+    blink.blinkClosedR
+  );
+  const voiceSmile = analyzeVoiceAndSmileStep(
+    step4Samples,
+    neutral.neutralMouth,
+    neutral.neutralSmile,
+    neutral.noiseGate
+  );
+  const profile = buildCalibrationProfile(neutral, blink, voiceSmile);
+  if (calSumBlinkRange) {
+    calSumBlinkRange.textContent = `L: ${Math.round(profile.blinkOpenL * 100)}%\u2192${Math.round(profile.blinkClosedL * 100)}% (T:${Math.round(blink.blinkThresholdL * 100)}%) \u2022 R: ${Math.round(profile.blinkOpenR * 100)}%\u2192${Math.round(profile.blinkClosedR * 100)}% (T:${Math.round(blink.blinkThresholdR * 100)}%)`;
+  }
+  if (calSumGlare) {
+    calSumGlare.textContent = profile.glareAssist ? "Glare Assist ON + 3D EAR" : "3D EAR Hybrid Active";
+  }
+  if (calSumYawCutoff) {
+    calSumYawCutoff.textContent = `\xB1${headTurn.blinkMaxHeadYaw}\xB0 (Yaw ${headTurn.yawMultiplier.toFixed(1)}x, Pitch ${headTurn.pitchMultiplier.toFixed(1)}x)`;
+  }
+  if (calSumVoice) {
+    const micNote = profile.smileWeightL > 0.6 ? " \u2022 Smile L-Boost" : profile.smileWeightR > 0.6 ? " \u2022 Smile R-Boost" : "";
+    calSumVoice.textContent = `Gate ${neutral.noiseGate.toFixed(2)} \u2022 Gain ${voiceSmile.micGain.toFixed(1)}x${micNote}`;
+  }
+  const current = collectSettingsFromUI();
+  current.tracking.calibration = profile;
+  current.tracking.blinkThreshold = blink.blinkThresholdL;
+  current.tracking.blinkThresholdL = blink.blinkThresholdL;
+  current.tracking.blinkThresholdR = blink.blinkThresholdR;
+  current.tracking.blinkMaxHeadYaw = headTurn.blinkMaxHeadYaw;
+  current.tracking.yawMultiplier = headTurn.yawMultiplier;
+  current.tracking.pitchMultiplier = headTurn.pitchMultiplier;
+  current.tracking.smileThreshold = voiceSmile.smileThreshold;
+  current.tracking.mouthGain = voiceSmile.mouthGain;
+  current.tracking.stabilizeBlink = true;
+  current.audio.noiseGate = neutral.noiseGate;
+  current.audio.micGain = voiceSmile.micGain;
+  activeSettings = current;
+  syncSettingsToUI(activeSettings);
+  try {
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(current)
+    });
+    if (calibrationChannel) {
+      calibrationChannel.postMessage({ type: "calibrated_settings", settings: current });
+    }
+  } catch (err) {
+    console.error("[Studio Calibration] Failed to save calibrated profile:", err);
+  }
+}
+if (btnGuidedCalibrate) {
+  btnGuidedCalibrate.addEventListener("click", (e) => launchGuidedCalibration(e));
+}
+if (btnGuidedCalibrateTuning) {
+  btnGuidedCalibrateTuning.addEventListener("click", (e) => launchGuidedCalibration(e));
+}
+if (btnCalTestBeep) {
+  btnCalTestBeep.addEventListener("click", () => {
+    playCalibrationCue(getOrCreateAudioContext(), "beep");
+  });
+}
+if (btnCalStartWindowed) {
+  btnCalStartWindowed.addEventListener("click", () => {
+    runGuidedCalibrationSequence(false);
+  });
+}
+if (btnCalStartFullscreen) {
+  btnCalStartFullscreen.addEventListener("click", () => {
+    runGuidedCalibrationSequence(true);
+  });
+}
+if (btnCalRerun) {
+  btnCalRerun.addEventListener("click", () => {
+    runGuidedCalibrationSequence(false);
+  });
+}
+if (btnCalClose) {
+  btnCalClose.addEventListener("click", closeGuidedOverlay);
+}
+if (btnCalDone) {
+  btnCalDone.addEventListener("click", closeGuidedOverlay);
+}
+if (isCalibratePopout) {
+  showGuidedOverlayInPage();
 }
 initStudioModeSidebar();
 initStreamerMode();

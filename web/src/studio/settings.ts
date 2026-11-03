@@ -2,6 +2,8 @@
  * Studio Settings State Management & API Persistence
  */
 
+import type { CalibrationProfile } from "../shared/types.ts";
+
 export interface TrackingConfig {
   mouthGain: number;
   mouthThreshold: number;
@@ -26,11 +28,13 @@ export interface TrackingConfig {
   physicsEnabled: boolean;
   physicsAmount: number;
   eyeGazeGain: number;
+  gazeDeadzone?: number;
   browGain?: number;
   yawMultiplier: number;
   pitchMultiplier: number;
   rollMultiplier: number;
   poseSmoothing: number;
+  calibration?: CalibrationProfile;
 }
 
 export interface AudioConfig {

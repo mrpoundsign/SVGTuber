@@ -48,3 +48,77 @@ export function extractEulerAngles(
     z: normalizeZero(m23),
   };
 }
+
+export interface Landmark3D {
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface EyeClosureEAR {
+  earL: number;
+  earR: number;
+  earBlinkLeft: number;
+  earBlinkRight: number;
+}
+
+function dist3D(a: Landmark3D, b: Landmark3D): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = (a.z || 0) - (b.z || 0);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function earToBlinkClosure(ear: number, openEar = 0.28, closedEar = 0.11): number {
+  const span = Math.max(0.05, openEar - closedEar);
+  const closure = (openEar - ear) / span;
+  return Math.max(0, Math.min(1, closure));
+}
+
+/**
+ * Computes geometric Eye Aspect Ratio (EAR) and normalized closure [0.0=open, 1.0=closed]
+ * from MediaPipe's 478 3D face mesh landmarks.
+ * - Left Eye (anatomical left / eyeBlinkLeft): corners (263, 362), vertical pairs (386, 374), (385, 380)
+ * - Right Eye (anatomical right / eyeBlinkRight): corners (33, 133), vertical pairs (159, 145), (158, 153)
+ */
+export function computeEyeAspectRatios(
+  landmarks: Landmark3D[] | null | undefined
+): EyeClosureEAR | null {
+  if (!landmarks || landmarks.length < 387) {
+    return null;
+  }
+
+  const lOuter = landmarks[263];
+  const lInner = landmarks[362];
+  const lUp1 = landmarks[386];
+  const lLow1 = landmarks[374];
+  const lUp2 = landmarks[385];
+  const lLow2 = landmarks[380];
+
+  const rOuter = landmarks[33];
+  const rInner = landmarks[133];
+  const rUp1 = landmarks[159];
+  const rLow1 = landmarks[145];
+  const rUp2 = landmarks[158];
+  const rLow2 = landmarks[153];
+
+  if (!lOuter || !lInner || !lUp1 || !lLow1 || !lUp2 || !lLow2 || !rOuter || !rInner || !rUp1 || !rLow1 || !rUp2 || !rLow2) {
+    return null;
+  }
+
+  const horizL = dist3D(lOuter, lInner);
+  const horizR = dist3D(rOuter, rInner);
+  if (horizL < 1e-5 || horizR < 1e-5) {
+    return null;
+  }
+
+  const earL = (dist3D(lUp1, lLow1) + dist3D(lUp2, lLow2)) / (2.0 * horizL);
+  const earR = (dist3D(rUp1, rLow1) + dist3D(rUp2, rLow2)) / (2.0 * horizR);
+
+  return {
+    earL,
+    earR,
+    earBlinkLeft: earToBlinkClosure(earL),
+    earBlinkRight: earToBlinkClosure(earR),
+  };
+}

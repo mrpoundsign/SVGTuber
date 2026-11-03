@@ -1181,9 +1181,10 @@
       <div id="card-face-tracker" class="card mode-panel">
         <div class="card-title" style="gap: 6px;">
           <span style="white-space: nowrap;">Face Tracker</span>
-          <div style="display: flex; gap: 5px; align-items: center;">
+          <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap;">
             <button id="btn-face-autocrop" type="button" class="btn btn-secondary" style="font-size: 10px; padding: 3px 7px;" title="Automatically zoom and center camera onto the detected face">🔍 Auto-Zoom: ON</button>
-            <button id="btn-calibrate" class="btn btn-secondary" style="font-size: 10px; padding: 3px 8px;">🎯 Neutral Pose</button>
+            <button id="btn-calibrate" class="btn btn-secondary" style="font-size: 10px; padding: 3px 8px;" title="Quickly recenter head posture and open-eye floor">🎯 Neutral Pose</button>
+            <button id="btn-guided-calibrate" type="button" class="btn" style="font-size: 10px; padding: 3px 8px; background: linear-gradient(135deg, #6366f1, #06b6d4); color: #fff;" title="Open fullscreen audio-guided setup &amp; glasses calibration on your main monitor">🪄 Guided Setup</button>
           </div>
         </div>
 
@@ -1419,6 +1420,7 @@
           <span>Calibration &amp; Autonomous Life</span>
           <div style="display: flex; gap: 6px; align-items: center;">
             <span id="save-status" style="font-size: 11px; color: var(--success); opacity: 0; transition: opacity 0.3s; font-weight: 600;">Saved!</span>
+            <button id="btn-guided-calibrate-tuning" type="button" class="btn" style="font-size: 11px; padding: 4px 10px; background: linear-gradient(135deg, #6366f1, #06b6d4); color: #fff;" title="Open fullscreen audio-guided setup &amp; glasses calibration on your main monitor">🪄 Guided Setup</button>
             <button id="btn-save-settings" class="btn" style="font-size: 11px; padding: 4px 10px;">Save</button>
             <button id="btn-reset-settings" class="btn btn-secondary" style="font-size: 11px; padding: 4px 10px;">Reset</button>
           </div>
@@ -1940,6 +1942,313 @@
             <button id="btn-apply-update" class="btn" style="font-size: 12px; background: #38bdf8; color: #0f172a; font-weight: 600;">⬇ Install Update &amp; Restart</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guided Fullscreen Pop-Out Calibration Overlay -->
+  <style>
+    #guided-calibration-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: radial-gradient(circle at center, #0f172a 0%, #050811 100%);
+      color: #f8fafc;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      user-select: none;
+    }
+    .cal-top-bar {
+      position: absolute;
+      top: 20px;
+      left: 24px;
+      right: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 20;
+    }
+    .cal-telemetry-pills {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .cal-pill {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid #334155;
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .cal-pill.ok {
+      border-color: rgba(34, 197, 94, 0.5);
+      color: #4ade80;
+    }
+    .cal-pill.warn {
+      border-color: rgba(245, 158, 11, 0.5);
+      color: #fbbf24;
+    }
+    .cal-card {
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 28px 32px;
+      max-width: 640px;
+      width: 92%;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+      z-index: 15;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .cal-step-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .cal-step-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .cal-step-box strong {
+      display: block;
+      color: #38bdf8;
+      margin-bottom: 3px;
+      font-size: 12px;
+    }
+    #cal-reticle {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      border: 3px solid #38bdf8;
+      box-shadow: 0 0 28px rgba(56, 189, 248, 0.45), inset 0 0 18px rgba(56, 189, 248, 0.25);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: left 0.45s cubic-bezier(0.22, 1, 0.36, 1), top 0.45s cubic-bezier(0.22, 1, 0.36, 1), transform 0.15s ease, border-color 0.2s;
+      z-index: 10;
+    }
+    #cal-reticle.beep-pulse {
+      border-color: #22c55e;
+      box-shadow: 0 0 55px rgba(34, 197, 94, 0.85), inset 0 0 28px rgba(34, 197, 94, 0.5);
+      transform: translate(-50%, -50%) scale(1.28);
+    }
+    .cal-reticle-dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #f8fafc;
+      box-shadow: 0 0 12px #38bdf8;
+    }
+    .cal-reticle-arrow {
+      display: none;
+      font-size: 52px;
+      line-height: 1;
+      font-weight: 900;
+      color: #38bdf8;
+      text-shadow: 0 0 22px rgba(56, 189, 248, 0.9);
+    }
+    .cal-reticle-arrow.dir-left {
+      display: block;
+      animation: cal-arrow-left 0.65s ease-in-out infinite alternate;
+    }
+    .cal-reticle-arrow.dir-right {
+      display: block;
+      animation: cal-arrow-right 0.65s ease-in-out infinite alternate;
+    }
+    .cal-reticle-arrow.dir-up {
+      display: block;
+      animation: cal-arrow-up 0.65s ease-in-out infinite alternate;
+    }
+    .cal-reticle-arrow.dir-down {
+      display: block;
+      animation: cal-arrow-down 0.65s ease-in-out infinite alternate;
+    }
+    @keyframes cal-arrow-left {
+      from { transform: translateX(6px); }
+      to { transform: translateX(-14px) scale(1.12); color: #22c55e; }
+    }
+    @keyframes cal-arrow-right {
+      from { transform: translateX(-6px); }
+      to { transform: translateX(14px) scale(1.12); color: #22c55e; }
+    }
+    @keyframes cal-arrow-up {
+      from { transform: translateY(6px); }
+      to { transform: translateY(-14px) scale(1.12); color: #22c55e; }
+    }
+    @keyframes cal-arrow-down {
+      from { transform: translateY(-6px); }
+      to { transform: translateY(14px) scale(1.12); color: #22c55e; }
+    }
+    .cal-reticle-label {
+      position: absolute;
+      top: 124px;
+      width: 420px;
+      text-align: center;
+      font-size: 15px;
+      font-weight: 700;
+      color: #f8fafc;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+      pointer-events: none;
+    }
+    .cal-hud-bottom {
+      position: absolute;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 14px 24px;
+      min-width: 440px;
+      max-width: 90vw;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 15;
+    }
+    .cal-summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .cal-summary-item {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 12px;
+    }
+    .cal-summary-item .label {
+      color: #94a3b8;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 4px;
+    }
+    .cal-summary-item .val {
+      color: #f8fafc;
+      font-weight: 700;
+      font-size: 13px;
+      font-family: monospace;
+    }
+  </style>
+
+  <div id="guided-calibration-overlay" role="dialog" aria-label="Guided Setup and Glasses Calibration">
+    <div class="cal-top-bar">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 20px;">🪄</span>
+        <div>
+          <div style="font-size: 15px; font-weight: 700;">SVGTuber Guided Setup &amp; Glasses Calibration</div>
+          <div style="font-size: 11px; color: #94a3b8;">Audio-Cued Main-Monitor Calibration (Glasses, Headphones &amp; Mic)</div>
+        </div>
+      </div>
+      <div class="cal-telemetry-pills">
+        <span id="cal-pill-face" class="cal-pill warn">📷 Face: Waiting...</span>
+        <span id="cal-pill-mic" class="cal-pill">🎙️ Mic: 0%</span>
+        <button id="btn-cal-test-beep" type="button" class="btn btn-secondary" style="font-size: 11px; padding: 5px 10px;">🔊 Test Beep</button>
+        <button id="btn-cal-close" type="button" class="btn btn-secondary" style="font-size: 11px; padding: 5px 12px;">✕ Close</button>
+      </div>
+    </div>
+
+    <!-- Moving Bullseye Target Reticle -->
+    <div id="cal-reticle">
+      <div id="cal-reticle-dot" class="cal-reticle-dot"></div>
+      <div id="cal-reticle-arrow" class="cal-reticle-arrow">⬅</div>
+      <div id="cal-reticle-prompt" class="cal-reticle-label">Look Here</div>
+    </div>
+
+    <!-- Intro Card -->
+    <div id="cal-card-intro" class="cal-card">
+      <div>
+        <div style="font-size: 18px; font-weight: 700; margin-bottom: 6px;">Calibrate to Your Main Screen &amp; Gear (~15s)</div>
+        <div style="font-size: 13px; color: #cbd5e1; line-height: 1.5;">
+          Drag this window onto your <strong>Main Monitor</strong> (where you look while streaming), put on your normal gear (<strong>glasses, headphones, headset mic</strong>), and click Start. Audio beeps will guide you so you don't need to read while blinking or turning your head.
+        </div>
+      </div>
+
+      <div class="cal-step-list">
+        <div class="cal-step-box">
+          <strong>1. Neutral &amp; Silence (3s)</strong>
+          Look at the center dot and stay quiet. Captures glasses frame baseline, gaze offset, and room noise floor.
+        </div>
+        <div class="cal-step-box">
+          <strong>2. Blinks &amp; Left/Right Winks (6.5s)</strong>
+          Blink both eyes on Beeps 1 &amp; 2, wink Left on Beep 3, and wink Right on Beep 4. Eliminates wink/blink flutter.
+        </div>
+        <div class="cal-step-box">
+          <strong>3. Directional Head Turns (7s)</strong>
+          Follow the arrows Left, Right, Up &amp; Down (turn naturally toward side monitors or off-screen). Beeps cue each switch.
+        </div>
+        <div class="cal-step-box">
+          <strong>4. Smile &amp; Voice (4s)</strong>
+          Smile on Beep 1, speak on Beep 2. Balances boom-mic shadows and tunes mic/mouth gain.
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px;">
+        <button id="btn-cal-start-windowed" type="button" class="btn btn-secondary" style="font-size: 13px; padding: 9px 16px;">Start in Window</button>
+        <button id="btn-cal-start-fullscreen" type="button" class="btn" style="font-size: 13px; padding: 9px 20px; background: linear-gradient(135deg, #6366f1, #06b6d4); color: #fff; font-weight: 700;">🖥️ Maximize Fullscreen &amp; Start</button>
+      </div>
+    </div>
+
+    <!-- Active Step Progress HUD -->
+    <div id="cal-hud-active" class="cal-hud-bottom">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span id="cal-step-title" style="font-size: 13px; font-weight: 700; color: #38bdf8;">Step 1 of 4: Neutral Posture</span>
+        <span id="cal-step-timer" style="font-size: 12px; font-family: monospace; color: #94a3b8;">3.0s</span>
+      </div>
+      <div id="cal-step-desc" style="font-size: 12px; color: #e2e8f0;">Look at the center ring with a relaxed face and stay quiet...</div>
+      <div class="gauge-bar-track" style="height: 8px; background: #1e293b;">
+        <div id="cal-step-progress" class="gauge-bar-fill" style="background: linear-gradient(90deg, #6366f1, #06b6d4); width: 0%;"></div>
+      </div>
+    </div>
+
+    <!-- Summary Card -->
+    <div id="cal-card-summary" class="cal-card" style="display: none;">
+      <div>
+        <div style="font-size: 18px; font-weight: 700; color: #4ade80; margin-bottom: 4px;">✓ Setup &amp; Glasses Calibration Complete!</div>
+        <div style="font-size: 12px; color: #94a3b8;">Your personal profile has been tuned and saved to <code>settings.json</code>.</div>
+      </div>
+
+      <div class="cal-summary-grid">
+        <div class="cal-summary-item">
+          <div class="label">Glasses Eyelid Range (L / R)</div>
+          <div id="cal-sum-blink-range" class="val">L: 0%→100% • R: 0%→100%</div>
+        </div>
+        <div class="cal-summary-item">
+          <div class="label">Lens Glare Assist</div>
+          <div id="cal-sum-glare" class="val">Standard</div>
+        </div>
+        <div class="cal-summary-item">
+          <div class="label">Headphone / Rim Yaw Cutoff</div>
+          <div id="cal-sum-yaw-cutoff" class="val">25° (Yaw 1.0x, Pitch 1.0x)</div>
+        </div>
+        <div class="cal-summary-item">
+          <div class="label">Voice &amp; Boom-Mic Smile</div>
+          <div id="cal-sum-voice" class="val">Gate 0.04 • Gain 1.5x</div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+        <button id="btn-cal-rerun" type="button" class="btn btn-secondary" style="font-size: 12px; padding: 8px 14px;">↻ Re-Run Wizard</button>
+        <button id="btn-cal-done" type="button" class="btn" style="font-size: 13px; padding: 8px 22px; background: #22c55e; color: #052e16; font-weight: 700;">✓ Done</button>
       </div>
     </div>
   </div>

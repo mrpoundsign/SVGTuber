@@ -469,5 +469,52 @@ func TestConfig_BlinkStabilizationDefaultsAndPersistence(t *testing.T) {
 	}
 }
 
+func TestConfig_CalibrationProfilePersistence(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.json")
+
+	mgr, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager failed: %v", err)
+	}
+
+	cal := CalibrationProfile{
+		Calibrated:   true,
+		NeutralYaw:   -4.5,
+		NeutralPitch: 6.2,
+		BlinkOpenL:   0.22,
+		BlinkOpenR:   0.19,
+		BlinkClosedL: 0.48,
+		BlinkClosedR: 0.54,
+		GlareAssist:  true,
+		SmileWeightL: 0.35,
+		SmileWeightR: 0.65,
+	}
+	if err := mgr.SetCalibration(cal); err != nil {
+		t.Fatalf("SetCalibration failed: %v", err)
+	}
+
+	// Partial slider update without calibration fields must preserve CalibrationProfile
+	sliderUpdate := Settings{
+		Version: 2,
+		Tracking: TrackingSettings{
+			MouthGain: 1.8,
+		},
+	}
+	if err := mgr.Update(sliderUpdate); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+
+	mgr2, err := NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("NewManager reload failed: %v", err)
+	}
+	got := mgr2.Get().Tracking.Calibration
+	if !got.Calibrated || got.BlinkOpenL != 0.22 || got.BlinkClosedL != 0.48 || !got.GlareAssist {
+		t.Errorf("Expected persisted CalibrationProfile to survive partial update and reload, got %+v", got)
+	}
+}
+
+
 
 

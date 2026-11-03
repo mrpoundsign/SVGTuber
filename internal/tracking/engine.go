@@ -22,6 +22,15 @@ type Engine struct {
 	neutralMouth float64
 	neutralBrowL float64
 	neutralBrowR float64
+	neutralEyeX  float64
+	neutralEyeY  float64
+	blinkOpenL   float64
+	blinkOpenR   float64
+	blinkClosedL float64
+	blinkClosedR float64
+	glareAssist  bool
+	smileWeightL float64
+	smileWeightR float64
 	filter       *PoseFilter
 	lastRaw      FaceFrame
 	configMgr    *config.Manager
@@ -72,8 +81,12 @@ func NewEngine(cfg ...*config.Manager) *Engine {
 		cm = cfg[0]
 	}
 	return &Engine{
-		filter:    NewPoseFilter(),
-		configMgr: cm,
+		blinkClosedL: 1.0,
+		blinkClosedR: 1.0,
+		smileWeightL: 0.5,
+		smileWeightR: 0.5,
+		filter:       NewPoseFilter(),
+		configMgr:    cm,
 	}
 }
 
@@ -91,10 +104,10 @@ func (e *Engine) SetExpressionProvider(provider func() map[string]bool) {
 	e.exprProvider = provider
 }
 
-// Calibrate records the latest raw face pose as the neutral (zeroed) reference.
+// Calibrate records the latest raw face pose as the neutral (zeroed) reference,
+// capturing resting open-eye floor and neutral gaze while preserving any guided closed-eye ceiling.
 func (e *Engine) Calibrate() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	e.neutralYaw = e.lastRaw.Yaw
 	e.neutralPitch = e.lastRaw.Pitch
@@ -103,12 +116,145 @@ func (e *Engine) Calibrate() {
 	e.neutralY = e.lastRaw.Y
 	e.neutralZ = e.lastRaw.Z
 	if bs := e.lastRaw.Blendshapes; bs != nil {
-		e.neutralSmile = (bs["mouthSmileLeft"] + bs["mouthSmileRight"]) / 2.0
+		wL, wR := e.smileWeightL, e.smileWeightR
+		if wL <= 0 && wR <= 0 {
+			wL, wR = 0.5, 0.5
+		}
+		e.neutralSmile = bs["mouthSmileLeft"]*wL + bs["mouthSmileRight"]*wR
 		e.neutralMouth = bs["jawOpen"]
 		e.neutralBrowL, e.neutralBrowR, _ = extractRawBrows(bs)
+		e.neutralEyeX, e.neutralEyeY = extractRawGaze(bs)
+
+		earL, hasEarL := bs["earBlinkLeft"]
+		earR, hasEarR := bs["earBlinkRight"]
+		rawL := FuseBlinkScore(bs["eyeBlinkLeft"], earL, hasEarL)
+		rawR := FuseBlinkScore(bs["eyeBlinkRight"], earR, hasEarR)
+		// Guard against calibrating while mid-blink: clamp open floor to <= 0.45
+		e.blinkOpenL = math.Max(0.0, math.Min(0.45, rawL))
+		e.blinkOpenR = math.Max(0.0, math.Min(0.45, rawR))
+	}
+	if e.blinkClosedL <= e.blinkOpenL+0.08 {
+		e.blinkClosedL = 1.0
+	}
+	if e.blinkClosedR <= e.blinkOpenR+0.08 {
+		e.blinkClosedR = 1.0
 	}
 	e.calibrated = true
 	e.filter.Reset()
+
+	cm := e.configMgr
+	var calProfile config.CalibrationProfile
+	if cm != nil {
+		existing := cm.Get().Tracking.Calibration
+		if existing.BlinkClosedL > e.blinkOpenL+0.08 && existing.BlinkClosedL < 1.0 {
+			e.blinkClosedL = existing.BlinkClosedL
+		}
+		if existing.BlinkClosedR > e.blinkOpenR+0.08 && existing.BlinkClosedR < 1.0 {
+			e.blinkClosedR = existing.BlinkClosedR
+		}
+		e.glareAssist = existing.GlareAssist
+		if existing.SmileWeightL > 0 || existing.SmileWeightR > 0 {
+			e.smileWeightL = existing.SmileWeightL
+			e.smileWeightR = existing.SmileWeightR
+		}
+		calProfile = config.CalibrationProfile{
+			Calibrated:   true,
+			NeutralYaw:   e.neutralYaw,
+			NeutralPitch: e.neutralPitch,
+			NeutralRoll:  e.neutralRoll,
+			NeutralX:     e.neutralX,
+			NeutralY:     e.neutralY,
+			NeutralZ:     e.neutralZ,
+			NeutralEyeX:  e.neutralEyeX,
+			NeutralEyeY:  e.neutralEyeY,
+			NeutralSmile: e.neutralSmile,
+			NeutralMouth: e.neutralMouth,
+			NeutralBrowL: e.neutralBrowL,
+			NeutralBrowR: e.neutralBrowR,
+			BlinkOpenL:   e.blinkOpenL,
+			BlinkOpenR:   e.blinkOpenR,
+			BlinkClosedL: e.blinkClosedL,
+			BlinkClosedR: e.blinkClosedR,
+			GlareAssist:  e.glareAssist,
+			SmileWeightL: e.smileWeightL,
+			SmileWeightR: e.smileWeightR,
+		}
+	}
+	e.mu.Unlock()
+
+	if cm != nil {
+		_ = cm.SetCalibration(calProfile)
+	}
+}
+
+func extractRawGaze(bs map[string]float64) (rawX, rawY float64) {
+	if bs == nil {
+		return 0, 0
+	}
+	lookRight := (bs["eyeLookInLeft"] + bs["eyeLookOutRight"]) / 2.0
+	lookLeft := (bs["eyeLookOutLeft"] + bs["eyeLookInRight"]) / 2.0
+	rawX = lookLeft - lookRight
+
+	lookUp := (bs["eyeLookUpLeft"] + bs["eyeLookUpRight"]) / 2.0
+	lookDown := (bs["eyeLookDownLeft"] + bs["eyeLookDownRight"]) / 2.0
+	rawY = lookDown - lookUp
+	return rawX, rawY
+}
+
+// FuseBlinkScore combines MediaPipe's ARKit texture blendshape score with geometric 3D landmark
+// Eye Aspect Ratio (EAR) closure so lens glare on glasses does not blind blink detection.
+func FuseBlinkScore(blendshapeBlink, earBlink float64, hasEAR bool) float64 {
+	b := math.Max(0.0, math.Min(1.0, blendshapeBlink))
+	if !hasEAR {
+		return b
+	}
+	e := math.Max(0.0, math.Min(1.0, earBlink))
+	blended := b*0.65 + e*0.35
+	// If lens glare washes out the pixel blendshape while the 3D mesh eyelid closes,
+	// allow geometric EAR closure to rescue the blink signal.
+	if e > b+0.12 {
+		blended = math.Max(blended, e*0.90)
+	}
+	return math.Max(0.0, math.Min(1.0, blended))
+}
+
+// RemapBlink normalizes a raw eyelid closure score from the user's calibrated [openFloor .. closedCeiling]
+// range into standard [0.0 .. 1.0] avatar closure space.
+func RemapBlink(raw, openFloor, closedCeiling float64) float64 {
+	raw = math.Max(0.0, math.Min(1.0, raw))
+	if openFloor <= 0 && (closedCeiling <= 0 || closedCeiling >= 0.999) {
+		return raw
+	}
+	if closedCeiling <= 0 {
+		closedCeiling = 1.0
+	}
+	span := closedCeiling - openFloor
+	if span < 0.08 {
+		span = 0.08
+	}
+	norm := (raw - openFloor) / span
+	return math.Max(0.0, math.Min(1.0, norm))
+}
+
+// ApplyGazeDeadzone suppresses micro-jitter near zero (caused by lens reflections on glasses)
+// while smoothly scaling values beyond the deadzone.
+func ApplyGazeDeadzone(val, deadzone float64) float64 {
+	if deadzone <= 0 {
+		return val
+	}
+	absVal := math.Abs(val)
+	if absVal <= deadzone {
+		return 0
+	}
+	denom := 1.0 - deadzone
+	if denom <= 0.05 {
+		denom = 0.05
+	}
+	scaled := (absVal - deadzone) / denom
+	if val < 0 {
+		return -scaled
+	}
+	return scaled
 }
 
 // extractRawBrows computes signed left/right brow signals (-1.0 furrowed to +1.0 raised)
@@ -133,7 +279,6 @@ func extractRawBrows(bs map[string]float64) (rawL, rawR, rawUp float64) {
 // ResetCalibration clears calibrated neutral offsets.
 func (e *Engine) ResetCalibration() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 
 	e.neutralYaw = 0
 	e.neutralPitch = 0
@@ -145,6 +290,15 @@ func (e *Engine) ResetCalibration() {
 	e.neutralMouth = 0
 	e.neutralBrowL = 0
 	e.neutralBrowR = 0
+	e.neutralEyeX = 0
+	e.neutralEyeY = 0
+	e.blinkOpenL = 0
+	e.blinkOpenR = 0
+	e.blinkClosedL = 1.0
+	e.blinkClosedR = 1.0
+	e.glareAssist = false
+	e.smileWeightL = 0.5
+	e.smileWeightR = 0.5
 	e.calibrated = false
 	e.pendingCloseL = false
 	e.pendingCloseR = false
@@ -175,6 +329,12 @@ func (e *Engine) ResetCalibration() {
 	e.currentTiltPitch = 0
 	e.currentTiltYaw = 0
 	e.filter.Reset()
+	cm := e.configMgr
+	e.mu.Unlock()
+
+	if cm != nil {
+		_ = cm.ResetCalibration()
+	}
 }
 
 // Process transforms a raw FaceFrame from Studio into a smoothed, calibrated ParamFrame.
@@ -201,6 +361,28 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		s := e.configMgr.Get()
 		ts = s.Tracking
 		as = s.Audio
+		if ts.Calibration.Calibrated || ts.Calibration.BlinkClosedL < 0.999 || ts.Calibration.BlinkClosedR < 0.999 || ts.Calibration.BlinkOpenL > 0 || ts.Calibration.BlinkOpenR > 0 {
+			e.calibrated = ts.Calibration.Calibrated
+			e.neutralYaw = ts.Calibration.NeutralYaw
+			e.neutralPitch = ts.Calibration.NeutralPitch
+			e.neutralRoll = ts.Calibration.NeutralRoll
+			e.neutralX = ts.Calibration.NeutralX
+			e.neutralY = ts.Calibration.NeutralY
+			e.neutralZ = ts.Calibration.NeutralZ
+			e.neutralEyeX = ts.Calibration.NeutralEyeX
+			e.neutralEyeY = ts.Calibration.NeutralEyeY
+			e.neutralSmile = ts.Calibration.NeutralSmile
+			e.neutralMouth = ts.Calibration.NeutralMouth
+			e.neutralBrowL = ts.Calibration.NeutralBrowL
+			e.neutralBrowR = ts.Calibration.NeutralBrowR
+			e.blinkOpenL = ts.Calibration.BlinkOpenL
+			e.blinkOpenR = ts.Calibration.BlinkOpenR
+			e.blinkClosedL = ts.Calibration.BlinkClosedL
+			e.blinkClosedR = ts.Calibration.BlinkClosedR
+			e.glareAssist = ts.Calibration.GlareAssist
+			e.smileWeightL = ts.Calibration.SmileWeightL
+			e.smileWeightR = ts.Calibration.SmileWeightR
+		}
 	} else {
 		def := config.DefaultSettings()
 		ts = def.Tracking
@@ -394,16 +576,29 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	y := raw.Y - e.neutralY
 	z := raw.Z - e.neutralZ
 
-	// Extract standard ARKit facial blendshapes
+	// Extract standard ARKit facial blendshapes + 3D Landmark EAR fusion & glasses calibration
 	var rawBlinkL, rawBlinkR, blinkL, blinkR, opticalMouth, smile, browUp, browL, browR, eyeX, eyeY float64
 	if bs := raw.Blendshapes; bs != nil {
-		rawBlinkL = bs["eyeBlinkLeft"]
-		rawBlinkR = bs["eyeBlinkRight"]
+		earL, hasEarL := bs["earBlinkLeft"]
+		earR, hasEarR := bs["earBlinkRight"]
+		fusedL := FuseBlinkScore(bs["eyeBlinkLeft"], earL, hasEarL)
+		fusedR := FuseBlinkScore(bs["eyeBlinkRight"], earR, hasEarR)
+
+		openL, closedL := e.blinkOpenL, e.blinkClosedL
+		openR, closedR := e.blinkOpenR, e.blinkClosedR
+		if closedL <= 0 {
+			closedL = 1.0
+		}
+		if closedR <= 0 {
+			closedR = 1.0
+		}
+		rawBlinkL = RemapBlink(fusedL, openL, closedL)
+		rawBlinkR = RemapBlink(fusedR, openR, closedR)
 		blinkL = rawBlinkL
 		blinkR = rawBlinkR
 		if stabilizeBlink {
-			blinkL, blinkR = StabilizeBlink(rawBlinkL, rawBlinkR, calYawDeg, ts.WinkIsBlink, maxYawDeg)
-			if math.Abs(calYawDeg) > maxYawDeg {
+			blinkL, blinkR = StabilizeBlinkWithConfig(rawBlinkL, rawBlinkR, calYawDeg, ts.WinkIsBlink, e.glareAssist, maxYawDeg, threshL, threshR)
+			if math.Abs(calYawDeg) > maxYawDeg || e.glareAssist {
 				rawBlinkL, rawBlinkR = blinkL, blinkR
 			}
 		}
@@ -422,7 +617,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		opticalMouth = math.Min(1.0, rawJaw*ts.MouthGain)
 
 		if ts.EnableSmile {
-			rawSmile := (bs["mouthSmileLeft"] + bs["mouthSmileRight"]) / 2.0
+			wL, wR := e.smileWeightL, e.smileWeightR
+			if wL <= 0 && wR <= 0 {
+				wL, wR = 0.5, 0.5
+			}
+			rawSmile := bs["mouthSmileLeft"]*wL + bs["mouthSmileRight"]*wR
 			if e.calibrated && e.neutralSmile > 0 {
 				if rawSmile > e.neutralSmile {
 					denom := 1.0 - e.neutralSmile
@@ -456,17 +655,18 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		browL = math.Max(-1.0, math.Min(1.0, rawBrowL*browGain))
 		browR = math.Max(-1.0, math.Min(1.0, rawBrowR*browGain))
 
-		// Gaze horizontal (mirrored for VTuber / webcam perspective):
-		// When user looks left, pupils move screen-left (-X).
-		// When user looks right, pupils move screen-right (+X).
-		lookRight := (bs["eyeLookInLeft"] + bs["eyeLookOutRight"]) / 2.0
-		lookLeft := (bs["eyeLookOutLeft"] + bs["eyeLookInRight"]) / 2.0
-		eyeX = (lookLeft - lookRight) * ts.EyeGazeGain
-
-		// Gaze vertical: SVG Y is downwards, so looking down is +Y, looking up is -Y
-		lookUp := (bs["eyeLookUpLeft"] + bs["eyeLookUpRight"]) / 2.0
-		lookDown := (bs["eyeLookDownLeft"] + bs["eyeLookDownRight"]) / 2.0
-		eyeY = (lookDown - lookUp) * ts.EyeGazeGain
+		// Gaze horizontal & vertical with neutral prism calibration and lens-glare deadzone
+		rawGazeX, rawGazeY := extractRawGaze(bs)
+		if e.calibrated {
+			rawGazeX -= e.neutralEyeX
+			rawGazeY -= e.neutralEyeY
+		}
+		deadzone := ts.GazeDeadzone
+		if deadzone < 0 {
+			deadzone = 0
+		}
+		eyeX = ApplyGazeDeadzone(rawGazeX, deadzone) * ts.EyeGazeGain
+		eyeY = ApplyGazeDeadzone(rawGazeY, deadzone) * ts.EyeGazeGain
 	}
 
 	// Determine final mouth open based on active tracking mode
@@ -584,10 +784,22 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 // and coupling bilateral eyelid jitter while preserving intentional frontal winks.
 // Adapted from yeemachine/kalidokit (src/FaceSolver/calcEyes.ts:stabilizeBlink) for ARKit closure convention.
 func StabilizeBlink(blinkL, blinkR, calYawDeg float64, winkIsBlink bool, maxYawDeg float64) (float64, float64) {
+	return StabilizeBlinkWithConfig(blinkL, blinkR, calYawDeg, winkIsBlink, false, maxYawDeg, 0.45, 0.45)
+}
+
+// StabilizeBlinkWithConfig extends StabilizeBlink with relative user thresholds and GlareAssist
+// (which couples a glare-weakened eye to the clearer eye during bilateral blinks behind glasses).
+func StabilizeBlinkWithConfig(blinkL, blinkR, calYawDeg float64, winkIsBlink, glareAssist bool, maxYawDeg, threshL, threshR float64) (float64, float64) {
 	blinkL = math.Max(0.0, math.Min(1.0, blinkL))
 	blinkR = math.Max(0.0, math.Min(1.0, blinkR))
 	if maxYawDeg <= 0 {
 		maxYawDeg = 25.0
+	}
+	if threshL <= 0 {
+		threshL = 0.45
+	}
+	if threshR <= 0 {
+		threshR = 0.45
 	}
 
 	// 1. Head-turn occlusion override:
@@ -603,14 +815,28 @@ func StabilizeBlink(blinkL, blinkR, calYawDeg float64, winkIsBlink bool, maxYawD
 	// 2. Frontal bilateral coupling vs intentional wink disambiguation:
 	minBlink := math.Min(blinkL, blinkR)
 	maxBlink := math.Max(blinkL, blinkR)
+	winkOnsetL := threshL * 0.78
+	winkOnsetR := threshR * 0.78
+	closingL := threshL * 0.88
+	closingR := threshR * 0.88
 
 	// When WinkIsBlink is active, any single-eye closure couples both eyes closed
-	if winkIsBlink && maxBlink >= 0.35 {
+	if winkIsBlink && (blinkL >= winkOnsetL || blinkR >= winkOnsetR) {
 		return maxBlink, maxBlink
 	}
 
+	// GlareAssist (for glasses where one lens has severe reflection blindness):
+	// If one eye cleanly crosses its blink threshold while the glare-weakened eye shows
+	// substantial bilateral closure (>= 55% of its threshold), couple both eyes closed.
+	if glareAssist {
+		if (blinkL >= threshL && blinkR >= threshR*0.55) || (blinkR >= threshR && blinkL >= threshL*0.55) {
+			coupled := minBlink*0.10 + maxBlink*0.90
+			return coupled, coupled
+		}
+	}
+
 	// Both eyes closing in a bilateral blink: couple toward the more closed eye so both close evenly
-	bothClosing := blinkL >= 0.40 && blinkR >= 0.40
+	bothClosing := blinkL >= closingL && blinkR >= closingR
 	if bothClosing {
 		coupled := minBlink*0.05 + maxBlink*0.95
 		return coupled, coupled
@@ -618,11 +844,11 @@ func StabilizeBlink(blinkL, blinkR, calYawDeg float64, winkIsBlink bool, maxYawD
 
 	// One eye closing/winking while the other is open: preserve independent values so face-on
 	// winks and blink onsets are never suppressed (evaluateBlinks handles the syncDelay window).
-	if maxBlink >= 0.35 {
+	if blinkL >= winkOnsetL || blinkR >= winkOnsetR {
 		return blinkL, blinkR
 	}
 
-	// Both eyes resting open (< 0.35): gently couple minor resting eyelid jitter toward open
+	// Both eyes resting open: gently couple minor resting eyelid jitter toward open
 	coupled := minBlink*0.95 + maxBlink*0.05
 	return coupled, coupled
 }
@@ -630,11 +856,11 @@ func StabilizeBlink(blinkL, blinkR, calYawDeg float64, winkIsBlink bool, maxYawD
 // evaluateBlinks applies independent thresholds and a synchronization delay window to
 // discriminate between natural bilateral blinks and intentional unilateral winks.
 func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs float64) (bool, bool) {
-	// Apply hysteresis to prevent rapid flutter around threshold
-	const hysteresis = 0.08
+	// Apply generous hysteresis (15%) to prevent threshold-edge flutter behind glasses
+	const hysteresis = 0.15
 
-	reopenL := math.Max(0.1, threshL-hysteresis)
-	reopenR := math.Max(0.1, threshR-hysteresis)
+	reopenL := math.Max(0.12, threshL-hysteresis)
+	reopenR := math.Max(0.12, threshR-hysteresis)
 
 	if !e.eyeClosedL {
 		if filtL >= threshL {
@@ -688,16 +914,33 @@ func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs
 		e.pendingCloseR = false
 		e.pendingOpenL = false
 		e.pendingOpenR = false
+		e.lastCloseTimeL = 0
+		e.lastCloseTimeR = 0
 		e.inBilateralBlink = true
 		return true, true
 	}
 
 	// Case 2: Both eyes open simultaneously
 	if !rawL && !rawR {
+		// Anti-flutter hold for confirmed unilateral winks: if a lens reflection causes a brief
+		// 1-2 frame (< 45ms) mid-squint dip (>= 0.16) while holding a wink, do not drop the wink
+		// or reset the syncDelay timer.
+		winkHoldWindow := math.Min(45.0, syncDelay)
+		if !e.inBilateralBlink && e.lastCloseTimeL > 0 && nowMs >= e.lastCloseTimeL && nowMs-e.lastCloseTimeL <= winkHoldWindow && filtL >= 0.16 {
+			e.eyeClosedL = true
+			return true, false
+		}
+		if !e.inBilateralBlink && e.lastCloseTimeR > 0 && nowMs >= e.lastCloseTimeR && nowMs-e.lastCloseTimeR <= winkHoldWindow && filtR >= 0.16 {
+			e.eyeClosedR = true
+			return false, true
+		}
+
 		e.pendingCloseL = false
 		e.pendingCloseR = false
 		e.pendingOpenL = false
 		e.pendingOpenR = false
+		e.lastCloseTimeL = 0
+		e.lastCloseTimeR = 0
 		e.inBilateralBlink = false
 		return false, false
 	}
@@ -717,6 +960,7 @@ func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs
 			// Delay expired: intentional wink hold
 			e.inBilateralBlink = false
 			e.pendingOpenL = false
+			e.lastCloseTimeR = nowMs
 			return false, true
 		}
 		if rawL && !rawR {
@@ -730,6 +974,7 @@ func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs
 			// Delay expired: intentional wink hold
 			e.inBilateralBlink = false
 			e.pendingOpenR = false
+			e.lastCloseTimeL = nowMs
 			return true, false
 		}
 	}
@@ -739,6 +984,7 @@ func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs
 	// to give the second eye an opportunity to close for a clean bilateral blink.
 	if rawL && !rawR {
 		e.pendingCloseR = false
+		e.lastCloseTimeR = 0
 		if !e.pendingCloseL {
 			e.pendingCloseL = true
 			e.closeTimeL = nowMs
@@ -747,11 +993,13 @@ func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs
 			return false, false
 		}
 		// Delay expired: intentional Left wink
+		e.lastCloseTimeL = nowMs
 		return true, false
 	}
 
 	if !rawL && rawR {
 		e.pendingCloseL = false
+		e.lastCloseTimeL = 0
 		if !e.pendingCloseR {
 			e.pendingCloseR = true
 			e.closeTimeR = nowMs
@@ -760,6 +1008,7 @@ func (e *Engine) evaluateBlinks(filtL, filtR, threshL, threshR, syncDelay, nowMs
 			return false, false
 		}
 		// Delay expired: intentional Right wink
+		e.lastCloseTimeR = nowMs
 		return false, true
 	}
 
