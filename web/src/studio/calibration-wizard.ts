@@ -758,6 +758,174 @@ export function buildCalibrationProfile(
   };
 }
 
+export type CalibrationSubstepId =
+  | "step1_neutral"
+  | "step2a_blink"
+  | "step2b_wink_l"
+  | "step2c_wink_r"
+  | "step3a_left"
+  | "step3b_right"
+  | "step3c_up"
+  | "step3d_down"
+  | "step4a_smile"
+  | "step4b_vowel_a"
+  | "step4b_vowel_i"
+  | "step4b_vowel_u"
+  | "step4b_vowel_e"
+  | "step4b_vowel_o";
+
+export interface SubstepActivityResult {
+  /** Normalized progress toward triggering [0.0 .. 1.0]; >= 1.0 means action is detected */
+  level: number;
+  /** True when level >= 1.0 */
+  active: boolean;
+}
+
+/**
+ * Evaluates whether the user is actively performing the requested calibration move
+ * relative to their Step 1 neutral baseline (or sensible defaults before Step 1 completes).
+ */
+export function evaluateCalibrationSubstepActivity(
+  substepId: CalibrationSubstepId,
+  sample: CalibrationSample | null | undefined,
+  neutral?: Partial<NeutralStepResult> | null,
+  prevTurnSign?: number
+): SubstepActivityResult {
+  if (!sample) {
+    return { level: 0, active: false };
+  }
+
+  const bs = sample.blendshapes || {};
+  const openL = neutral?.blinkOpenL ?? 0.08;
+  const openR = neutral?.blinkOpenR ?? 0.08;
+  const neutralSqL = neutral?.neutralSquintL ?? 0.04;
+  const neutralSqR = neutral?.neutralSquintR ?? 0.04;
+  const neutralSmile = neutral?.neutralSmile ?? 0.04;
+  const neutralMouth = neutral?.neutralMouth ?? 0.02;
+  const neutralPucker = neutral?.neutralPucker ?? 0.04;
+  const neutralYaw = neutral?.neutralYaw ?? 0;
+  const neutralPitch = neutral?.neutralPitch ?? 0;
+  const neutralEyeX = neutral?.neutralEyeX ?? 0;
+  const neutralEyeY = neutral?.neutralEyeY ?? 0;
+  const noiseGate = neutral?.noiseGate ?? 0.025;
+
+  if (substepId === "step1_neutral") {
+    const level = sample.present ? 1.0 : 0.0;
+    return { level, active: level >= 1.0 };
+  }
+
+  // Voice & vowel substeps can trigger from microphone voice OR optical mouth movement
+  if (
+    substepId === "step4b_vowel_a" ||
+    substepId === "step4b_vowel_i" ||
+    substepId === "step4b_vowel_u" ||
+    substepId === "step4b_vowel_e" ||
+    substepId === "step4b_vowel_o"
+  ) {
+    const voiceThresh = Math.max(0.018, noiseGate * 1.15);
+    const voiceRatio = (sample.audioVolume || 0) / voiceThresh;
+    let opticalRatio = 0;
+    if (sample.present) {
+      const jawDelta = Math.max(0, (bs.jawOpen || 0) - neutralMouth);
+      const puckerRaw = Math.max(bs.mouthPucker || 0, (bs.mouthFunnel || 0) * 0.75);
+      const puckerDelta = Math.max(0, puckerRaw - neutralPucker);
+      const smileRaw = ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) * 0.5;
+      const smileDelta = Math.max(0, smileRaw - neutralSmile);
+      opticalRatio = Math.max(jawDelta / 0.055, puckerDelta / 0.075, smileDelta / 0.08);
+    }
+    const level = clamp(Math.max(voiceRatio, opticalRatio * 0.9), 0, 1);
+    return { level, active: level >= 1.0 };
+  }
+
+  if (!sample.present) {
+    return { level: 0, active: false };
+  }
+
+  const smileRaw = ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) * 0.5;
+  const sqL = Math.max(bs.eyeSquintLeft || 0, (bs.cheekSquintLeft || 0) * 0.85);
+  const sqR = Math.max(bs.eyeSquintRight || 0, (bs.cheekSquintRight || 0) * 0.85);
+  const fusedL = fuseBlinkScoreClient(
+    bs.eyeBlinkLeft || 0,
+    bs.earBlinkLeft,
+    sqL,
+    smileRaw,
+    bs.eyeWideLeft || 0
+  );
+  const fusedR = fuseBlinkScoreClient(
+    bs.eyeBlinkRight || 0,
+    bs.earBlinkRight,
+    sqR,
+    smileRaw,
+    bs.eyeWideRight || 0
+  );
+
+  if (substepId === "step2a_blink") {
+    const relL = Math.max(0, fusedL - openL);
+    const relR = Math.max(0, fusedR - openR);
+    const sqDeltaL = Math.max(0, sqL - neutralSqL) * 0.8;
+    const sqDeltaR = Math.max(0, sqR - neutralSqR) * 0.8;
+    const signal = Math.max(relL, relR, sqDeltaL, sqDeltaR);
+    const level = clamp(signal / 0.085, 0, 1);
+    return { level, active: level >= 1.0 };
+  }
+
+  if (substepId === "step2b_wink_l") {
+    const relL = Math.max(0, fusedL - openL);
+    const sqDeltaL = Math.max(0, sqL - neutralSqL) * 0.85;
+    const browL = (bs.browDownLeft || 0) * 0.65;
+    const signalL = Math.max(relL, sqDeltaL, browL);
+    const level = clamp(signalL / 0.065, 0, 1);
+    return { level, active: level >= 1.0 };
+  }
+
+  if (substepId === "step2c_wink_r") {
+    const relR = Math.max(0, fusedR - openR);
+    const sqDeltaR = Math.max(0, sqR - neutralSqR) * 0.85;
+    const browR = (bs.browDownRight || 0) * 0.65;
+    const signalR = Math.max(relR, sqDeltaR, browR);
+    const level = clamp(signalR / 0.065, 0, 1);
+    return { level, active: level >= 1.0 };
+  }
+
+  if (substepId === "step3a_left" || substepId === "step3b_right") {
+    const calYaw = sample.yaw - neutralYaw;
+    const gaze = extractRawGazeSample(bs);
+    const calGazeX = gaze.x - neutralEyeX;
+    // If transitioning from 3A to 3B and we know the sign of 3A, require turning toward the opposite side
+    if (substepId === "step3b_right" && prevTurnSign && prevTurnSign !== 0) {
+      const oppYaw = Math.max(0, -calYaw * Math.sign(prevTurnSign));
+      const oppGaze = Math.max(0, -calGazeX * Math.sign(prevTurnSign));
+      const level = clamp(Math.max(oppYaw / 4.5, oppGaze / 0.14), 0, 1);
+      return { level, active: level >= 1.0 };
+    }
+    const level = clamp(Math.max(Math.abs(calYaw) / 4.5, Math.abs(calGazeX) / 0.14), 0, 1);
+    return { level, active: level >= 1.0 };
+  }
+
+  if (substepId === "step3c_up" || substepId === "step3d_down") {
+    const calPitch = sample.pitch - neutralPitch;
+    const gaze = extractRawGazeSample(bs);
+    const calGazeY = gaze.y - neutralEyeY;
+    if (substepId === "step3d_down" && prevTurnSign && prevTurnSign !== 0) {
+      const oppPitch = Math.max(0, -calPitch * Math.sign(prevTurnSign));
+      const oppGaze = Math.max(0, -calGazeY * Math.sign(prevTurnSign));
+      const level = clamp(Math.max(oppPitch / 3.0, oppGaze / 0.1), 0, 1);
+      return { level, active: level >= 1.0 };
+    }
+    const level = clamp(Math.max(Math.abs(calPitch) / 3.0, Math.abs(calGazeY) / 0.1), 0, 1);
+    return { level, active: level >= 1.0 };
+  }
+
+  if (substepId === "step4a_smile") {
+    const cheekBoost = ((bs.cheekSquintLeft || 0) + (bs.cheekSquintRight || 0)) * 0.15;
+    const smileDelta = Math.max(0, smileRaw + cheekBoost - neutralSmile);
+    const level = clamp(smileDelta / 0.08, 0, 1);
+    return { level, active: level >= 1.0 };
+  }
+
+  return { level: 0, active: false };
+}
+
 /**
  * Procedural Web Audio API synthesizer cues for eyes-free / text-free guided calibration.
  */

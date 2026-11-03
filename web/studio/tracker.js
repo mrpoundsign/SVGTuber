@@ -648,6 +648,121 @@ function buildCalibrationProfile(neutral, blink, voiceSmile) {
     smileWeightR: voiceSmile.smileWeightR
   };
 }
+function evaluateCalibrationSubstepActivity(substepId, sample, neutral, prevTurnSign) {
+  if (!sample) {
+    return { level: 0, active: false };
+  }
+  const bs = sample.blendshapes || {};
+  const openL = neutral?.blinkOpenL ?? 0.08;
+  const openR = neutral?.blinkOpenR ?? 0.08;
+  const neutralSqL = neutral?.neutralSquintL ?? 0.04;
+  const neutralSqR = neutral?.neutralSquintR ?? 0.04;
+  const neutralSmile = neutral?.neutralSmile ?? 0.04;
+  const neutralMouth = neutral?.neutralMouth ?? 0.02;
+  const neutralPucker = neutral?.neutralPucker ?? 0.04;
+  const neutralYaw = neutral?.neutralYaw ?? 0;
+  const neutralPitch = neutral?.neutralPitch ?? 0;
+  const neutralEyeX = neutral?.neutralEyeX ?? 0;
+  const neutralEyeY = neutral?.neutralEyeY ?? 0;
+  const noiseGate = neutral?.noiseGate ?? 0.025;
+  if (substepId === "step1_neutral") {
+    const level = sample.present ? 1 : 0;
+    return { level, active: level >= 1 };
+  }
+  if (substepId === "step4b_vowel_a" || substepId === "step4b_vowel_i" || substepId === "step4b_vowel_u" || substepId === "step4b_vowel_e" || substepId === "step4b_vowel_o") {
+    const voiceThresh = Math.max(0.018, noiseGate * 1.15);
+    const voiceRatio = (sample.audioVolume || 0) / voiceThresh;
+    let opticalRatio = 0;
+    if (sample.present) {
+      const jawDelta = Math.max(0, (bs.jawOpen || 0) - neutralMouth);
+      const puckerRaw = Math.max(bs.mouthPucker || 0, (bs.mouthFunnel || 0) * 0.75);
+      const puckerDelta = Math.max(0, puckerRaw - neutralPucker);
+      const smileRaw2 = ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) * 0.5;
+      const smileDelta = Math.max(0, smileRaw2 - neutralSmile);
+      opticalRatio = Math.max(jawDelta / 0.055, puckerDelta / 0.075, smileDelta / 0.08);
+    }
+    const level = clamp(Math.max(voiceRatio, opticalRatio * 0.9), 0, 1);
+    return { level, active: level >= 1 };
+  }
+  if (!sample.present) {
+    return { level: 0, active: false };
+  }
+  const smileRaw = ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) * 0.5;
+  const sqL = Math.max(bs.eyeSquintLeft || 0, (bs.cheekSquintLeft || 0) * 0.85);
+  const sqR = Math.max(bs.eyeSquintRight || 0, (bs.cheekSquintRight || 0) * 0.85);
+  const fusedL = fuseBlinkScoreClient(
+    bs.eyeBlinkLeft || 0,
+    bs.earBlinkLeft,
+    sqL,
+    smileRaw,
+    bs.eyeWideLeft || 0
+  );
+  const fusedR = fuseBlinkScoreClient(
+    bs.eyeBlinkRight || 0,
+    bs.earBlinkRight,
+    sqR,
+    smileRaw,
+    bs.eyeWideRight || 0
+  );
+  if (substepId === "step2a_blink") {
+    const relL = Math.max(0, fusedL - openL);
+    const relR = Math.max(0, fusedR - openR);
+    const sqDeltaL = Math.max(0, sqL - neutralSqL) * 0.8;
+    const sqDeltaR = Math.max(0, sqR - neutralSqR) * 0.8;
+    const signal = Math.max(relL, relR, sqDeltaL, sqDeltaR);
+    const level = clamp(signal / 0.085, 0, 1);
+    return { level, active: level >= 1 };
+  }
+  if (substepId === "step2b_wink_l") {
+    const relL = Math.max(0, fusedL - openL);
+    const sqDeltaL = Math.max(0, sqL - neutralSqL) * 0.85;
+    const browL = (bs.browDownLeft || 0) * 0.65;
+    const signalL = Math.max(relL, sqDeltaL, browL);
+    const level = clamp(signalL / 0.065, 0, 1);
+    return { level, active: level >= 1 };
+  }
+  if (substepId === "step2c_wink_r") {
+    const relR = Math.max(0, fusedR - openR);
+    const sqDeltaR = Math.max(0, sqR - neutralSqR) * 0.85;
+    const browR = (bs.browDownRight || 0) * 0.65;
+    const signalR = Math.max(relR, sqDeltaR, browR);
+    const level = clamp(signalR / 0.065, 0, 1);
+    return { level, active: level >= 1 };
+  }
+  if (substepId === "step3a_left" || substepId === "step3b_right") {
+    const calYaw = sample.yaw - neutralYaw;
+    const gaze = extractRawGazeSample(bs);
+    const calGazeX = gaze.x - neutralEyeX;
+    if (substepId === "step3b_right" && prevTurnSign && prevTurnSign !== 0) {
+      const oppYaw = Math.max(0, -calYaw * Math.sign(prevTurnSign));
+      const oppGaze = Math.max(0, -calGazeX * Math.sign(prevTurnSign));
+      const level2 = clamp(Math.max(oppYaw / 4.5, oppGaze / 0.14), 0, 1);
+      return { level: level2, active: level2 >= 1 };
+    }
+    const level = clamp(Math.max(Math.abs(calYaw) / 4.5, Math.abs(calGazeX) / 0.14), 0, 1);
+    return { level, active: level >= 1 };
+  }
+  if (substepId === "step3c_up" || substepId === "step3d_down") {
+    const calPitch = sample.pitch - neutralPitch;
+    const gaze = extractRawGazeSample(bs);
+    const calGazeY = gaze.y - neutralEyeY;
+    if (substepId === "step3d_down" && prevTurnSign && prevTurnSign !== 0) {
+      const oppPitch = Math.max(0, -calPitch * Math.sign(prevTurnSign));
+      const oppGaze = Math.max(0, -calGazeY * Math.sign(prevTurnSign));
+      const level2 = clamp(Math.max(oppPitch / 3, oppGaze / 0.1), 0, 1);
+      return { level: level2, active: level2 >= 1 };
+    }
+    const level = clamp(Math.max(Math.abs(calPitch) / 3, Math.abs(calGazeY) / 0.1), 0, 1);
+    return { level, active: level >= 1 };
+  }
+  if (substepId === "step4a_smile") {
+    const cheekBoost = ((bs.cheekSquintLeft || 0) + (bs.cheekSquintRight || 0)) * 0.15;
+    const smileDelta = Math.max(0, smileRaw + cheekBoost - neutralSmile);
+    const level = clamp(smileDelta / 0.08, 0, 1);
+    return { level, active: level >= 1 };
+  }
+  return { level: 0, active: false };
+}
 function playCalibrationCue(ctx, cue) {
   if (!ctx) return;
   try {
@@ -2460,6 +2575,28 @@ function processFrame(renderUI = true) {
       if (renderUI) {
         updateAudioUI(audioState);
       }
+      const calSample = {
+        timestamp: now,
+        present: false,
+        yaw: 0,
+        pitch: 0,
+        roll: 0,
+        x: 0,
+        y: 0,
+        z: 0,
+        blendshapes: {},
+        audioVolume: audioState?.volume || 0,
+        audioPitchHz: audioState?.pitchHz || 0,
+        audioF1Hz: audioState?.f1Hz || 0,
+        audioF2Hz: audioState?.f2Hz || 0
+      };
+      ingestCalibrationSample(calSample);
+      if (calibrationChannel && !isCalibratePopout) {
+        try {
+          calibrationChannel.postMessage({ type: "sample", sample: calSample });
+        } catch {
+        }
+      }
       if (isSessionActive && socket && socket.readyState === WebSocket.OPEN) {
         const frame = {
           timestamp: now,
@@ -4237,6 +4374,9 @@ var calHudActive = document.getElementById("cal-hud-active");
 var calStepTitle = document.getElementById("cal-step-title");
 var calStepTimer = document.getElementById("cal-step-timer");
 var calStepDesc = document.getElementById("cal-step-desc");
+var calActionProgress = document.getElementById("cal-action-progress");
+var calActionStatus = document.getElementById("cal-action-status");
+var btnCalSpaceNext = document.getElementById("btn-cal-space-next");
 var calStepProgress = document.getElementById("cal-step-progress");
 var calCardSummary = document.getElementById("cal-card-summary");
 var calSumBlinkRange = document.getElementById("cal-sum-blink-range");
@@ -4248,6 +4388,9 @@ var btnCalDone = document.getElementById("btn-cal-done");
 var wizardStep = "idle";
 var currentVowelCue = void 0;
 var wizardTimerId = null;
+var latestCalSample = null;
+var cachedNeutralResult = null;
+var triggerWizardSpaceAction = null;
 var step1Samples = [];
 var step2Samples = [];
 var step2BeepTimestamps = [];
@@ -4260,6 +4403,7 @@ function ingestCalibrationSample(sample) {
     vowelCue: sample.vowelCue || currentVowelCue,
     timestamp: performance.now()
   };
+  latestCalSample = stamped;
   if (wizardStep === "step1_neutral") {
     step1Samples.push(stamped);
   } else if (wizardStep === "step2_blink") {
@@ -4332,6 +4476,7 @@ function setReticleTarget(leftPct, topPct, label, cuePulse = false, visible = tr
 function showGuidedOverlayInPage() {
   if (!guidedCalOverlay) return;
   wizardStep = "idle";
+  triggerWizardSpaceAction = null;
   if (wizardTimerId) {
     clearInterval(wizardTimerId);
     wizardTimerId = null;
@@ -4348,6 +4493,7 @@ function closeGuidedOverlay() {
     wizardTimerId = null;
   }
   wizardStep = "idle";
+  triggerWizardSpaceAction = null;
   if (document.fullscreenElement) {
     document.exitFullscreen?.().catch(() => {
     });
@@ -4375,6 +4521,181 @@ function launchGuidedCalibration(e) {
     popup.focus();
   }
 }
+var WIZARD_SUBSTEPS = [
+  {
+    id: "step1_neutral",
+    bucket: "step1_neutral",
+    title: "Step 1 of 4: Neutral Rest & Silence",
+    desc: "Look comfortably at the center ring with a relaxed face and stay quiet.",
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: "LOOK CENTER & RELAX",
+    arrowDir: null,
+    readGraceMs: 450,
+    holdMs: 2200
+  },
+  {
+    id: "step2a_blink",
+    bucket: "step2_blink",
+    title: "Step 2A of 4: Blink Both Eyes (2x)",
+    desc: "Keep looking center and blink BOTH eyes firmly twice at your own pace (or press Space).",
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: "\u{1F440} BLINK BOTH EYES",
+    arrowDir: null,
+    readGraceMs: 850,
+    holdMs: 1e3
+  },
+  {
+    id: "step2b_wink_l",
+    bucket: "step2_blink",
+    title: "Step 2B of 4: Left Eye Wink",
+    desc: "When ready, close ONLY your LEFT eye for ~1 second while keeping your Right eye open.",
+    reticleLeft: 38,
+    reticleTop: 50,
+    reticlePrompt: "\u{1F609} CLOSE LEFT EYE",
+    arrowDir: null,
+    readGraceMs: 900,
+    holdMs: 900
+  },
+  {
+    id: "step2c_wink_r",
+    bucket: "step2_blink",
+    title: "Step 2C of 4: Right Eye Wink",
+    desc: "When ready, close ONLY your RIGHT eye for ~1 second while keeping your Left eye open.",
+    reticleLeft: 62,
+    reticleTop: 50,
+    reticlePrompt: "\u{1F61C} CLOSE RIGHT EYE",
+    arrowDir: null,
+    readGraceMs: 900,
+    holdMs: 900
+  },
+  {
+    id: "step3a_left",
+    bucket: "step3_turn",
+    title: "Step 3A of 4: Turn Head Left",
+    desc: "Turn your head & look naturally LEFT (e.g. side monitor or off-screen). Hold until the chime!",
+    reticleLeft: 42,
+    reticleTop: 50,
+    reticlePrompt: "TURN HEAD & LOOK LEFT",
+    arrowDir: "left",
+    readGraceMs: 850,
+    holdMs: 900
+  },
+  {
+    id: "step3b_right",
+    bucket: "step3_turn",
+    title: "Step 3B of 4: Turn Head Right",
+    desc: "Turn your head & look naturally RIGHT (e.g. side monitor or off-screen). Hold until the chime!",
+    reticleLeft: 58,
+    reticleTop: 50,
+    reticlePrompt: "TURN HEAD & LOOK RIGHT",
+    arrowDir: "right",
+    readGraceMs: 900,
+    holdMs: 900
+  },
+  {
+    id: "step3c_up",
+    bucket: "step3_turn",
+    title: "Step 3C of 4: Tilt Head Up",
+    desc: "Tilt your head & look naturally UP (above your monitor). Hold until the chime!",
+    reticleLeft: 50,
+    reticleTop: 42,
+    reticlePrompt: "TILT HEAD & LOOK UP",
+    arrowDir: "up",
+    readGraceMs: 850,
+    holdMs: 850
+  },
+  {
+    id: "step3d_down",
+    bucket: "step3_turn",
+    title: "Step 3D of 4: Tilt Head Down",
+    desc: "Tilt your head & look naturally DOWN (toward your keyboard or desk). Hold until the chime!",
+    reticleLeft: 50,
+    reticleTop: 58,
+    reticlePrompt: "TILT HEAD & LOOK DOWN",
+    arrowDir: "down",
+    readGraceMs: 850,
+    holdMs: 850
+  },
+  {
+    id: "step4a_smile",
+    bucket: "step4_voice",
+    title: "Step 4A of 4: Big Smile (No Speaking Needed)",
+    desc: "Look center and hold a big, comfortable smile so we can balance your mouth corners and cheeks.",
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: "\u{1F604} HOLD A BIG SMILE",
+    arrowDir: null,
+    readGraceMs: 850,
+    holdMs: 1100
+  },
+  {
+    id: "step4b_vowel_a",
+    bucket: "step4_voice",
+    title: "Step 4B of 4: Voice & Vowel Calibration (1/5)",
+    desc: 'Say "AH" (as in father) clearly at your normal speaking volume and hold briefly.',
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: '\u{1F5E3}\uFE0F SAY "AH"',
+    arrowDir: null,
+    readGraceMs: 750,
+    holdMs: 750,
+    vowelCue: "A"
+  },
+  {
+    id: "step4b_vowel_i",
+    bucket: "step4_voice",
+    title: "Step 4B of 4: Voice & Vowel Calibration (2/5)",
+    desc: 'Say "EE" (as in see) clearly at your normal speaking volume and hold briefly.',
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: '\u{1F5E3}\uFE0F SAY "EE"',
+    arrowDir: null,
+    readGraceMs: 700,
+    holdMs: 750,
+    vowelCue: "I"
+  },
+  {
+    id: "step4b_vowel_u",
+    bucket: "step4_voice",
+    title: "Step 4B of 4: Voice & Vowel Calibration (3/5)",
+    desc: 'Say "OO" (as in boot) clearly at your normal speaking volume and hold briefly.',
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: '\u{1F5E3}\uFE0F SAY "OO"',
+    arrowDir: null,
+    readGraceMs: 700,
+    holdMs: 750,
+    vowelCue: "U"
+  },
+  {
+    id: "step4b_vowel_e",
+    bucket: "step4_voice",
+    title: "Step 4B of 4: Voice & Vowel Calibration (4/5)",
+    desc: 'Say "EH" (as in bed) clearly at your normal speaking volume and hold briefly.',
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: '\u{1F5E3}\uFE0F SAY "EH"',
+    arrowDir: null,
+    readGraceMs: 700,
+    holdMs: 750,
+    vowelCue: "E"
+  },
+  {
+    id: "step4b_vowel_o",
+    bucket: "step4_voice",
+    title: "Step 4B of 4: Voice & Vowel Calibration (5/5)",
+    desc: 'Say "OH" (as in go) clearly at your normal speaking volume and hold briefly.',
+    reticleLeft: 50,
+    reticleTop: 50,
+    reticlePrompt: '\u{1F5E3}\uFE0F SAY "OH"',
+    arrowDir: null,
+    readGraceMs: 700,
+    holdMs: 750,
+    vowelCue: "O"
+  }
+];
 async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
   if (requestFullscreenFirst && !document.fullscreenElement) {
     try {
@@ -4405,188 +4726,207 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
   step2WinkTimestamps = [];
   step3Samples = [];
   step4Samples = [];
+  cachedNeutralResult = null;
   if (calCardIntro) calCardIntro.style.display = "none";
   if (calCardSummary) calCardSummary.style.display = "none";
   if (calHudActive) calHudActive.style.display = "flex";
-  const step1Duration = 3e3;
-  const step2Duration = 6500;
-  const step3Duration = 7200;
-  const step4Duration = 8e3;
-  const totalDuration = step1Duration + step2Duration + step3Duration + step4Duration;
-  const startTime = performance.now();
-  let lastBeepMarker = -1;
-  wizardStep = "step1_neutral";
-  currentVowelCue = void 0;
-  setReticleTarget(50, 50, "LOOK CENTER", false, true);
-  playCalibrationCue(ctx, "tick");
-  if (wizardTimerId) clearInterval(wizardTimerId);
-  wizardTimerId = setInterval(() => {
-    const elapsed = performance.now() - startTime;
-    const progressPct = Math.min(100, Math.round(elapsed / totalDuration * 100));
-    if (calStepProgress) calStepProgress.style.width = `${progressPct}%`;
-    if (elapsed < step1Duration) {
-      wizardStep = "step1_neutral";
-      const rem = ((step1Duration - elapsed) / 1e3).toFixed(1);
-      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
-      if (calStepTitle) calStepTitle.textContent = "Step 1 of 4: Neutral Rest & Silence";
-      if (calStepDesc)
-        calStepDesc.textContent = "Look comfortably at the center ring with a relaxed face and stay quiet.";
-      setReticleTarget(50, 50, `HOLD CENTER (${Math.ceil((step1Duration - elapsed) / 1e3)}s)`, false, true);
-      const secIdx = Math.floor(elapsed / 1e3);
-      if (secIdx > 0 && secIdx !== lastBeepMarker) {
-        lastBeepMarker = secIdx;
-        playCalibrationCue(ctx, "tick");
-      }
-    } else if (elapsed < step1Duration + step2Duration) {
-      if (wizardStep !== "step2_blink") {
-        wizardStep = "step2_blink";
-        lastBeepMarker = -1;
-        playCalibrationCue(ctx, "step_done");
-      }
-      const stepElapsed = elapsed - step1Duration;
-      const rem = ((step2Duration - stepElapsed) / 1e3).toFixed(1);
-      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
-      if (stepElapsed < 3100) {
-        if (calStepTitle) calStepTitle.textContent = "Step 2A of 4: 2 Audio-Cued Blinks (Both Eyes)";
-        if (calStepDesc)
-          calStepDesc.textContent = "Keep looking center. Blink BOTH eyes firmly on Beep 1 and Beep 2.";
-        const biCueTimes = [700, 1950];
-        let isPulsing = false;
-        biCueTimes.forEach((cueMs, idx) => {
-          if (stepElapsed >= cueMs && lastBeepMarker < idx + 10) {
-            lastBeepMarker = idx + 10;
-            step2BeepTimestamps.push(performance.now());
-            playCalibrationCue(ctx, "beep");
-          }
-          if (stepElapsed >= cueMs && stepElapsed <= cueMs + 500) {
-            isPulsing = true;
-          }
-        });
-        setReticleTarget(50, 50, isPulsing ? "BLINK BOTH EYES!" : "GET READY TO BLINK", isPulsing, true);
-      } else if (stepElapsed < 4800) {
-        if (calStepTitle) calStepTitle.textContent = "Step 2B of 4: Left Eye Wink Calibration";
-        if (calStepDesc)
-          calStepDesc.textContent = "On the BEEP, close ONLY your LEFT eye for ~1 second while keeping your Right eye open.";
-        if (stepElapsed >= 3400 && lastBeepMarker < 12) {
-          lastBeepMarker = 12;
-          step2WinkTimestamps.push(performance.now());
-          playCalibrationCue(ctx, "beep");
-        }
-        const isPulsing = stepElapsed >= 3400 && stepElapsed <= 4400;
-        setReticleTarget(
-          38,
-          50,
-          isPulsing ? "\u{1F609} CLOSE LEFT EYE NOW!" : "GET READY: LEFT EYE",
-          isPulsing,
-          true
-        );
-      } else {
-        if (calStepTitle) calStepTitle.textContent = "Step 2C of 4: Right Eye Wink Calibration";
-        if (calStepDesc)
-          calStepDesc.textContent = "On the BEEP, close ONLY your RIGHT eye for ~1 second while keeping your Left eye open.";
-        if (stepElapsed >= 5e3 && lastBeepMarker < 13) {
-          lastBeepMarker = 13;
-          step2WinkTimestamps.push(performance.now());
-          playCalibrationCue(ctx, "beep");
-        }
-        const isPulsing = stepElapsed >= 5e3 && stepElapsed <= 6e3;
-        setReticleTarget(
-          62,
-          50,
-          isPulsing ? "\u{1F61C} CLOSE RIGHT EYE NOW!" : "GET READY: RIGHT EYE",
-          isPulsing,
-          true
-        );
-      }
-    } else if (elapsed < step1Duration + step2Duration + step3Duration) {
-      if (wizardStep !== "step3_turn") {
-        wizardStep = "step3_turn";
-        lastBeepMarker = -1;
-        playCalibrationCue(ctx, "step_done");
-      }
-      const stepElapsed = elapsed - (step1Duration + step2Duration);
-      const rem = ((step3Duration - stepElapsed) / 1e3).toFixed(1);
-      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
-      if (calStepTitle)
-        calStepTitle.textContent = "Step 3 of 4: Directional Head Turns (Off-Screen / Side Monitor)";
-      if (calStepDesc)
-        calStepDesc.textContent = "Turn your head & look naturally in the arrow's direction (e.g. side monitor or room). Listen for the BEEP to switch!";
-      if (stepElapsed < 1800) {
-        if (lastBeepMarker < 20) {
-          lastBeepMarker = 20;
-          playCalibrationCue(ctx, "beep");
-        }
-        setReticleTarget(44, 50, "TURN HEAD & LOOK LEFT (Side Monitor / Off-Screen)", true, true, "left");
-      } else if (stepElapsed < 3600) {
-        if (lastBeepMarker < 21) {
-          lastBeepMarker = 21;
-          playCalibrationCue(ctx, "beep");
-        }
-        setReticleTarget(56, 50, "TURN HEAD & LOOK RIGHT (Side Monitor / Off-Screen)", true, true, "right");
-      } else if (stepElapsed < 5400) {
-        if (lastBeepMarker < 22) {
-          lastBeepMarker = 22;
-          playCalibrationCue(ctx, "beep");
-        }
-        setReticleTarget(50, 44, "TILT HEAD & LOOK UP (Above Monitor)", true, true, "up");
-      } else {
-        if (lastBeepMarker < 23) {
-          lastBeepMarker = 23;
-          playCalibrationCue(ctx, "beep");
-        }
-        setReticleTarget(50, 56, "TILT HEAD & LOOK DOWN (Desk / Keyboard)", true, true, "down");
-      }
-    } else if (elapsed < totalDuration) {
-      if (wizardStep !== "step4_voice") {
-        wizardStep = "step4_voice";
-        currentVowelCue = void 0;
-        lastBeepMarker = -1;
-        playCalibrationCue(ctx, "step_done");
-      }
-      const stepElapsed = elapsed - (step1Duration + step2Duration + step3Duration);
-      const rem = ((step4Duration - stepElapsed) / 1e3).toFixed(1);
-      if (calStepTimer) calStepTimer.textContent = `${rem}s`;
-      if (stepElapsed < 2500) {
-        currentVowelCue = void 0;
-        if (calStepTitle) calStepTitle.textContent = "Step 4A of 4: Big Smile (No Speaking Needed)";
-        if (calStepDesc)
-          calStepDesc.textContent = "Look center and hold a big, comfortable smile so we can balance your mouth corners and cheeks.";
-        if (stepElapsed >= 200 && lastBeepMarker < 30) {
-          lastBeepMarker = 30;
-          playCalibrationCue(ctx, "beep");
-        }
-        setReticleTarget(50, 50, "\u{1F604} HOLD A BIG SMILE", true, true);
-      } else {
-        const vowelElapsed = stepElapsed - 2500;
-        const vowelPrompts = [
-          { key: "A", sound: "AH" },
-          { key: "I", sound: "EE" },
-          { key: "U", sound: "OO" },
-          { key: "E", sound: "EH" },
-          { key: "O", sound: "OH" }
-        ];
-        const vIdx = Math.min(4, Math.floor(vowelElapsed / 1100));
-        const activeVowel = vowelPrompts[vIdx];
-        currentVowelCue = activeVowel.key;
-        if (lastBeepMarker < 31 + vIdx) {
-          lastBeepMarker = 31 + vIdx;
-          playCalibrationCue(ctx, vIdx === 0 ? "beep" : "tick");
-        }
-        if (calStepTitle)
-          calStepTitle.textContent = `Step 4B of 4: Voice & Vowel Calibration (${vIdx + 1}/5)`;
-        if (calStepDesc)
-          calStepDesc.textContent = 'Say each sound clearly at your normal speaking volume: "AH" \u2192 "EE" \u2192 "OO" \u2192 "EH" \u2192 "OH"';
-        setReticleTarget(50, 50, `\u{1F5E3}\uFE0F SAY "${activeVowel.sound}"`, true, true);
-      }
+  const tickMs = 50;
+  let substepIndex = 0;
+  let substepStartTime = performance.now();
+  let substepHoldAccumMs = 0;
+  let readyCuePlayed = false;
+  let spaceForcedCapture = false;
+  let recordedWinkTimestampForSubstep = false;
+  let blinkCount = 0;
+  let lastBlinkDetectTime = 0;
+  let postBlinkHoldMs = 0;
+  let step3LeftYawSign = 0;
+  let step3UpPitchSign = 0;
+  const applySubstepMeta = (idx) => {
+    const sub = WIZARD_SUBSTEPS[idx];
+    wizardStep = sub.bucket;
+    currentVowelCue = sub.vowelCue;
+    substepStartTime = performance.now();
+    substepHoldAccumMs = 0;
+    readyCuePlayed = false;
+    spaceForcedCapture = false;
+    recordedWinkTimestampForSubstep = false;
+    blinkCount = 0;
+    lastBlinkDetectTime = 0;
+    postBlinkHoldMs = 0;
+    if (calStepTitle) calStepTitle.textContent = sub.title;
+    if (calStepDesc) calStepDesc.textContent = sub.desc;
+    if (calStepTimer) calStepTimer.textContent = "Read prompt...";
+    if (calActionProgress) calActionProgress.style.width = "0%";
+    if (calActionStatus) {
+      calActionStatus.textContent = "\u{1F4D6} Read prompt \u2014 perform move when ready, or press Space";
+    }
+    const overallPct = Math.round(idx / WIZARD_SUBSTEPS.length * 100);
+    if (calStepProgress) calStepProgress.style.width = `${overallPct}%`;
+    setReticleTarget(sub.reticleLeft, sub.reticleTop, sub.reticlePrompt, false, true, sub.arrowDir);
+  };
+  const advanceToNextSubstep = () => {
+    const finishedSub = WIZARD_SUBSTEPS[substepIndex];
+    if (finishedSub.id === "step1_neutral") {
+      cachedNeutralResult = analyzeNeutralStep(step1Samples);
+    }
+    const isVowelTransition = finishedSub.vowelCue !== void 0 && substepIndex + 1 < WIZARD_SUBSTEPS.length && WIZARD_SUBSTEPS[substepIndex + 1].vowelCue !== void 0;
+    if (substepIndex + 1 < WIZARD_SUBSTEPS.length) {
+      playCalibrationCue(ctx, isVowelTransition ? "tick" : "step_done");
+      substepIndex++;
+      applySubstepMeta(substepIndex);
     } else {
       currentVowelCue = void 0;
-      clearInterval(wizardTimerId);
-      wizardTimerId = null;
+      triggerWizardSpaceAction = null;
+      if (wizardTimerId) {
+        clearInterval(wizardTimerId);
+        wizardTimerId = null;
+      }
       wizardStep = "summary";
+      if (calStepProgress) calStepProgress.style.width = "100%";
       playCalibrationCue(ctx, "complete");
       finalizeGuidedCalibration();
     }
-  }, 50);
+  };
+  triggerWizardSpaceAction = () => {
+    const sub = WIZARD_SUBSTEPS[substepIndex];
+    if (!sub) return;
+    const now = performance.now();
+    if (sub.id === "step2a_blink") {
+      step2BeepTimestamps.push(now - 100);
+      blinkCount++;
+      lastBlinkDetectTime = now;
+      playCalibrationCue(ctx, "tick");
+      if (blinkCount >= 2) {
+        advanceToNextSubstep();
+      }
+      return;
+    }
+    if (!spaceForcedCapture && substepHoldAccumMs < sub.holdMs * 0.4) {
+      spaceForcedCapture = true;
+      substepStartTime = now - sub.readGraceMs - 10;
+      playCalibrationCue(ctx, "beep");
+    } else {
+      if ((sub.id === "step2b_wink_l" || sub.id === "step2c_wink_r") && !recordedWinkTimestampForSubstep) {
+        step2WinkTimestamps.push(now - 500);
+        recordedWinkTimestampForSubstep = true;
+      }
+      advanceToNextSubstep();
+    }
+  };
+  applySubstepMeta(0);
+  playCalibrationCue(ctx, "tick");
+  if (wizardTimerId) clearInterval(wizardTimerId);
+  wizardTimerId = setInterval(() => {
+    const sub = WIZARD_SUBSTEPS[substepIndex];
+    if (!sub) return;
+    const now = performance.now();
+    const subElapsed = now - substepStartTime;
+    if (subElapsed < sub.readGraceMs && !spaceForcedCapture) {
+      if (calStepTimer) calStepTimer.textContent = "Get Ready...";
+      if (calActionProgress) calActionProgress.style.width = "0%";
+      if (calActionStatus) {
+        calActionStatus.textContent = "\u{1F4D6} Take a moment to read the prompt (or press Space when ready)...";
+      }
+      setReticleTarget(sub.reticleLeft, sub.reticleTop, sub.reticlePrompt, false, true, sub.arrowDir);
+      return;
+    }
+    if (!readyCuePlayed) {
+      readyCuePlayed = true;
+      playCalibrationCue(ctx, "beep");
+    }
+    const prevTurnSign = sub.id === "step3b_right" ? step3LeftYawSign : sub.id === "step3d_down" ? step3UpPitchSign : 0;
+    const activity = evaluateCalibrationSubstepActivity(
+      sub.id,
+      latestCalSample,
+      cachedNeutralResult,
+      prevTurnSign
+    );
+    if (sub.id === "step2a_blink") {
+      if (activity.active && now - lastBlinkDetectTime >= 500 && blinkCount < 2) {
+        lastBlinkDetectTime = now;
+        step2BeepTimestamps.push(now - 180);
+        blinkCount++;
+        playCalibrationCue(ctx, "tick");
+      }
+      const pct = Math.min(100, Math.round(blinkCount / 2 * 100 + activity.level * 25));
+      if (calActionProgress) calActionProgress.style.width = `${pct}%`;
+      if (calStepTimer) calStepTimer.textContent = `Blink ${Math.min(2, blinkCount + 1)} of 2`;
+      if (calActionStatus) {
+        calActionStatus.textContent = blinkCount === 0 ? "\u23F3 Waiting for Blink 1 of 2 \u2014 blink both eyes firmly (or press Space)" : blinkCount === 1 ? "\u{1F7E2} Got Blink 1! Blink both eyes one more time (or press Space)" : "\u2713 Both blinks captured!";
+      }
+      setReticleTarget(
+        sub.reticleLeft,
+        sub.reticleTop,
+        blinkCount >= 2 ? "\u2713 BLINKS CAPTURED!" : `\u{1F440} BLINK BOTH EYES (${blinkCount + 1}/2)`,
+        activity.active,
+        true,
+        null
+      );
+      if (blinkCount >= 2) {
+        postBlinkHoldMs += tickMs;
+        if (postBlinkHoldMs >= 350) {
+          advanceToNextSubstep();
+        }
+      }
+      return;
+    }
+    const isCapturing = spaceForcedCapture || activity.active || substepHoldAccumMs > 0 && activity.level >= 0.55;
+    if (isCapturing) {
+      substepHoldAccumMs += tickMs;
+      if ((sub.id === "step2b_wink_l" || sub.id === "step2c_wink_r") && !recordedWinkTimestampForSubstep) {
+        step2WinkTimestamps.push(now - 100);
+        recordedWinkTimestampForSubstep = true;
+      }
+      if (sub.id === "step3a_left" && latestCalSample?.present) {
+        const dy = latestCalSample.yaw - (cachedNeutralResult?.neutralYaw ?? 0);
+        if (Math.abs(dy) >= 2) step3LeftYawSign = Math.sign(dy);
+      }
+      if (sub.id === "step3c_up" && latestCalSample?.present) {
+        const dp = latestCalSample.pitch - (cachedNeutralResult?.neutralPitch ?? 0);
+        if (Math.abs(dp) >= 1.5) step3UpPitchSign = Math.sign(dp);
+      }
+    }
+    const holdPct = Math.min(100, Math.round(substepHoldAccumMs / sub.holdMs * 100));
+    const displayBarPct = isCapturing ? Math.max(holdPct, Math.round(activity.level * 30)) : Math.round(activity.level * 40);
+    if (calActionProgress) calActionProgress.style.width = `${displayBarPct}%`;
+    const overallPct = Math.min(
+      100,
+      Math.round((substepIndex + substepHoldAccumMs / sub.holdMs) / WIZARD_SUBSTEPS.length * 100)
+    );
+    if (calStepProgress) calStepProgress.style.width = `${overallPct}%`;
+    if (isCapturing) {
+      const remSec = Math.max(0, (sub.holdMs - substepHoldAccumMs) / 1e3).toFixed(1);
+      if (calStepTimer) calStepTimer.textContent = `Hold ${remSec}s (${holdPct}%)`;
+      if (calActionStatus) {
+        calActionStatus.textContent = `\u{1F7E2} Detecting! Keep holding (${holdPct}%) \u2014 or press Space to finish step`;
+      }
+      setReticleTarget(
+        sub.reticleLeft,
+        sub.reticleTop,
+        `${sub.reticlePrompt} (${holdPct}%)`,
+        true,
+        true,
+        sub.arrowDir
+      );
+    } else {
+      if (calStepTimer) calStepTimer.textContent = "Waiting for you...";
+      if (calActionStatus) {
+        calActionStatus.textContent = "\u23F3 Waiting for you to perform the move \u2014 or press [Space] to capture now";
+      }
+      setReticleTarget(
+        sub.reticleLeft,
+        sub.reticleTop,
+        sub.reticlePrompt,
+        false,
+        true,
+        sub.arrowDir
+      );
+    }
+    if (substepHoldAccumMs >= sub.holdMs) {
+      advanceToNextSubstep();
+    }
+  }, tickMs);
 }
 async function finalizeGuidedCalibration() {
   setReticleTarget(50, 50, "CALIBRATED \u2713", false, false);
@@ -4702,6 +5042,27 @@ if (btnCalRerun) {
     runGuidedCalibrationSequence(false);
   });
 }
+if (btnCalSpaceNext) {
+  btnCalSpaceNext.addEventListener("click", () => {
+    if (triggerWizardSpaceAction) {
+      triggerWizardSpaceAction();
+    }
+  });
+}
+window.addEventListener("keydown", (e) => {
+  if (!guidedCalOverlay || guidedCalOverlay.style.display === "none") return;
+  if (e.code === "Space" || e.key === " ") {
+    if (triggerWizardSpaceAction && wizardStep !== "idle" && wizardStep !== "summary") {
+      e.preventDefault();
+      e.stopPropagation();
+      triggerWizardSpaceAction();
+    } else if (wizardStep === "idle") {
+      e.preventDefault();
+      e.stopPropagation();
+      runGuidedCalibrationSequence(false);
+    }
+  }
+});
 if (btnCalClose) {
   btnCalClose.addEventListener("click", closeGuidedOverlay);
 }

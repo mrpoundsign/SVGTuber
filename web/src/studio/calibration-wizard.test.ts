@@ -5,6 +5,7 @@ import {
   analyzeBeepBlinkStep,
   analyzeHeadTurnStep,
   analyzeVoiceAndSmileStep,
+  evaluateCalibrationSubstepActivity,
   fuseBlinkScoreClient,
   remapBlinkClient,
   type CalibrationSample,
@@ -170,5 +171,56 @@ describe("Guided Calibration Wizard Analyzers", () => {
     const remappedCrossR = remapBlinkClient(0.30, 0.20, res.blinkClosedR);
     assert.ok(res.blinkThresholdL > remappedCrossL);
     assert.ok(res.blinkThresholdR > remappedCrossR);
+  });
+
+  test("evaluateCalibrationSubstepActivity detects blinks, winks, directional head turns, smiles, and vowels", () => {
+    const neutral = {
+      neutralYaw: 0,
+      neutralPitch: 0,
+      blinkOpenL: 0.12,
+      blinkOpenR: 0.12,
+      neutralSquintL: 0.04,
+      neutralSquintR: 0.04,
+      neutralSmile: 0.03,
+      neutralMouth: 0.02,
+      noiseGate: 0.03,
+    };
+
+    // Resting sample does not falsely trigger active steps
+    const resting = makeSample({
+      yaw: 0.5,
+      pitch: -0.4,
+      blendshapes: { eyeBlinkLeft: 0.12, eyeBlinkRight: 0.12, mouthSmileLeft: 0.03, mouthSmileRight: 0.03 },
+      audioVolume: 0.01,
+    });
+    assert.equal(evaluateCalibrationSubstepActivity("step1_neutral", resting, neutral).active, true);
+    assert.equal(evaluateCalibrationSubstepActivity("step2a_blink", resting, neutral).active, false);
+    assert.equal(evaluateCalibrationSubstepActivity("step2b_wink_l", resting, neutral).active, false);
+    assert.equal(evaluateCalibrationSubstepActivity("step3a_left", resting, neutral).active, false);
+    assert.equal(evaluateCalibrationSubstepActivity("step4a_smile", resting, neutral).active, false);
+    assert.equal(evaluateCalibrationSubstepActivity("step4b_vowel_a", resting, neutral).active, false);
+
+    // Left wink triggers step2b_wink_l
+    const leftWink = makeSample({
+      blendshapes: { eyeBlinkLeft: 0.24, eyeBlinkRight: 0.12 },
+    });
+    assert.equal(evaluateCalibrationSubstepActivity("step2b_wink_l", leftWink, neutral).active, true);
+
+    // Head turn left (-8 deg yaw) triggers step3a_left, and opposite (+8 deg yaw) triggers step3b_right
+    const turnLeft = makeSample({ yaw: -8.0 });
+    const turnRight = makeSample({ yaw: 8.0 });
+    assert.equal(evaluateCalibrationSubstepActivity("step3a_left", turnLeft, neutral).active, true);
+    assert.equal(evaluateCalibrationSubstepActivity("step3b_right", turnLeft, neutral, -1).active, false);
+    assert.equal(evaluateCalibrationSubstepActivity("step3b_right", turnRight, neutral, -1).active, true);
+
+    // Smile triggers step4a_smile
+    const smiling = makeSample({
+      blendshapes: { mouthSmileLeft: 0.35, mouthSmileRight: 0.35 },
+    });
+    assert.equal(evaluateCalibrationSubstepActivity("step4a_smile", smiling, neutral).active, true);
+
+    // Voiced vowel triggers step4b_vowel_a
+    const speaking = makeSample({ audioVolume: 0.15 });
+    assert.equal(evaluateCalibrationSubstepActivity("step4b_vowel_a", speaking, neutral).active, true);
   });
 });

@@ -140,7 +140,14 @@ func (s *Server) Start() error {
 	if fi, err := os.Stat("web/overlay"); err == nil && fi.IsDir() {
 		overlayFS = os.DirFS("web/overlay")
 		studioFS = os.DirFS("web/studio")
-	} else {
+	} else if fi, err := os.Stat("../web/overlay"); err == nil && fi.IsDir() {
+		if _, modErr := os.Stat("../go.mod"); modErr == nil {
+			overlayFS = os.DirFS("../web/overlay")
+			studioFS = os.DirFS("../web/studio")
+		}
+	}
+	if overlayFS == nil || studioFS == nil {
+		var err error
 		overlayFS, err = fs.Sub(web.StaticFS, "overlay")
 		if err != nil {
 			return fmt.Errorf("loading overlay static assets: %w", err)

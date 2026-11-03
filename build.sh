@@ -56,6 +56,10 @@ build_binary_windows() {
     rm -f "$rc_file"
   fi
 
+  if [ -f "build/svgtuber.exe" ]; then
+    rm -f "build/svgtuber.exe" 2>/dev/null || mv -f "build/svgtuber.exe" "build/svgtuber.exe.old" 2>/dev/null || true
+  fi
+
   if command -v x86_64-w64-mingw32-gcc &>/dev/null; then
     echo "==> Building svgtuber.exe (Windows amd64, Fyne Mini UI CGO_ENABLED=1 + MinGW)..."
     CC=x86_64-w64-mingw32-gcc GOOS=windows GOARCH=amd64 CGO_ENABLED=1 \
