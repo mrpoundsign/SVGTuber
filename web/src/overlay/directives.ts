@@ -75,6 +75,29 @@ export function evaluateCondition(
         if (lower === "speaking" || lower === "isspeaking") {
           return String(Boolean(getParam("isSpeaking", false)));
         }
+        if (lower === "cheekpuff" || lower === "ischeekpuff") {
+          const b = getParam("isCheekPuff", null);
+          return String(b !== null ? Boolean(b) : getParam("cheekPuff", 0) >= 0.35);
+        }
+        if (lower === "mouthpucker" || lower === "ismouthpucker" || lower === "pucker" || lower === "ispucker") {
+          const b = getParam("isMouthPucker", null);
+          return String(b !== null ? Boolean(b) : getParam("mouthPucker", 0) >= 0.35);
+        }
+        if (lower === "tongueout" || lower === "istongueout") {
+          const b = getParam("isTongueOut", null);
+          return String(b !== null ? Boolean(b) : getParam("tongueOut", 0) >= 0.35);
+        }
+        if (lower === "frown" || lower === "isfrowning" || lower === "isfrown") {
+          const b = getParam("isFrowning", null);
+          return String(b !== null ? Boolean(b) : getParam("frown", 0) >= 0.35);
+        }
+        if (lower === "nosesneer" || lower === "issneering" || lower === "sneer") {
+          const b = getParam("isSneering", null);
+          return String(b !== null ? Boolean(b) : getParam("noseSneer", 0) >= 0.35);
+        }
+        if (lower === "eyesquint" || lower === "iseyesquint") {
+          return String(getParam("eyeSquint", 0) >= 0.35);
+        }
       }
 
       const val = getParam(match, null);

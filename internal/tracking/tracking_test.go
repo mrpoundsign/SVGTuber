@@ -921,6 +921,91 @@ func TestEngine_WinkHoldResistsGlareFlutter(t *testing.T) {
 	}
 }
 
+func TestEngine_ARKitExpressiveDetectionsAndCalibration(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	// Simulate calibrated neutral offsets and boom-mic right-side occlusion (SmileWeightL=0.75, SmileWeightR=0.25)
+	_ = cfgMgr.SetCalibration(config.CalibrationProfile{
+		Calibrated:       true,
+		NeutralPucker:    0.10,
+		NeutralFrown:     0.08,
+		NeutralCheekPuff: 0.05,
+		NeutralNoseSneer: 0.04,
+		NeutralJawX:      0.02,
+		NeutralSquintL:   0.06,
+		NeutralSquintR:   0.06,
+		SmileWeightL:     0.75,
+		SmileWeightR:     0.25,
+	})
+
+	eng := NewEngine(cfgMgr)
+
+	// 1. Resting frame at neutral baseline should produce 0.0 for all expressive channels
+	rest := eng.Process(FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"mouthPucker":     0.10,
+			"mouthFrownLeft":  0.08,
+			"mouthFrownRight": 0.08,
+			"cheekPuff":       0.05,
+			"noseSneerLeft":   0.04,
+			"noseSneerRight":  0.04,
+			"jawRight":        0.02,
+			"eyeSquintLeft":   0.06,
+			"eyeSquintRight":  0.06,
+		},
+	})
+	if rest.MouthPucker > 0.01 || rest.Frown > 0.01 || rest.CheekPuff > 0.01 || rest.NoseSneer > 0.01 || math.Abs(rest.JawX) > 0.01 {
+		t.Errorf("Expected calibrated resting expressions to tare to 0, got Pucker=%v Frown=%v Puff=%v Sneer=%v JawX=%v",
+			rest.MouthPucker, rest.Frown, rest.CheekPuff, rest.NoseSneer, rest.JawX)
+	}
+
+	// 2. Active expressive frame burst (including boom-mic shadowed right frown corner)
+	var active ParamFrame
+	for i := 1; i <= 12; i++ {
+		active = eng.Process(FaceFrame{
+			Timestamp: float64(1000 + i*33),
+			Present:   true,
+			Blendshapes: map[string]float64{
+				"cheekPuff":       0.65,
+				"mouthPucker":     0.72,
+				"tongueOut":       0.80,
+				"mouthFrownLeft":  0.64, // Clear side
+				"mouthFrownRight": 0.16, // Shadowed by boom mic
+				"noseSneerLeft":   0.58,
+				"noseSneerRight":  0.14,
+				"jawRight":        0.47,
+				"jawLeft":         0.05,
+				"eyeSquintLeft":   0.56,
+				"eyeSquintRight":  0.56,
+			},
+		})
+	}
+	if !active.IsCheekPuff || !active.IsMouthPucker || !active.IsTongueOut || !active.IsFrowning || !active.IsSneering {
+		t.Errorf("Expected expressive booleans to trigger, got Puff=%v Pucker=%v Tongue=%v Frown=%v Sneer=%v",
+			active.IsCheekPuff, active.IsMouthPucker, active.IsTongueOut, active.IsFrowning, active.IsSneering)
+	}
+	if active.JawX < 0.30 || active.EyeSquint < 0.40 {
+		t.Errorf("Expected JawX > 0.30 and EyeSquint > 0.40, got JawX=%v EyeSquint=%v", active.JawX, active.EyeSquint)
+	}
+}
+
+func TestFuseBlinkScoreWithSquint_SuppressesSmileFalseBlink(t *testing.T) {
+	// Big smile/laugh pushes cheeks up: blendshapeBlink spikes to 0.52, eyeSquint=0.45, smile=0.65,
+	// while 3D geometric EAR shows the eye is actually open (earBlink=0.14).
+	fused := FuseBlinkScoreWithSquint(0.52, 0.14, true, 0.45, 0.65)
+	if fused >= 0.30 {
+		t.Errorf("Expected 3D EAR to suppress smile-induced cheek blink spike (0.52 -> <0.30), got %v", fused)
+	}
+}
+
+
 
 
 

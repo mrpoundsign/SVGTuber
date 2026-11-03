@@ -10,7 +10,12 @@ import {
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 import type { AudioState, AccessoryConfig, CalibrationProfile, FaceFrame } from "../shared/types.ts";
-import { extractEulerAngles, computeEyeAspectRatios } from "./pose.ts";
+import {
+  extractEulerAngles,
+  computeEyeAspectRatios,
+  computeMouthGeometry,
+  evaluateOpticalTongue,
+} from "./pose.ts";
 import {
   analyzeNeutralStep,
   analyzeBeepBlinkStep,
@@ -19,6 +24,7 @@ import {
   buildCalibrationProfile,
   fuseBlinkScoreClient,
   remapBlinkClient,
+  extractRawFrownClient,
   playCalibrationCue,
   type CalibrationSample,
 } from "./calibration-wizard.ts";
@@ -118,9 +124,11 @@ const valVuMeter = document.getElementById("val-vu-meter") as HTMLElement | null
 const gaugeYaw = document.getElementById("gauge-yaw") as HTMLElement | null;
 const gaugePitch = document.getElementById("gauge-pitch") as HTMLElement | null;
 const gaugeRoll = document.getElementById("gauge-roll") as HTMLElement | null;
+const gaugeDepthZ = document.getElementById("gauge-depth-z") as HTMLElement | null;
 const valYaw = document.getElementById("val-yaw") as HTMLElement | null;
 const valPitch = document.getElementById("val-pitch") as HTMLElement | null;
 const valRoll = document.getElementById("val-roll") as HTMLElement | null;
+const valDepthZ = document.getElementById("val-depth-z") as HTMLElement | null;
 
 const gaugeBlinkL = document.getElementById("gauge-blink-l") as HTMLElement | null;
 const gaugeBlinkR = document.getElementById("gauge-blink-r") as HTMLElement | null;
@@ -136,6 +144,10 @@ const gaugeMouthOpen = document.getElementById("gauge-mouth-open") as HTMLElemen
 const gaugeSmile = document.getElementById("gauge-smile") as HTMLElement | null;
 const valSmile = document.getElementById("val-smile") as HTMLElement | null;
 const smileThresholdMarker = document.getElementById("smile-threshold-marker") as HTMLElement | null;
+const gaugePuckerPuff = document.getElementById("gauge-pucker-puff") as HTMLElement | null;
+const valPuckerPuff = document.getElementById("val-pucker-puff") as HTMLElement | null;
+const gaugeFrownTongue = document.getElementById("gauge-frown-tongue") as HTMLElement | null;
+const valFrownTongue = document.getElementById("val-frown-tongue") as HTMLElement | null;
 
 // Settings Sliders & Inputs
 const sliderMouthGain = document.getElementById("slider-mouth-gain") as HTMLInputElement | null;
@@ -169,6 +181,7 @@ const sliderEyeGain = document.getElementById("slider-eye-gain") as HTMLInputEle
 const sliderBrowGain = document.getElementById("slider-brow-gain") as HTMLInputElement | null;
 const sliderYawMultiplier = document.getElementById("slider-yaw-multiplier") as HTMLInputElement | null;
 const sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier") as HTMLInputElement | null;
+const sliderDepthZoom = document.getElementById("slider-depth-zoom") as HTMLInputElement | null;
 
 const sliderMicGain = document.getElementById("slider-mic-gain") as HTMLInputElement | null;
 const sliderNoiseGate = document.getElementById("slider-noise-gate") as HTMLInputElement | null;
@@ -189,6 +202,7 @@ const valEyeGain = document.getElementById("val-eye-gain") as HTMLElement | null
 const valBrowGain = document.getElementById("val-brow-gain") as HTMLElement | null;
 const valYawMultiplier = document.getElementById("val-yaw-multiplier") as HTMLElement | null;
 const valPitchMultiplier = document.getElementById("val-pitch-multiplier") as HTMLElement | null;
+const valDepthZoom = document.getElementById("val-depth-zoom") as HTMLElement | null;
 
 const btnSaveSettings = document.getElementById("btn-save-settings") as HTMLButtonElement | null;
 const btnResetSettings = document.getElementById("btn-reset-settings") as HTMLButtonElement | null;
@@ -1198,6 +1212,79 @@ async function toggleCamera() {
   }
 }
 
+let tongueSampleCanvas: HTMLCanvasElement | null = null;
+let tongueSampleCtx: CanvasRenderingContext2D | null = null;
+
+function sampleOpticalTongueFromVideo(
+  vid: HTMLVideoElement,
+  landmarks: any[],
+  mouthGapRatio: number,
+  jawOpen: number
+): number {
+  if (jawOpen < 0.08 && mouthGapRatio < 0.045) {
+    return 0;
+  }
+  const vw = vid.videoWidth;
+  const vh = vid.videoHeight;
+  if (!vw || !vh || !landmarks || landmarks.length < 309) {
+    return 0;
+  }
+  if (!tongueSampleCanvas) {
+    tongueSampleCanvas = document.createElement("canvas");
+    tongueSampleCanvas.width = 4;
+    tongueSampleCanvas.height = 4;
+    tongueSampleCtx = tongueSampleCanvas.getContext("2d", { willReadFrequently: true });
+  }
+  if (!tongueSampleCtx) return 0;
+
+  try {
+    const upperInner = landmarks[13];
+    const lowerInner = landmarks[14];
+    const lowerOuter = landmarks[17];
+    const cheekL = landmarks[50];
+    const cheekR = landmarks[280];
+
+    // Oral cavity / protruding tongue center sits between upper inner lip (#13) and lower lip (#14/#17)
+    const cavX = Math.max(2, Math.min(vw - 4, Math.round(((upperInner.x + lowerInner.x) * 0.5) * vw)));
+    const cavY = Math.max(
+      2,
+      Math.min(vh - 4, Math.round((upperInner.y * 0.35 + lowerInner.y * 0.40 + lowerOuter.y * 0.25) * vh))
+    );
+    tongueSampleCtx.drawImage(vid, cavX - 2, cavY - 2, 4, 4, 0, 0, 2, 2);
+
+    const skinX = Math.max(2, Math.min(vw - 4, Math.round(((cheekL.x + cheekR.x) * 0.5) * vw)));
+    const skinY = Math.max(2, Math.min(vh - 4, Math.round(((cheekL.y + cheekR.y) * 0.5) * vh)));
+    tongueSampleCtx.drawImage(vid, skinX - 2, skinY - 2, 4, 4, 2, 0, 2, 2);
+
+    const data = tongueSampleCtx.getImageData(0, 0, 4, 2).data;
+    // Average 2x2 cavity pixels (cols 0..1) and 2x2 skin pixels (cols 2..3)
+    const cav = { r: 0, g: 0, b: 0 };
+    const skin = { r: 0, g: 0, b: 0 };
+    for (let y = 0; y < 2; y++) {
+      for (let x = 0; x < 2; x++) {
+        const ci = (y * 4 + x) * 4;
+        cav.r += data[ci];
+        cav.g += data[ci + 1];
+        cav.b += data[ci + 2];
+        const si = (y * 4 + (x + 2)) * 4;
+        skin.r += data[si];
+        skin.g += data[si + 1];
+        skin.b += data[si + 2];
+      }
+    }
+    cav.r /= 4;
+    cav.g /= 4;
+    cav.b /= 4;
+    skin.r /= 4;
+    skin.g /= 4;
+    skin.b /= 4;
+
+    return evaluateOpticalTongue(cav, skin, mouthGapRatio, jawOpen);
+  } catch {
+    return 0;
+  }
+}
+
 function processFrame(renderUI = true) {
   if (!webcamRunning || !faceLandmarker || isProcessing || !video) return;
 
@@ -1226,6 +1313,22 @@ function processFrame(renderUI = true) {
       if (ear) {
         blendshapes.earBlinkLeft = ear.earBlinkLeft;
         blendshapes.earBlinkRight = ear.earBlinkRight;
+      }
+
+      // Compute 3D mouth-corner droop for frown detection + optical tongue-out sampling
+      const mouthGeo = computeMouthGeometry(landmarks);
+      if (mouthGeo) {
+        blendshapes.geoFrownLeft = mouthGeo.geoFrownLeft;
+        blendshapes.geoFrownRight = mouthGeo.geoFrownRight;
+        const optTongue = sampleOpticalTongueFromVideo(
+          video,
+          landmarks,
+          mouthGeo.mouthGapRatio,
+          blendshapes.jawOpen || 0
+        );
+        if (optTongue > (blendshapes.tongueOut || 0)) {
+          blendshapes.tongueOut = optTongue;
+        }
       }
 
       let pose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
@@ -1384,12 +1487,37 @@ function updateTrackingGauges(pose: any, blendshapes: Record<string, number>) {
   const smile = Math.max(0, Math.min(1, smileRaw - smileBase));
   if (valSmile) valSmile.textContent = `${Math.round(smile * 100)}%`;
   if (gaugeSmile) gaugeSmile.style.width = `${Math.min(100, Math.round(smile * 100))}%`;
+
+  const neutralZ = cal && cal.calibrated ? cal.neutralZ : -50;
+  const rawZ = pose.z || neutralZ;
+  const normZ = Math.max(-1, Math.min(1, (rawZ - neutralZ) / 25));
+  const depthPct = Math.round(normZ * 100);
+  if (valDepthZ) valDepthZ.textContent = `${depthPct > 0 ? "+" : ""}${depthPct}%`;
+  if (gaugeDepthZ) gaugeDepthZ.style.width = `${Math.min(100, Math.max(0, Math.round((normZ + 1) * 50)))}%`;
+
+  const puckerRaw = Math.max(blendshapes.mouthPucker || 0, (blendshapes.mouthFunnel || 0) * 0.75);
+  const pucker = Math.max(0, Math.min(1, puckerRaw - (cal?.neutralPucker || 0)));
+  const puff = Math.max(0, Math.min(1, ((blendshapes.cheekPuff || 0) - (cal?.neutralCheekPuff || 0)) * 1.8));
+  const puckerPuff = Math.max(pucker, puff);
+  if (valPuckerPuff) valPuckerPuff.textContent = `${Math.round(puckerPuff * 100)}%`;
+  if (gaugePuckerPuff) gaugePuckerPuff.style.width = `${Math.min(100, Math.round(puckerPuff * 100))}%`;
+
+  const frownRaw = extractRawFrownClient(blendshapes, wL, wR);
+  const frownBase = cal && cal.calibrated ? cal.neutralFrown || 0 : 0;
+  const frownDenom = Math.max(0.1, 1 - frownBase);
+  const frown = Math.max(0, Math.min(1, (Math.max(0, frownRaw - frownBase) / frownDenom) * 2.4));
+  const tongue = Math.max(0, Math.min(1, blendshapes.tongueOut || 0));
+  const frownTongue = Math.max(frown, tongue);
+  if (valFrownTongue) valFrownTongue.textContent = `${Math.round(frownTongue * 100)}%`;
+  if (gaugeFrownTongue) gaugeFrownTongue.style.width = `${Math.min(100, Math.round(frownTongue * 100))}%`;
 }
 
 function resetTrackingGauges() {
   if (valYaw) valYaw.textContent = "0.0°";
   if (valPitch) valPitch.textContent = "0.0°";
   if (valRoll) valRoll.textContent = "0.0°";
+  if (valDepthZ) valDepthZ.textContent = "0%";
+  if (gaugeDepthZ) gaugeDepthZ.style.width = "50%";
   if (valBlinkL) valBlinkL.textContent = "0%";
   if (valBlinkR) valBlinkR.textContent = "0%";
   if (gaugeBlinkL) gaugeBlinkL.style.width = "0%";
@@ -1401,6 +1529,10 @@ function resetTrackingGauges() {
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = "0%";
   if (valSmile) valSmile.textContent = "0%";
   if (gaugeSmile) gaugeSmile.style.width = "0%";
+  if (valPuckerPuff) valPuckerPuff.textContent = "0%";
+  if (gaugePuckerPuff) gaugePuckerPuff.style.width = "0%";
+  if (valFrownTongue) valFrownTongue.textContent = "0%";
+  if (gaugeFrownTongue) gaugeFrownTongue.style.width = "0%";
 }
 
 function sendTrackingLoss(audioState?: AudioState | null) {
@@ -1543,6 +1675,8 @@ function syncSettingsToUI(s: SettingsPayload | null) {
       sliderBrowGain.value = String(t.browGain !== undefined ? t.browGain : 1.5);
     if (sliderYawMultiplier) sliderYawMultiplier.value = String(t.yawMultiplier || 1.0);
     if (sliderPitchMultiplier) sliderPitchMultiplier.value = String(t.pitchMultiplier || 1.0);
+    if (sliderDepthZoom)
+      sliderDepthZoom.value = String(t.depthZoomAmount !== undefined ? t.depthZoomAmount : 0.25);
   }
   if (s.audio) {
     const a = s.audio;
@@ -1589,6 +1723,8 @@ function updateSliderLabels() {
     valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier)
     valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
+  if (valDepthZoom && sliderDepthZoom)
+    valDepthZoom.textContent = `${parseFloat(sliderDepthZoom.value).toFixed(2)}x`;
 
   if (smileThresholdMarker && sliderSmileThreshold) {
     const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
@@ -1661,6 +1797,9 @@ function collectSettingsFromUI(): SettingsPayload {
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || "1.0"),
       rollMultiplier: 1.0,
       poseSmoothing: 1.0,
+      depthZoomAmount: parseFloat(
+        sliderDepthZoom?.value !== undefined ? sliderDepthZoom.value : "0.25"
+      ),
       calibration: activeSettings?.tracking?.calibration,
     },
     audio: {
@@ -1696,6 +1835,7 @@ function onSliderInput() {
   sliderBrowGain,
   sliderYawMultiplier,
   sliderPitchMultiplier,
+  sliderDepthZoom,
   sliderMicGain,
   sliderNoiseGate,
   sliderDecaySmooth,
@@ -3649,8 +3789,28 @@ async function finalizeGuidedCalibration() {
 
   const profile = buildCalibrationProfile(neutral, blink, voiceSmile);
 
+  // Ensure blink thresholds sit safely above any Step 4 smile-induced cheek intrusion
+  let finalThreshL = blink.blinkThresholdL;
+  let finalThreshR = blink.blinkThresholdR;
+  if (voiceSmile.smileBlinkIntrusionL && voiceSmile.smileBlinkIntrusionL > neutral.blinkOpenL) {
+    const remappedIntrusionL = remapBlinkClient(
+      voiceSmile.smileBlinkIntrusionL,
+      profile.blinkOpenL,
+      profile.blinkClosedL
+    );
+    finalThreshL = Number(Math.min(0.72, Math.max(finalThreshL, remappedIntrusionL + 0.1)).toFixed(2));
+  }
+  if (voiceSmile.smileBlinkIntrusionR && voiceSmile.smileBlinkIntrusionR > neutral.blinkOpenR) {
+    const remappedIntrusionR = remapBlinkClient(
+      voiceSmile.smileBlinkIntrusionR,
+      profile.blinkOpenR,
+      profile.blinkClosedR
+    );
+    finalThreshR = Number(Math.min(0.72, Math.max(finalThreshR, remappedIntrusionR + 0.1)).toFixed(2));
+  }
+
   if (calSumBlinkRange) {
-    calSumBlinkRange.textContent = `L: ${Math.round(profile.blinkOpenL * 100)}%→${Math.round(profile.blinkClosedL * 100)}% (T:${Math.round(blink.blinkThresholdL * 100)}%) • R: ${Math.round(profile.blinkOpenR * 100)}%→${Math.round(profile.blinkClosedR * 100)}% (T:${Math.round(blink.blinkThresholdR * 100)}%)`;
+    calSumBlinkRange.textContent = `L: ${Math.round(profile.blinkOpenL * 100)}%→${Math.round(profile.blinkClosedL * 100)}% (T:${Math.round(finalThreshL * 100)}%) • R: ${Math.round(profile.blinkOpenR * 100)}%→${Math.round(profile.blinkClosedR * 100)}% (T:${Math.round(finalThreshR * 100)}%)`;
   }
   if (calSumGlare) {
     calSumGlare.textContent = profile.glareAssist
@@ -3673,9 +3833,9 @@ async function finalizeGuidedCalibration() {
   // Merge calibrated profile & recommended thresholds into settings and persist
   const current = collectSettingsFromUI();
   current.tracking.calibration = profile;
-  current.tracking.blinkThreshold = blink.blinkThresholdL;
-  current.tracking.blinkThresholdL = blink.blinkThresholdL;
-  current.tracking.blinkThresholdR = blink.blinkThresholdR;
+  current.tracking.blinkThreshold = finalThreshL;
+  current.tracking.blinkThresholdL = finalThreshL;
+  current.tracking.blinkThresholdR = finalThreshR;
   current.tracking.blinkMaxHeadYaw = headTurn.blinkMaxHeadYaw;
   current.tracking.yawMultiplier = headTurn.yawMultiplier;
   current.tracking.pitchMultiplier = headTurn.pitchMultiplier;

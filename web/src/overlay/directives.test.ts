@@ -21,6 +21,12 @@ describe("Directives Condition Evaluation", () => {
     assert.equal(evaluateCondition("isBlinkL", { isBlinkL: false }), false);
     assert.equal(evaluateCondition("isMouthOpen", { isMouthOpen: true }), true);
     assert.equal(evaluateCondition("isSpeaking", { isSpeaking: true }), true);
+    assert.equal(evaluateCondition("cheekPuff", { cheekPuff: 0.6 }), true);
+    assert.equal(evaluateCondition("isMouthPucker", { isMouthPucker: true }), true);
+    assert.equal(evaluateCondition("tongueOut", { tongueOut: 0.5 }), true);
+    assert.equal(evaluateCondition("isFrowning", { isFrowning: true }), true);
+    assert.equal(evaluateCondition("isSneering", { isSneering: true }), true);
+    assert.equal(evaluateCondition("eyeSquint", { eyeSquint: 0.45 }), true);
   });
 
   test("evaluates numeric comparisons", () => {

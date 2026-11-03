@@ -122,3 +122,112 @@ export function computeEyeAspectRatios(
     earBlinkRight: earToBlinkClosure(earR),
   };
 }
+
+export interface MouthGeometricFeatures {
+  geoFrownLeft: number;
+  geoFrownRight: number;
+  mouthGapRatio: number;
+}
+
+/**
+ * Computes head-roll-compensated 3D mouth-corner droop (geoFrownLeft, geoFrownRight in [0..1])
+ * and inner lip vertical gap ratio from MediaPipe's 478 face landmarks.
+ * Supplements MediaPipe's low-amplitude mouthFrownLeft/Right TFLite blendshapes.
+ */
+export function computeMouthGeometry(
+  landmarks: Landmark3D[] | null | undefined
+): MouthGeometricFeatures | null {
+  if (!landmarks || landmarks.length < 309) {
+    return null;
+  }
+
+  const rEye = landmarks[33];
+  const lEye = landmarks[263];
+  const rCorner = landmarks[61];
+  const lCorner = landmarks[291];
+  const upperInner = landmarks[13];
+  const lowerInner = landmarks[14];
+
+  if (!rEye || !lEye || !rCorner || !lCorner || !upperInner || !lowerInner) {
+    return null;
+  }
+
+  const mouthWidth = dist3D(rCorner, lCorner);
+  if (mouthWidth < 1e-5) {
+    return null;
+  }
+
+  // Head roll compensation using outer eye corners
+  const rollAngle = Math.atan2(lEye.y - rEye.y, lEye.x - rEye.x);
+  const downX = -Math.sin(rollAngle);
+  const downY = Math.cos(rollAngle);
+
+  const centerX = (upperInner.x + lowerInner.x) * 0.5;
+  const centerY = (upperInner.y + lowerInner.y) * 0.5;
+
+  // Positive projection along local downward axis means mouth corner sits below lip center
+  const dropL = ((lCorner.x - centerX) * downX + (lCorner.y - centerY) * downY) / mouthWidth;
+  const dropR = ((rCorner.x - centerX) * downX + (rCorner.y - centerY) * downY) / mouthWidth;
+
+  const mapDropToFrown = (drop: number) => {
+    const norm = (drop - 0.01) / 0.095;
+    return Math.max(0, Math.min(1, norm));
+  };
+
+  const gap = dist3D(upperInner, lowerInner) / mouthWidth;
+
+  return {
+    geoFrownLeft: mapDropToFrown(dropL),
+    geoFrownRight: mapDropToFrown(dropR),
+    mouthGapRatio: Math.max(0, Math.min(1, gap)),
+  };
+}
+
+export interface RGBSample {
+  r: number;
+  g: number;
+  b: number;
+}
+
+/**
+ * Evaluates optical tongue protrusion [0.0 .. 1.0] by comparing the oral cavity interior
+ * (between upper inner lip #13 and lower outer lip #17) against reference facial skin.
+ * MediaPipe's 478-point FaceLandmarker mesh has no tongue landmarks, so its TFLite
+ * `tongueOut` blendshape is permanently 0 on RGB webcams. When the mouth opens normally,
+ * the oral cavity is shadowed/dark; when the tongue protrudes, it fills the lower mouth
+ * gap with bright pink/red tissue.
+ */
+export function evaluateOpticalTongue(
+  cavity: RGBSample,
+  skin: RGBSample,
+  mouthGapRatio: number,
+  jawOpen: number
+): number {
+  const effectiveOpen = Math.max(jawOpen, mouthGapRatio * 2.2);
+  if (effectiveOpen < 0.10) {
+    return 0;
+  }
+
+  const cavityLuma = 0.299 * cavity.r + 0.587 * cavity.g + 0.114 * cavity.b;
+  const skinLuma = Math.max(20, 0.299 * skin.r + 0.587 * skin.g + 0.114 * skin.b);
+
+  // Dark oral cavity shadow check: an open mouth without a protruding tongue is dark inside
+  const lumaRatio = cavityLuma / skinLuma;
+  if (lumaRatio < 0.46) {
+    return 0;
+  }
+
+  // Pink/red chroma of the tongue vs surrounding skin
+  const cavityRedGreen = (cavity.r - cavity.g) / Math.max(30, cavity.r + cavity.g);
+  const skinRedGreen = (skin.r - skin.g) / Math.max(30, skin.r + skin.g);
+  const cavityRedBlue = (cavity.r - cavity.b) / Math.max(30, cavity.r + cavity.b);
+
+  if (cavity.r < 65 || cavityRedGreen < 0.08 || cavityRedBlue < 0.06) {
+    return 0;
+  }
+
+  // Tongue tissue is typically pinker/redder than cheek/chin skin OR bright pink filling the open mouth gap
+  const pinkBoost = Math.max(0, cavityRedGreen - skinRedGreen * 0.82);
+  const rawScore = ((lumaRatio - 0.44) * 1.4 + pinkBoost * 4.5) * Math.min(1.0, (effectiveOpen - 0.08) / 0.18);
+  return Math.max(0, Math.min(1, rawScore));
+}

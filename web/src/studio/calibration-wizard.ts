@@ -30,6 +30,13 @@ export interface NeutralStepResult {
   neutralMouth: number;
   neutralBrowL: number;
   neutralBrowR: number;
+  neutralPucker: number;
+  neutralFrown: number;
+  neutralCheekPuff: number;
+  neutralNoseSneer: number;
+  neutralJawX: number;
+  neutralSquintL: number;
+  neutralSquintR: number;
   blinkOpenL: number;
   blinkOpenR: number;
   noiseGate: number;
@@ -56,6 +63,8 @@ export interface VoiceSmileStepResult {
   smileThreshold: number;
   mouthGain: number;
   micGain: number;
+  smileBlinkIntrusionL?: number;
+  smileBlinkIntrusionR?: number;
 }
 
 export function clamp(val: number, min: number, max: number): number {
@@ -78,20 +87,44 @@ export function median(values: number[]): number {
 }
 
 /**
- * Combines MediaPipe ARKit blendshape closure with geometric 3D landmark EAR closure.
+ * Combines MediaPipe ARKit blendshape closure with geometric 3D landmark EAR closure,
+ * plus optional eyeSquint/cheekSquint and eyeWide disambiguation:
+ * - Suppresses false smile-induced blinks when smiling pushes cheeks into glasses rims
+ * - Rescues solo winks behind glasses glare when non-smile orbicularis oculi squint is active
+ * - Dampens sympathetic blink bleed on the opposite eye when eyeWide is active
  */
 export function fuseBlinkScoreClient(
   blendshapeBlink: number,
-  earBlink?: number
+  earBlink?: number,
+  eyeSquintOrCheek = 0,
+  smile = 0,
+  eyeWide = 0
 ): number {
-  const b = clamp(blendshapeBlink || 0, 0, 1);
+  let b = clamp(blendshapeBlink || 0, 0, 1);
   if (earBlink === undefined || earBlink === null || isNaN(earBlink)) {
-    return b;
+    if (smile >= 0.4 && eyeSquintOrCheek >= 0.3 && b < 0.72) {
+      b = Math.max(0, b - Math.min(0.14, (smile - 0.35) * eyeSquintOrCheek * 0.35));
+    } else if (smile < 0.18 && eyeSquintOrCheek >= 0.35 && b >= 0.22) {
+      b = Math.min(1, b + eyeSquintOrCheek * 0.14);
+    }
+    if (eyeWide >= 0.2 && b < 0.55) {
+      b = Math.max(0, b - eyeWide * 0.22);
+    }
+    return clamp(b, 0, 1);
   }
   const e = clamp(earBlink, 0, 1);
+  if (smile >= 0.35 && eyeSquintOrCheek >= 0.25 && e < b - 0.08) {
+    return clamp(e * 0.75 + b * 0.25, 0, 1);
+  }
   let blended = b * 0.65 + e * 0.35;
   if (e > b + 0.12) {
     blended = Math.max(blended, e * 0.9);
+  }
+  if (smile < 0.18 && eyeSquintOrCheek >= 0.35 && blended >= 0.22) {
+    blended = Math.min(1, blended + eyeSquintOrCheek * 0.12);
+  }
+  if (eyeWide >= 0.2 && blended < 0.55) {
+    blended = Math.max(0, blended - eyeWide * 0.22);
   }
   return clamp(blended, 0, 1);
 }
@@ -134,6 +167,23 @@ function extractRawBrowsSample(bs: Record<string, number>): { l: number; r: numb
   };
 }
 
+export function extractRawFrownClient(
+  bs: Record<string, number>,
+  wL = 0.5,
+  wR = 0.5
+): number {
+  const rawSmile = (bs.mouthSmileLeft || 0) * wL + (bs.mouthSmileRight || 0) * wR;
+  const rawPucker = Math.max(bs.mouthPucker || 0, (bs.mouthFunnel || 0) * 0.75);
+  const bsFrown = (bs.mouthFrownLeft || 0) * wL + (bs.mouthFrownRight || 0) * wR;
+  const geoFrown = (bs.geoFrownLeft || 0) * wL + (bs.geoFrownRight || 0) * wR;
+  const nonSmileGate =
+    Math.max(0, 1 - rawSmile * 2.5) *
+    Math.max(0, 1 - rawPucker * 1.8) *
+    Math.max(0, 1 - (bs.jawOpen || 0) * 2.2);
+  const shrugPout = ((bs.mouthShrugLower || 0) * 0.65 + (bs.mouthRollLower || 0) * 0.35) * nonSmileGate;
+  return clamp(Math.max(bsFrown, Math.max(geoFrown * 0.85, shrugPout)), 0, 1);
+}
+
 /**
  * Step 1 Analyzer: Neutral Posture, Resting Open Eyes Behind Glasses & Ambient Mic Silence
  */
@@ -158,6 +208,13 @@ export function analyzeNeutralStep(samples: CalibrationSample[]): NeutralStepRes
       neutralMouth: 0,
       neutralBrowL: 0,
       neutralBrowR: 0,
+      neutralPucker: 0,
+      neutralFrown: 0,
+      neutralCheekPuff: 0,
+      neutralNoseSneer: 0,
+      neutralJawX: 0,
+      neutralSquintL: 0,
+      neutralSquintR: 0,
       blinkOpenL: 0,
       blinkOpenR: 0,
       noiseGate,
@@ -202,6 +259,47 @@ export function analyzeNeutralStep(samples: CalibrationSample[]): NeutralStepRes
     ),
     neutralBrowL: Number(median(brows.map((b) => b.l)).toFixed(3)),
     neutralBrowR: Number(median(brows.map((b) => b.r)).toFixed(3)),
+    neutralPucker: Number(
+      median(
+        faceSamples.map((s) =>
+          Math.max(s.blendshapes.mouthPucker || 0, (s.blendshapes.mouthFunnel || 0) * 0.75)
+        )
+      ).toFixed(3)
+    ),
+    neutralFrown: Number(
+      median(faceSamples.map((s) => extractRawFrownClient(s.blendshapes))).toFixed(3)
+    ),
+    neutralCheekPuff: Number(
+      median(faceSamples.map((s) => s.blendshapes.cheekPuff || 0)).toFixed(3)
+    ),
+    neutralNoseSneer: Number(
+      median(
+        faceSamples.map(
+          (s) => ((s.blendshapes.noseSneerLeft || 0) + (s.blendshapes.noseSneerRight || 0)) / 2
+        )
+      ).toFixed(3)
+    ),
+    neutralJawX: Number(
+      median(
+        faceSamples.map((s) => (s.blendshapes.jawRight || 0) - (s.blendshapes.jawLeft || 0))
+      ).toFixed(3)
+    ),
+    neutralSquintL: Number(
+      percentile(
+        faceSamples.map((s) =>
+          Math.max(s.blendshapes.eyeSquintLeft || 0, (s.blendshapes.cheekSquintLeft || 0) * 0.85)
+        ),
+        0.3
+      ).toFixed(3)
+    ),
+    neutralSquintR: Number(
+      percentile(
+        faceSamples.map((s) =>
+          Math.max(s.blendshapes.eyeSquintRight || 0, (s.blendshapes.cheekSquintRight || 0) * 0.85)
+        ),
+        0.3
+      ).toFixed(3)
+    ),
     blinkOpenL,
     blinkOpenR,
     noiseGate,
@@ -270,8 +368,24 @@ export function analyzeBeepBlinkStep(
     let bestFusedL = openL;
     let bestFusedR = openR;
     for (const s of inWin) {
-      const fL = fuseBlinkScoreClient(s.blendshapes.eyeBlinkLeft || 0, s.blendshapes.earBlinkLeft);
-      const fR = fuseBlinkScoreClient(s.blendshapes.eyeBlinkRight || 0, s.blendshapes.earBlinkRight);
+      const bs = s.blendshapes;
+      const smileVal = ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) * 0.5;
+      const sqL = Math.max(bs.eyeSquintLeft || 0, (bs.cheekSquintLeft || 0) * 0.85);
+      const sqR = Math.max(bs.eyeSquintRight || 0, (bs.cheekSquintRight || 0) * 0.85);
+      const fL = fuseBlinkScoreClient(
+        bs.eyeBlinkLeft || 0,
+        bs.earBlinkLeft,
+        sqL,
+        smileVal,
+        bs.eyeWideLeft || 0
+      );
+      const fR = fuseBlinkScoreClient(
+        bs.eyeBlinkRight || 0,
+        bs.earBlinkRight,
+        sqR,
+        smileVal,
+        bs.eyeWideRight || 0
+      );
       const relL = Math.max(0, fL - openL);
       const relR = Math.max(0, fR - openR);
       const diff = Math.abs(relL - relR);
@@ -458,14 +572,24 @@ export function analyzeVoiceAndSmileStep(
   let smileWeightR = 0.5;
   let smileThreshold = 0.5;
   let mouthGain = 1.4;
+  let smileBlinkIntrusionL = 0;
+  let smileBlinkIntrusionR = 0;
 
   if (faceSamples.length > 0) {
     const p90SmileL = percentile(
-      faceSamples.map((s) => s.blendshapes.mouthSmileLeft || 0),
+      faceSamples.map(
+        (s) =>
+          (s.blendshapes.mouthSmileLeft || 0) +
+          (s.blendshapes.cheekSquintLeft || 0) * 0.18
+      ),
       0.9
     );
     const p90SmileR = percentile(
-      faceSamples.map((s) => s.blendshapes.mouthSmileRight || 0),
+      faceSamples.map(
+        (s) =>
+          (s.blendshapes.mouthSmileRight || 0) +
+          (s.blendshapes.cheekSquintRight || 0) * 0.18
+      ),
       0.9
     );
 
@@ -491,6 +615,41 @@ export function analyzeVoiceAndSmileStep(
           ? calSmileSpan / (1 - neutralSmile)
           : weightedPeakSmile;
       smileThreshold = Number(clamp(normalizedPeak * 0.62, 0.25, 0.75).toFixed(2));
+    }
+
+    // Measure smile-induced cheek/eyelid blink intrusion during active smiling frames
+    // so blink thresholds sit safely above open-eye cheek compression behind glasses
+    const smilingOpenFrames = faceSamples.filter((s) => {
+      const bs = s.blendshapes;
+      const sm = (bs.mouthSmileLeft || 0) * smileWeightL + (bs.mouthSmileRight || 0) * smileWeightR;
+      const earOpen =
+        (bs.earBlinkLeft === undefined || bs.earBlinkLeft < 0.5) &&
+        (bs.earBlinkRight === undefined || bs.earBlinkRight < 0.5);
+      return sm >= neutralSmile + 0.15 && earOpen;
+    });
+    if (smilingOpenFrames.length > 0) {
+      smileBlinkIntrusionL = Number(
+        percentile(
+          smilingOpenFrames.map((s) => {
+            const bs = s.blendshapes;
+            const sm = (bs.mouthSmileLeft || 0) * smileWeightL + (bs.mouthSmileRight || 0) * smileWeightR;
+            const sqL = Math.max(bs.eyeSquintLeft || 0, (bs.cheekSquintLeft || 0) * 0.85);
+            return fuseBlinkScoreClient(bs.eyeBlinkLeft || 0, bs.earBlinkLeft, sqL, sm, bs.eyeWideLeft || 0);
+          }),
+          0.75
+        ).toFixed(3)
+      );
+      smileBlinkIntrusionR = Number(
+        percentile(
+          smilingOpenFrames.map((s) => {
+            const bs = s.blendshapes;
+            const sm = (bs.mouthSmileLeft || 0) * smileWeightL + (bs.mouthSmileRight || 0) * smileWeightR;
+            const sqR = Math.max(bs.eyeSquintRight || 0, (bs.cheekSquintRight || 0) * 0.85);
+            return fuseBlinkScoreClient(bs.eyeBlinkRight || 0, bs.earBlinkRight, sqR, sm, bs.eyeWideRight || 0);
+          }),
+          0.75
+        ).toFixed(3)
+      );
     }
 
     const p90Jaw = percentile(
@@ -519,6 +678,8 @@ export function analyzeVoiceAndSmileStep(
     smileThreshold,
     mouthGain,
     micGain,
+    smileBlinkIntrusionL,
+    smileBlinkIntrusionR,
   };
 }
 
@@ -544,6 +705,13 @@ export function buildCalibrationProfile(
     neutralMouth: neutral.neutralMouth,
     neutralBrowL: neutral.neutralBrowL,
     neutralBrowR: neutral.neutralBrowR,
+    neutralPucker: neutral.neutralPucker,
+    neutralFrown: neutral.neutralFrown,
+    neutralCheekPuff: neutral.neutralCheekPuff,
+    neutralNoseSneer: neutral.neutralNoseSneer,
+    neutralJawX: neutral.neutralJawX,
+    neutralSquintL: neutral.neutralSquintL,
+    neutralSquintR: neutral.neutralSquintR,
     blinkOpenL: neutral.blinkOpenL,
     blinkOpenR: neutral.blinkOpenR,
     blinkClosedL: blink.blinkClosedL,

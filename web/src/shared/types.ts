@@ -21,6 +21,15 @@ export interface ParamFrame {
   browUp: number;
   browL?: number;
   browR?: number;
+  cheekPuff?: number;
+  mouthPucker?: number;
+  tongueOut?: number;
+  frown?: number;
+  jawX?: number;
+  noseSneer?: number;
+  eyeSquintL?: number;
+  eyeSquintR?: number;
+  eyeSquint?: number;
   mouthThreshold?: number;
   blinkThreshold?: number;
   blinkThresholdL?: number;
@@ -34,12 +43,18 @@ export interface ParamFrame {
   bounceAmount?: number;
   physicsEnabled?: boolean;
   physicsAmount?: number;
+  depthZoomAmount?: number;
   isSpeaking?: boolean;
   isBlinkL?: boolean;
   isBlinkR?: boolean;
   autoBlink?: boolean;
   isMouthOpen?: boolean;
   isSmiling?: boolean;
+  isCheekPuff?: boolean;
+  isMouthPucker?: boolean;
+  isTongueOut?: boolean;
+  isFrowning?: boolean;
+  isSneering?: boolean;
   expressions?: Record<string, boolean>;
   raw?: Record<string, number>;
 }
@@ -110,6 +125,13 @@ export interface CalibrationProfile {
   neutralMouth: number;
   neutralBrowL: number;
   neutralBrowR: number;
+  neutralPucker?: number;
+  neutralFrown?: number;
+  neutralCheekPuff?: number;
+  neutralNoseSneer?: number;
+  neutralJawX?: number;
+  neutralSquintL?: number;
+  neutralSquintR?: number;
   blinkOpenL: number;
   blinkOpenR: number;
   blinkClosedL: number;
@@ -148,5 +170,6 @@ export interface TrackingSettings {
   autoTilt: boolean;
   autoTiltMode: string;
   autoTiltAmount: number;
+  depthZoomAmount?: number;
   calibration?: CalibrationProfile;
 }

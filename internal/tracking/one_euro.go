@@ -99,41 +99,57 @@ func (f *OneEuroFilter) Reset() {
 
 // PoseFilter maintains a bank of 1€ filters for full facial pose and expression parameters.
 type PoseFilter struct {
-	yaw       *OneEuroFilter
-	pitch     *OneEuroFilter
-	roll      *OneEuroFilter
-	x         *OneEuroFilter
-	y         *OneEuroFilter
-	z         *OneEuroFilter
-	eyeX      *OneEuroFilter
-	eyeY      *OneEuroFilter
-	blinkL    *OneEuroFilter
-	blinkR    *OneEuroFilter
-	mouthOpen *OneEuroFilter
-	smile     *OneEuroFilter
-	browUp    *OneEuroFilter
-	browL     *OneEuroFilter
-	browR     *OneEuroFilter
+	yaw         *OneEuroFilter
+	pitch       *OneEuroFilter
+	roll        *OneEuroFilter
+	x           *OneEuroFilter
+	y           *OneEuroFilter
+	z           *OneEuroFilter
+	eyeX        *OneEuroFilter
+	eyeY        *OneEuroFilter
+	blinkL      *OneEuroFilter
+	blinkR      *OneEuroFilter
+	mouthOpen   *OneEuroFilter
+	smile       *OneEuroFilter
+	browUp      *OneEuroFilter
+	browL       *OneEuroFilter
+	browR       *OneEuroFilter
+	cheekPuff   *OneEuroFilter
+	mouthPucker *OneEuroFilter
+	tongueOut   *OneEuroFilter
+	frown       *OneEuroFilter
+	jawX        *OneEuroFilter
+	noseSneer   *OneEuroFilter
+	eyeSquintL  *OneEuroFilter
+	eyeSquintR  *OneEuroFilter
 }
 
 // NewPoseFilter initializes a full set of filters tuned for avatar animation.
 func NewPoseFilter() *PoseFilter {
 	return &PoseFilter{
-		yaw:       NewOneEuroFilter(1.0, 0.005, 1.0),
-		pitch:     NewOneEuroFilter(1.0, 0.005, 1.0),
-		roll:      NewOneEuroFilter(1.0, 0.005, 1.0),
-		x:         NewOneEuroFilter(1.0, 0.005, 1.0),
-		y:         NewOneEuroFilter(1.0, 0.005, 1.0),
-		z:         NewOneEuroFilter(1.0, 0.005, 1.0),
-		eyeX:      NewOneEuroFilter(1.2, 0.01, 1.0),
-		eyeY:      NewOneEuroFilter(1.2, 0.01, 1.0),
-		blinkL:    NewOneEuroFilter(1.5, 0.02, 1.0), // Snappier for blinks
-		blinkR:    NewOneEuroFilter(1.5, 0.02, 1.0),
-		mouthOpen: NewOneEuroFilter(1.2, 0.01, 1.0),
-		smile:     NewOneEuroFilter(1.0, 0.007, 1.0),
-		browUp:    NewOneEuroFilter(1.0, 0.007, 1.0),
-		browL:     NewOneEuroFilter(1.2, 0.01, 1.0),
-		browR:     NewOneEuroFilter(1.2, 0.01, 1.0),
+		yaw:         NewOneEuroFilter(1.0, 0.005, 1.0),
+		pitch:       NewOneEuroFilter(1.0, 0.005, 1.0),
+		roll:        NewOneEuroFilter(1.0, 0.005, 1.0),
+		x:           NewOneEuroFilter(1.0, 0.005, 1.0),
+		y:           NewOneEuroFilter(1.0, 0.005, 1.0),
+		z:           NewOneEuroFilter(1.0, 0.005, 1.0),
+		eyeX:        NewOneEuroFilter(1.2, 0.01, 1.0),
+		eyeY:        NewOneEuroFilter(1.2, 0.01, 1.0),
+		blinkL:      NewOneEuroFilter(1.5, 0.02, 1.0), // Snappier for blinks
+		blinkR:      NewOneEuroFilter(1.5, 0.02, 1.0),
+		mouthOpen:   NewOneEuroFilter(1.2, 0.01, 1.0),
+		smile:       NewOneEuroFilter(1.0, 0.007, 1.0),
+		browUp:      NewOneEuroFilter(1.0, 0.007, 1.0),
+		browL:       NewOneEuroFilter(1.2, 0.01, 1.0),
+		browR:       NewOneEuroFilter(1.2, 0.01, 1.0),
+		cheekPuff:   NewOneEuroFilter(1.2, 0.01, 1.0),
+		mouthPucker: NewOneEuroFilter(1.2, 0.01, 1.0),
+		tongueOut:   NewOneEuroFilter(1.4, 0.015, 1.0),
+		frown:       NewOneEuroFilter(1.0, 0.007, 1.0),
+		jawX:        NewOneEuroFilter(1.2, 0.01, 1.0),
+		noseSneer:   NewOneEuroFilter(1.2, 0.01, 1.0),
+		eyeSquintL:  NewOneEuroFilter(1.2, 0.01, 1.0),
+		eyeSquintR:  NewOneEuroFilter(1.2, 0.01, 1.0),
 	}
 }
 
@@ -154,4 +170,12 @@ func (pf *PoseFilter) Reset() {
 	pf.browUp.Reset()
 	pf.browL.Reset()
 	pf.browR.Reset()
+	pf.cheekPuff.Reset()
+	pf.mouthPucker.Reset()
+	pf.tongueOut.Reset()
+	pf.frown.Reset()
+	pf.jawX.Reset()
+	pf.noseSneer.Reset()
+	pf.eyeSquintL.Reset()
+	pf.eyeSquintR.Reset()
 }

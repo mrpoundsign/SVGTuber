@@ -72,6 +72,62 @@ function computeEyeAspectRatios(landmarks) {
     earBlinkRight: earToBlinkClosure(earR)
   };
 }
+function computeMouthGeometry(landmarks) {
+  if (!landmarks || landmarks.length < 309) {
+    return null;
+  }
+  const rEye = landmarks[33];
+  const lEye = landmarks[263];
+  const rCorner = landmarks[61];
+  const lCorner = landmarks[291];
+  const upperInner = landmarks[13];
+  const lowerInner = landmarks[14];
+  if (!rEye || !lEye || !rCorner || !lCorner || !upperInner || !lowerInner) {
+    return null;
+  }
+  const mouthWidth = dist3D(rCorner, lCorner);
+  if (mouthWidth < 1e-5) {
+    return null;
+  }
+  const rollAngle = Math.atan2(lEye.y - rEye.y, lEye.x - rEye.x);
+  const downX = -Math.sin(rollAngle);
+  const downY = Math.cos(rollAngle);
+  const centerX = (upperInner.x + lowerInner.x) * 0.5;
+  const centerY = (upperInner.y + lowerInner.y) * 0.5;
+  const dropL = ((lCorner.x - centerX) * downX + (lCorner.y - centerY) * downY) / mouthWidth;
+  const dropR = ((rCorner.x - centerX) * downX + (rCorner.y - centerY) * downY) / mouthWidth;
+  const mapDropToFrown = (drop) => {
+    const norm = (drop - 0.01) / 0.095;
+    return Math.max(0, Math.min(1, norm));
+  };
+  const gap = dist3D(upperInner, lowerInner) / mouthWidth;
+  return {
+    geoFrownLeft: mapDropToFrown(dropL),
+    geoFrownRight: mapDropToFrown(dropR),
+    mouthGapRatio: Math.max(0, Math.min(1, gap))
+  };
+}
+function evaluateOpticalTongue(cavity, skin, mouthGapRatio, jawOpen) {
+  const effectiveOpen = Math.max(jawOpen, mouthGapRatio * 2.2);
+  if (effectiveOpen < 0.1) {
+    return 0;
+  }
+  const cavityLuma = 0.299 * cavity.r + 0.587 * cavity.g + 0.114 * cavity.b;
+  const skinLuma = Math.max(20, 0.299 * skin.r + 0.587 * skin.g + 0.114 * skin.b);
+  const lumaRatio = cavityLuma / skinLuma;
+  if (lumaRatio < 0.46) {
+    return 0;
+  }
+  const cavityRedGreen = (cavity.r - cavity.g) / Math.max(30, cavity.r + cavity.g);
+  const skinRedGreen = (skin.r - skin.g) / Math.max(30, skin.r + skin.g);
+  const cavityRedBlue = (cavity.r - cavity.b) / Math.max(30, cavity.r + cavity.b);
+  if (cavity.r < 65 || cavityRedGreen < 0.08 || cavityRedBlue < 0.06) {
+    return 0;
+  }
+  const pinkBoost = Math.max(0, cavityRedGreen - skinRedGreen * 0.82);
+  const rawScore = ((lumaRatio - 0.44) * 1.4 + pinkBoost * 4.5) * Math.min(1, (effectiveOpen - 0.08) / 0.18);
+  return Math.max(0, Math.min(1, rawScore));
+}
 
 // web/src/studio/calibration-wizard.ts
 function clamp(val, min, max) {
@@ -90,15 +146,32 @@ function percentile(values, p) {
 function median(values) {
   return percentile(values, 0.5);
 }
-function fuseBlinkScoreClient(blendshapeBlink, earBlink) {
-  const b = clamp(blendshapeBlink || 0, 0, 1);
+function fuseBlinkScoreClient(blendshapeBlink, earBlink, eyeSquintOrCheek = 0, smile = 0, eyeWide = 0) {
+  let b = clamp(blendshapeBlink || 0, 0, 1);
   if (earBlink === void 0 || earBlink === null || isNaN(earBlink)) {
-    return b;
+    if (smile >= 0.4 && eyeSquintOrCheek >= 0.3 && b < 0.72) {
+      b = Math.max(0, b - Math.min(0.14, (smile - 0.35) * eyeSquintOrCheek * 0.35));
+    } else if (smile < 0.18 && eyeSquintOrCheek >= 0.35 && b >= 0.22) {
+      b = Math.min(1, b + eyeSquintOrCheek * 0.14);
+    }
+    if (eyeWide >= 0.2 && b < 0.55) {
+      b = Math.max(0, b - eyeWide * 0.22);
+    }
+    return clamp(b, 0, 1);
   }
   const e = clamp(earBlink, 0, 1);
+  if (smile >= 0.35 && eyeSquintOrCheek >= 0.25 && e < b - 0.08) {
+    return clamp(e * 0.75 + b * 0.25, 0, 1);
+  }
   let blended = b * 0.65 + e * 0.35;
   if (e > b + 0.12) {
     blended = Math.max(blended, e * 0.9);
+  }
+  if (smile < 0.18 && eyeSquintOrCheek >= 0.35 && blended >= 0.22) {
+    blended = Math.min(1, blended + eyeSquintOrCheek * 0.12);
+  }
+  if (eyeWide >= 0.2 && blended < 0.55) {
+    blended = Math.max(0, blended - eyeWide * 0.22);
   }
   return clamp(blended, 0, 1);
 }
@@ -130,6 +203,15 @@ function extractRawBrowsSample(bs) {
     r: upR - (bs.browDownRight || 0)
   };
 }
+function extractRawFrownClient(bs, wL = 0.5, wR = 0.5) {
+  const rawSmile = (bs.mouthSmileLeft || 0) * wL + (bs.mouthSmileRight || 0) * wR;
+  const rawPucker = Math.max(bs.mouthPucker || 0, (bs.mouthFunnel || 0) * 0.75);
+  const bsFrown = (bs.mouthFrownLeft || 0) * wL + (bs.mouthFrownRight || 0) * wR;
+  const geoFrown = (bs.geoFrownLeft || 0) * wL + (bs.geoFrownRight || 0) * wR;
+  const nonSmileGate = Math.max(0, 1 - rawSmile * 2.5) * Math.max(0, 1 - rawPucker * 1.8) * Math.max(0, 1 - (bs.jawOpen || 0) * 2.2);
+  const shrugPout = ((bs.mouthShrugLower || 0) * 0.65 + (bs.mouthRollLower || 0) * 0.35) * nonSmileGate;
+  return clamp(Math.max(bsFrown, Math.max(geoFrown * 0.85, shrugPout)), 0, 1);
+}
 function analyzeNeutralStep(samples) {
   const faceSamples = samples.filter((s) => s.present);
   const audioVolumes = samples.map((s) => s.audioVolume || 0).filter((v) => v >= 0);
@@ -149,6 +231,13 @@ function analyzeNeutralStep(samples) {
       neutralMouth: 0,
       neutralBrowL: 0,
       neutralBrowR: 0,
+      neutralPucker: 0,
+      neutralFrown: 0,
+      neutralCheekPuff: 0,
+      neutralNoseSneer: 0,
+      neutralJawX: 0,
+      neutralSquintL: 0,
+      neutralSquintR: 0,
       blinkOpenL: 0,
       blinkOpenR: 0,
       noiseGate
@@ -188,6 +277,47 @@ function analyzeNeutralStep(samples) {
     ),
     neutralBrowL: Number(median(brows.map((b) => b.l)).toFixed(3)),
     neutralBrowR: Number(median(brows.map((b) => b.r)).toFixed(3)),
+    neutralPucker: Number(
+      median(
+        faceSamples.map(
+          (s) => Math.max(s.blendshapes.mouthPucker || 0, (s.blendshapes.mouthFunnel || 0) * 0.75)
+        )
+      ).toFixed(3)
+    ),
+    neutralFrown: Number(
+      median(faceSamples.map((s) => extractRawFrownClient(s.blendshapes))).toFixed(3)
+    ),
+    neutralCheekPuff: Number(
+      median(faceSamples.map((s) => s.blendshapes.cheekPuff || 0)).toFixed(3)
+    ),
+    neutralNoseSneer: Number(
+      median(
+        faceSamples.map(
+          (s) => ((s.blendshapes.noseSneerLeft || 0) + (s.blendshapes.noseSneerRight || 0)) / 2
+        )
+      ).toFixed(3)
+    ),
+    neutralJawX: Number(
+      median(
+        faceSamples.map((s) => (s.blendshapes.jawRight || 0) - (s.blendshapes.jawLeft || 0))
+      ).toFixed(3)
+    ),
+    neutralSquintL: Number(
+      percentile(
+        faceSamples.map(
+          (s) => Math.max(s.blendshapes.eyeSquintLeft || 0, (s.blendshapes.cheekSquintLeft || 0) * 0.85)
+        ),
+        0.3
+      ).toFixed(3)
+    ),
+    neutralSquintR: Number(
+      percentile(
+        faceSamples.map(
+          (s) => Math.max(s.blendshapes.eyeSquintRight || 0, (s.blendshapes.cheekSquintRight || 0) * 0.85)
+        ),
+        0.3
+      ).toFixed(3)
+    ),
     blinkOpenL,
     blinkOpenR,
     noiseGate
@@ -238,8 +368,24 @@ function analyzeBeepBlinkStep(samples, beepTimestamps, openL, openR, winkTimesta
     let bestFusedL = openL;
     let bestFusedR = openR;
     for (const s of inWin) {
-      const fL = fuseBlinkScoreClient(s.blendshapes.eyeBlinkLeft || 0, s.blendshapes.earBlinkLeft);
-      const fR = fuseBlinkScoreClient(s.blendshapes.eyeBlinkRight || 0, s.blendshapes.earBlinkRight);
+      const bs = s.blendshapes;
+      const smileVal = ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) * 0.5;
+      const sqL = Math.max(bs.eyeSquintLeft || 0, (bs.cheekSquintLeft || 0) * 0.85);
+      const sqR = Math.max(bs.eyeSquintRight || 0, (bs.cheekSquintRight || 0) * 0.85);
+      const fL = fuseBlinkScoreClient(
+        bs.eyeBlinkLeft || 0,
+        bs.earBlinkLeft,
+        sqL,
+        smileVal,
+        bs.eyeWideLeft || 0
+      );
+      const fR = fuseBlinkScoreClient(
+        bs.eyeBlinkRight || 0,
+        bs.earBlinkRight,
+        sqR,
+        smileVal,
+        bs.eyeWideRight || 0
+      );
       const relL = Math.max(0, fL - openL);
       const relR = Math.max(0, fR - openR);
       const diff = Math.abs(relL - relR);
@@ -364,13 +510,19 @@ function analyzeVoiceAndSmileStep(samples, neutralMouth, neutralSmile, noiseGate
   let smileWeightR = 0.5;
   let smileThreshold = 0.5;
   let mouthGain = 1.4;
+  let smileBlinkIntrusionL = 0;
+  let smileBlinkIntrusionR = 0;
   if (faceSamples.length > 0) {
     const p90SmileL = percentile(
-      faceSamples.map((s) => s.blendshapes.mouthSmileLeft || 0),
+      faceSamples.map(
+        (s) => (s.blendshapes.mouthSmileLeft || 0) + (s.blendshapes.cheekSquintLeft || 0) * 0.18
+      ),
       0.9
     );
     const p90SmileR = percentile(
-      faceSamples.map((s) => s.blendshapes.mouthSmileRight || 0),
+      faceSamples.map(
+        (s) => (s.blendshapes.mouthSmileRight || 0) + (s.blendshapes.cheekSquintRight || 0) * 0.18
+      ),
       0.9
     );
     const maxSide = Math.max(p90SmileL, p90SmileR);
@@ -389,6 +541,36 @@ function analyzeVoiceAndSmileStep(samples, neutralMouth, neutralSmile, noiseGate
     if (calSmileSpan >= 0.15) {
       const normalizedPeak = neutralSmile > 0 && neutralSmile < 0.95 ? calSmileSpan / (1 - neutralSmile) : weightedPeakSmile;
       smileThreshold = Number(clamp(normalizedPeak * 0.62, 0.25, 0.75).toFixed(2));
+    }
+    const smilingOpenFrames = faceSamples.filter((s) => {
+      const bs = s.blendshapes;
+      const sm = (bs.mouthSmileLeft || 0) * smileWeightL + (bs.mouthSmileRight || 0) * smileWeightR;
+      const earOpen = (bs.earBlinkLeft === void 0 || bs.earBlinkLeft < 0.5) && (bs.earBlinkRight === void 0 || bs.earBlinkRight < 0.5);
+      return sm >= neutralSmile + 0.15 && earOpen;
+    });
+    if (smilingOpenFrames.length > 0) {
+      smileBlinkIntrusionL = Number(
+        percentile(
+          smilingOpenFrames.map((s) => {
+            const bs = s.blendshapes;
+            const sm = (bs.mouthSmileLeft || 0) * smileWeightL + (bs.mouthSmileRight || 0) * smileWeightR;
+            const sqL = Math.max(bs.eyeSquintLeft || 0, (bs.cheekSquintLeft || 0) * 0.85);
+            return fuseBlinkScoreClient(bs.eyeBlinkLeft || 0, bs.earBlinkLeft, sqL, sm, bs.eyeWideLeft || 0);
+          }),
+          0.75
+        ).toFixed(3)
+      );
+      smileBlinkIntrusionR = Number(
+        percentile(
+          smilingOpenFrames.map((s) => {
+            const bs = s.blendshapes;
+            const sm = (bs.mouthSmileLeft || 0) * smileWeightL + (bs.mouthSmileRight || 0) * smileWeightR;
+            const sqR = Math.max(bs.eyeSquintRight || 0, (bs.cheekSquintRight || 0) * 0.85);
+            return fuseBlinkScoreClient(bs.eyeBlinkRight || 0, bs.earBlinkRight, sqR, sm, bs.eyeWideRight || 0);
+          }),
+          0.75
+        ).toFixed(3)
+      );
     }
     const p90Jaw = percentile(
       faceSamples.map((s) => s.blendshapes.jawOpen || 0),
@@ -412,7 +594,9 @@ function analyzeVoiceAndSmileStep(samples, neutralMouth, neutralSmile, noiseGate
     smileWeightR,
     smileThreshold,
     mouthGain,
-    micGain
+    micGain,
+    smileBlinkIntrusionL,
+    smileBlinkIntrusionR
   };
 }
 function buildCalibrationProfile(neutral, blink, voiceSmile) {
@@ -430,6 +614,13 @@ function buildCalibrationProfile(neutral, blink, voiceSmile) {
     neutralMouth: neutral.neutralMouth,
     neutralBrowL: neutral.neutralBrowL,
     neutralBrowR: neutral.neutralBrowR,
+    neutralPucker: neutral.neutralPucker,
+    neutralFrown: neutral.neutralFrown,
+    neutralCheekPuff: neutral.neutralCheekPuff,
+    neutralNoseSneer: neutral.neutralNoseSneer,
+    neutralJawX: neutral.neutralJawX,
+    neutralSquintL: neutral.neutralSquintL,
+    neutralSquintR: neutral.neutralSquintR,
     blinkOpenL: neutral.blinkOpenL,
     blinkOpenR: neutral.blinkOpenR,
     blinkClosedL: blink.blinkClosedL,
@@ -835,9 +1026,11 @@ var valVuMeter = document.getElementById("val-vu-meter");
 var gaugeYaw = document.getElementById("gauge-yaw");
 var gaugePitch = document.getElementById("gauge-pitch");
 var gaugeRoll = document.getElementById("gauge-roll");
+var gaugeDepthZ = document.getElementById("gauge-depth-z");
 var valYaw = document.getElementById("val-yaw");
 var valPitch = document.getElementById("val-pitch");
 var valRoll = document.getElementById("val-roll");
+var valDepthZ = document.getElementById("val-depth-z");
 var gaugeBlinkL = document.getElementById("gauge-blink-l");
 var gaugeBlinkR = document.getElementById("gauge-blink-r");
 var valBlinkL = document.getElementById("val-blink-l");
@@ -852,6 +1045,10 @@ var gaugeMouthOpen = document.getElementById("gauge-mouth-open");
 var gaugeSmile = document.getElementById("gauge-smile");
 var valSmile = document.getElementById("val-smile");
 var smileThresholdMarker = document.getElementById("smile-threshold-marker");
+var gaugePuckerPuff = document.getElementById("gauge-pucker-puff");
+var valPuckerPuff = document.getElementById("val-pucker-puff");
+var gaugeFrownTongue = document.getElementById("gauge-frown-tongue");
+var valFrownTongue = document.getElementById("val-frown-tongue");
 var sliderMouthGain = document.getElementById("slider-mouth-gain");
 var sliderMouthThreshold = document.getElementById("slider-mouth-threshold");
 var checkboxEnableSmile = document.getElementById("check-enable-smile");
@@ -882,6 +1079,7 @@ var sliderEyeGain = document.getElementById("slider-eye-gain");
 var sliderBrowGain = document.getElementById("slider-brow-gain");
 var sliderYawMultiplier = document.getElementById("slider-yaw-multiplier");
 var sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier");
+var sliderDepthZoom = document.getElementById("slider-depth-zoom");
 var sliderMicGain = document.getElementById("slider-mic-gain");
 var sliderNoiseGate = document.getElementById("slider-noise-gate");
 var sliderDecaySmooth = document.getElementById("slider-decay-smooth");
@@ -900,6 +1098,7 @@ var valEyeGain = document.getElementById("val-eye-gain");
 var valBrowGain = document.getElementById("val-brow-gain");
 var valYawMultiplier = document.getElementById("val-yaw-multiplier");
 var valPitchMultiplier = document.getElementById("val-pitch-multiplier");
+var valDepthZoom = document.getElementById("val-depth-zoom");
 var btnSaveSettings = document.getElementById("btn-save-settings");
 var btnResetSettings = document.getElementById("btn-reset-settings");
 var saveStatus = document.getElementById("save-status");
@@ -1809,6 +2008,65 @@ async function toggleCamera() {
     updateStatus(`Camera access denied: ${err.message}`, "status-error");
   }
 }
+var tongueSampleCanvas = null;
+var tongueSampleCtx = null;
+function sampleOpticalTongueFromVideo(vid, landmarks, mouthGapRatio, jawOpen) {
+  if (jawOpen < 0.08 && mouthGapRatio < 0.045) {
+    return 0;
+  }
+  const vw = vid.videoWidth;
+  const vh = vid.videoHeight;
+  if (!vw || !vh || !landmarks || landmarks.length < 309) {
+    return 0;
+  }
+  if (!tongueSampleCanvas) {
+    tongueSampleCanvas = document.createElement("canvas");
+    tongueSampleCanvas.width = 4;
+    tongueSampleCanvas.height = 4;
+    tongueSampleCtx = tongueSampleCanvas.getContext("2d", { willReadFrequently: true });
+  }
+  if (!tongueSampleCtx) return 0;
+  try {
+    const upperInner = landmarks[13];
+    const lowerInner = landmarks[14];
+    const lowerOuter = landmarks[17];
+    const cheekL = landmarks[50];
+    const cheekR = landmarks[280];
+    const cavX = Math.max(2, Math.min(vw - 4, Math.round((upperInner.x + lowerInner.x) * 0.5 * vw)));
+    const cavY = Math.max(
+      2,
+      Math.min(vh - 4, Math.round((upperInner.y * 0.35 + lowerInner.y * 0.4 + lowerOuter.y * 0.25) * vh))
+    );
+    tongueSampleCtx.drawImage(vid, cavX - 2, cavY - 2, 4, 4, 0, 0, 2, 2);
+    const skinX = Math.max(2, Math.min(vw - 4, Math.round((cheekL.x + cheekR.x) * 0.5 * vw)));
+    const skinY = Math.max(2, Math.min(vh - 4, Math.round((cheekL.y + cheekR.y) * 0.5 * vh)));
+    tongueSampleCtx.drawImage(vid, skinX - 2, skinY - 2, 4, 4, 2, 0, 2, 2);
+    const data = tongueSampleCtx.getImageData(0, 0, 4, 2).data;
+    const cav = { r: 0, g: 0, b: 0 };
+    const skin = { r: 0, g: 0, b: 0 };
+    for (let y = 0; y < 2; y++) {
+      for (let x = 0; x < 2; x++) {
+        const ci = (y * 4 + x) * 4;
+        cav.r += data[ci];
+        cav.g += data[ci + 1];
+        cav.b += data[ci + 2];
+        const si = (y * 4 + (x + 2)) * 4;
+        skin.r += data[si];
+        skin.g += data[si + 1];
+        skin.b += data[si + 2];
+      }
+    }
+    cav.r /= 4;
+    cav.g /= 4;
+    cav.b /= 4;
+    skin.r /= 4;
+    skin.g /= 4;
+    skin.b /= 4;
+    return evaluateOpticalTongue(cav, skin, mouthGapRatio, jawOpen);
+  } catch {
+    return 0;
+  }
+}
 function processFrame(renderUI = true) {
   if (!webcamRunning || !faceLandmarker || isProcessing || !video) return;
   const now = performance.now();
@@ -1831,6 +2089,20 @@ function processFrame(renderUI = true) {
       if (ear) {
         blendshapes.earBlinkLeft = ear.earBlinkLeft;
         blendshapes.earBlinkRight = ear.earBlinkRight;
+      }
+      const mouthGeo = computeMouthGeometry(landmarks);
+      if (mouthGeo) {
+        blendshapes.geoFrownLeft = mouthGeo.geoFrownLeft;
+        blendshapes.geoFrownRight = mouthGeo.geoFrownRight;
+        const optTongue = sampleOpticalTongueFromVideo(
+          video,
+          landmarks,
+          mouthGeo.mouthGapRatio,
+          blendshapes.jawOpen || 0
+        );
+        if (optTongue > (blendshapes.tongueOut || 0)) {
+          blendshapes.tongueOut = optTongue;
+        }
       }
       let pose = { yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 };
       if (results.facialTransformationMatrixes && results.facialTransformationMatrixes[0]) {
@@ -1965,11 +2237,33 @@ function updateTrackingGauges(pose, blendshapes) {
   const smile = Math.max(0, Math.min(1, smileRaw - smileBase));
   if (valSmile) valSmile.textContent = `${Math.round(smile * 100)}%`;
   if (gaugeSmile) gaugeSmile.style.width = `${Math.min(100, Math.round(smile * 100))}%`;
+  const neutralZ = cal && cal.calibrated ? cal.neutralZ : -50;
+  const rawZ = pose.z || neutralZ;
+  const normZ = Math.max(-1, Math.min(1, (rawZ - neutralZ) / 25));
+  const depthPct = Math.round(normZ * 100);
+  if (valDepthZ) valDepthZ.textContent = `${depthPct > 0 ? "+" : ""}${depthPct}%`;
+  if (gaugeDepthZ) gaugeDepthZ.style.width = `${Math.min(100, Math.max(0, Math.round((normZ + 1) * 50)))}%`;
+  const puckerRaw = Math.max(blendshapes.mouthPucker || 0, (blendshapes.mouthFunnel || 0) * 0.75);
+  const pucker = Math.max(0, Math.min(1, puckerRaw - (cal?.neutralPucker || 0)));
+  const puff = Math.max(0, Math.min(1, ((blendshapes.cheekPuff || 0) - (cal?.neutralCheekPuff || 0)) * 1.8));
+  const puckerPuff = Math.max(pucker, puff);
+  if (valPuckerPuff) valPuckerPuff.textContent = `${Math.round(puckerPuff * 100)}%`;
+  if (gaugePuckerPuff) gaugePuckerPuff.style.width = `${Math.min(100, Math.round(puckerPuff * 100))}%`;
+  const frownRaw = extractRawFrownClient(blendshapes, wL, wR);
+  const frownBase = cal && cal.calibrated ? cal.neutralFrown || 0 : 0;
+  const frownDenom = Math.max(0.1, 1 - frownBase);
+  const frown = Math.max(0, Math.min(1, Math.max(0, frownRaw - frownBase) / frownDenom * 2.4));
+  const tongue = Math.max(0, Math.min(1, blendshapes.tongueOut || 0));
+  const frownTongue = Math.max(frown, tongue);
+  if (valFrownTongue) valFrownTongue.textContent = `${Math.round(frownTongue * 100)}%`;
+  if (gaugeFrownTongue) gaugeFrownTongue.style.width = `${Math.min(100, Math.round(frownTongue * 100))}%`;
 }
 function resetTrackingGauges() {
   if (valYaw) valYaw.textContent = "0.0\xB0";
   if (valPitch) valPitch.textContent = "0.0\xB0";
   if (valRoll) valRoll.textContent = "0.0\xB0";
+  if (valDepthZ) valDepthZ.textContent = "0%";
+  if (gaugeDepthZ) gaugeDepthZ.style.width = "50%";
   if (valBlinkL) valBlinkL.textContent = "0%";
   if (valBlinkR) valBlinkR.textContent = "0%";
   if (gaugeBlinkL) gaugeBlinkL.style.width = "0%";
@@ -1981,6 +2275,10 @@ function resetTrackingGauges() {
   if (gaugeMouthOpen) gaugeMouthOpen.style.width = "0%";
   if (valSmile) valSmile.textContent = "0%";
   if (gaugeSmile) gaugeSmile.style.width = "0%";
+  if (valPuckerPuff) valPuckerPuff.textContent = "0%";
+  if (gaugePuckerPuff) gaugePuckerPuff.style.width = "0%";
+  if (valFrownTongue) valFrownTongue.textContent = "0%";
+  if (gaugeFrownTongue) gaugeFrownTongue.style.width = "0%";
 }
 function sendTrackingLoss(audioState) {
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -2110,6 +2408,8 @@ function syncSettingsToUI(s) {
       sliderBrowGain.value = String(t.browGain !== void 0 ? t.browGain : 1.5);
     if (sliderYawMultiplier) sliderYawMultiplier.value = String(t.yawMultiplier || 1);
     if (sliderPitchMultiplier) sliderPitchMultiplier.value = String(t.pitchMultiplier || 1);
+    if (sliderDepthZoom)
+      sliderDepthZoom.value = String(t.depthZoomAmount !== void 0 ? t.depthZoomAmount : 0.25);
   }
   if (s.audio) {
     const a = s.audio;
@@ -2154,6 +2454,8 @@ function updateSliderLabels() {
     valYawMultiplier.textContent = `${parseFloat(sliderYawMultiplier.value).toFixed(1)}x`;
   if (valPitchMultiplier && sliderPitchMultiplier)
     valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
+  if (valDepthZoom && sliderDepthZoom)
+    valDepthZoom.textContent = `${parseFloat(sliderDepthZoom.value).toFixed(2)}x`;
   if (smileThresholdMarker && sliderSmileThreshold) {
     const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
     smileThresholdMarker.style.left = `${smilePercent}%`;
@@ -2219,6 +2521,9 @@ function collectSettingsFromUI() {
       pitchMultiplier: parseFloat(sliderPitchMultiplier?.value || "1.0"),
       rollMultiplier: 1,
       poseSmoothing: 1,
+      depthZoomAmount: parseFloat(
+        sliderDepthZoom?.value !== void 0 ? sliderDepthZoom.value : "0.25"
+      ),
       calibration: activeSettings?.tracking?.calibration
     },
     audio: {
@@ -2252,6 +2557,7 @@ function onSliderInput() {
   sliderBrowGain,
   sliderYawMultiplier,
   sliderPitchMultiplier,
+  sliderDepthZoom,
   sliderMicGain,
   sliderNoiseGate,
   sliderDecaySmooth,
@@ -3979,8 +4285,26 @@ async function finalizeGuidedCalibration() {
     neutral.noiseGate
   );
   const profile = buildCalibrationProfile(neutral, blink, voiceSmile);
+  let finalThreshL = blink.blinkThresholdL;
+  let finalThreshR = blink.blinkThresholdR;
+  if (voiceSmile.smileBlinkIntrusionL && voiceSmile.smileBlinkIntrusionL > neutral.blinkOpenL) {
+    const remappedIntrusionL = remapBlinkClient(
+      voiceSmile.smileBlinkIntrusionL,
+      profile.blinkOpenL,
+      profile.blinkClosedL
+    );
+    finalThreshL = Number(Math.min(0.72, Math.max(finalThreshL, remappedIntrusionL + 0.1)).toFixed(2));
+  }
+  if (voiceSmile.smileBlinkIntrusionR && voiceSmile.smileBlinkIntrusionR > neutral.blinkOpenR) {
+    const remappedIntrusionR = remapBlinkClient(
+      voiceSmile.smileBlinkIntrusionR,
+      profile.blinkOpenR,
+      profile.blinkClosedR
+    );
+    finalThreshR = Number(Math.min(0.72, Math.max(finalThreshR, remappedIntrusionR + 0.1)).toFixed(2));
+  }
   if (calSumBlinkRange) {
-    calSumBlinkRange.textContent = `L: ${Math.round(profile.blinkOpenL * 100)}%\u2192${Math.round(profile.blinkClosedL * 100)}% (T:${Math.round(blink.blinkThresholdL * 100)}%) \u2022 R: ${Math.round(profile.blinkOpenR * 100)}%\u2192${Math.round(profile.blinkClosedR * 100)}% (T:${Math.round(blink.blinkThresholdR * 100)}%)`;
+    calSumBlinkRange.textContent = `L: ${Math.round(profile.blinkOpenL * 100)}%\u2192${Math.round(profile.blinkClosedL * 100)}% (T:${Math.round(finalThreshL * 100)}%) \u2022 R: ${Math.round(profile.blinkOpenR * 100)}%\u2192${Math.round(profile.blinkClosedR * 100)}% (T:${Math.round(finalThreshR * 100)}%)`;
   }
   if (calSumGlare) {
     calSumGlare.textContent = profile.glareAssist ? "Glare Assist ON + 3D EAR" : "3D EAR Hybrid Active";
@@ -3994,9 +4318,9 @@ async function finalizeGuidedCalibration() {
   }
   const current = collectSettingsFromUI();
   current.tracking.calibration = profile;
-  current.tracking.blinkThreshold = blink.blinkThresholdL;
-  current.tracking.blinkThresholdL = blink.blinkThresholdL;
-  current.tracking.blinkThresholdR = blink.blinkThresholdR;
+  current.tracking.blinkThreshold = finalThreshL;
+  current.tracking.blinkThresholdL = finalThreshL;
+  current.tracking.blinkThresholdR = finalThreshR;
   current.tracking.blinkMaxHeadYaw = headTurn.blinkMaxHeadYaw;
   current.tracking.yawMultiplier = headTurn.yawMultiplier;
   current.tracking.pitchMultiplier = headTurn.pitchMultiplier;

@@ -29,6 +29,13 @@ import {
   let boundMouthNeutral: SVGGraphicsElement | null = null;
   let boundMouthSmile: SVGGraphicsElement | null = null;
   let boundMouthOpen: SVGGraphicsElement | null = null;
+  let boundMouthFrown: SVGGraphicsElement | null = null;
+  let boundMouthFrownIsAuto = false;
+  let boundFrownCx = 256;
+  let boundFrownCy = 310;
+  let boundMouthTongue: SVGGraphicsElement | null = null;
+  let boundTongueCx = 256;
+  let boundTongueTopY = 315;
   let boundEyesOpen: SVGGraphicsElement | null = null;
   let boundEyesClosed: SVGGraphicsElement | null = null;
   let boundEyeOpenL: SVGGraphicsElement | null = null;
@@ -97,6 +104,9 @@ import {
     boundMouthNeutral = null;
     boundMouthSmile = null;
     boundMouthOpen = null;
+    boundMouthFrown = null;
+    boundMouthFrownIsAuto = false;
+    boundMouthTongue = null;
     boundEyesOpen = null;
     boundEyesClosed = null;
     boundEyeOpenL = null;
@@ -114,6 +124,8 @@ import {
       activeRigBindings = accessoryBindings;
       return;
     }
+
+    svg.querySelector("#svgtuber_mouth_frown_auto")?.remove();
 
     rigDef.elements.forEach((elem: any) => {
       let el: SVGGraphicsElement | null = elem.id ? svg.querySelector(`#${CSS.escape(elem.id)}`) : null;
@@ -135,9 +147,38 @@ import {
       const lowerId = (elem.id || "").toLowerCase();
       const lowerLabel = (elem.label || "").toLowerCase();
 
-      if (lowerId === "mouth_neutral" || lowerLabel.includes("mouth neutral")) boundMouthNeutral = el;
-      if (lowerId === "mouth_smile" || lowerLabel.includes("mouth smile")) boundMouthSmile = el;
-      if (lowerId === "mouth_open" || lowerLabel.includes("mouth open")) boundMouthOpen = el;
+      if (
+        lowerId === "mouth_neutral" ||
+        lowerId === "mouth_resting_group" ||
+        lowerLabel.includes("mouth neutral") ||
+        lowerLabel.includes("mouth_resting")
+      ) {
+        boundMouthNeutral = el;
+      }
+      if (
+        lowerId === "mouth_smile" ||
+        lowerId === "mouth_smile_group" ||
+        lowerLabel.includes("mouth smile") ||
+        lowerLabel.includes("mouth_smile")
+      ) {
+        boundMouthSmile = el;
+      }
+      if (
+        lowerId === "mouth_open" ||
+        lowerId === "mouth_open_group" ||
+        lowerLabel.includes("mouth open") ||
+        lowerLabel.includes("mouth_open")
+      ) {
+        boundMouthOpen = el;
+      }
+      if (
+        lowerId === "mouth_frown" ||
+        lowerId === "mouth_frown_group" ||
+        lowerLabel.includes("mouth frown") ||
+        lowerLabel.includes("mouth_frown")
+      ) {
+        boundMouthFrown = el;
+      }
       if (lowerId === "eyes_open" || lowerLabel.includes("eyes open")) boundEyesOpen = el;
       if (lowerId === "eyes_closed" || lowerLabel.includes("eyes closed")) boundEyesClosed = el;
       if (lowerId === "eye_open_left" || lowerLabel.includes("left eye open")) boundEyeOpenL = el;
@@ -192,6 +233,46 @@ import {
     });
 
     activeRigBindings.push(...accessoryBindings);
+
+    // Auto-synthesize a frown mouth curve if the SVG has a smile mouth but no dedicated frown layer
+    const smileEl = boundMouthSmile as SVGGraphicsElement | null;
+    if (!boundMouthFrown && smileEl && smileEl.parentElement) {
+      try {
+        const prevDisp = smileEl.style.display;
+        smileEl.style.display = "inline";
+        const sb = smileEl.getBBox();
+        smileEl.style.display = prevDisp;
+        boundFrownCx = sb.x + sb.width / 2;
+        boundFrownCy = sb.y + sb.height / 2;
+
+        const frownClone = smileEl.cloneNode(true) as SVGGraphicsElement;
+        frownClone.id = "svgtuber_mouth_frown_auto";
+        frownClone.querySelectorAll('[id*="Tongue" i], [id*="tongue" i]').forEach((n) => n.remove());
+        frownClone.style.display = "none";
+        smileEl.parentElement.insertBefore(frownClone, smileEl.nextSibling);
+        boundMouthFrown = frownClone;
+        boundMouthFrownIsAuto = true;
+      } catch (e) {
+        console.warn("[SVGTuber] Could not auto-synthesize frown layer:", e);
+      }
+    }
+
+    // Bind tongue sub-element inside open mouth for procedural tongue-out extension
+    const openEl = boundMouthOpen as SVGGraphicsElement | null;
+    const tongueScope = openEl || svg;
+    boundMouthTongue = tongueScope.querySelector<SVGGraphicsElement>(
+      "#Mouth_Tongue, #mouth_tongue, #path18"
+    );
+    if (boundMouthTongue && openEl) {
+      try {
+        const prevOpenDisp = openEl.style.display;
+        openEl.style.display = "inline";
+        const tb = boundMouthTongue.getBBox();
+        openEl.style.display = prevOpenDisp;
+        boundTongueCx = tb.x + tb.width / 2;
+        boundTongueTopY = tb.y;
+      } catch {}
+    }
 
     const domAccs = svg.querySelectorAll<SVGGraphicsElement>(".svgtuber-accessory");
     domAccs.forEach((accGroup) => scanAndBindAccessoryDirectives(accGroup));
@@ -703,6 +784,16 @@ import {
             }
             break;
           }
+          case "depth": {
+            const zVal = parseFloat(String(p.headZ || 0));
+            const amount = parseFloat(params.amount || params.factor || "0.25");
+            const minScale = parseFloat(params.min || "0.80");
+            const maxScale = parseFloat(params.max || "1.25");
+            const depthScale = Math.max(minScale, Math.min(maxScale, 1.0 + zVal * amount));
+            sx *= depthScale;
+            sy *= depthScale;
+            break;
+          }
           case "idle":
           case "breathe": {
             if (!isFreezeMode) {
@@ -1050,9 +1141,17 @@ import {
       }
     }
 
-    if (boundMouthNeutral || boundMouthSmile || boundMouthOpen) {
+    if (boundMouthNeutral || boundMouthSmile || boundMouthOpen || boundMouthFrown) {
+      const tongueVal = Math.max(0, Math.min(1, parseFloat(String(p.tongueOut || 0))));
+      const frownVal = Math.max(0, Math.min(1, parseFloat(String(p.frown || 0))));
+      const puckerVal = Math.max(0, Math.min(1, parseFloat(String(p.mouthPucker || 0))));
+      const jawXVal = Math.max(-1, Math.min(1, parseFloat(String(p.jawX || 0))));
+
+      const isTongue = Boolean(p.isTongueOut || tongueVal >= 0.35);
+      const isFrown = Boolean(p.isFrowning || frownVal >= 0.35);
       const isSmile = Boolean(boundMouthSmile && boundMouthSmile.style.display !== "none");
-      const isOpen = Boolean(boundMouthOpen && boundMouthOpen.style.display !== "none");
+      const isOpen = Boolean((boundMouthOpen && boundMouthOpen.style.display !== "none") || isTongue);
+
       const mResult = computeMouthExclusivity({
         hasNeutral: Boolean(boundMouthNeutral),
         hasSmile: Boolean(boundMouthSmile),
@@ -1060,9 +1159,52 @@ import {
         isOpen,
         isSmile,
       });
-      if (boundMouthNeutral) boundMouthNeutral.style.display = mResult.showNeutral ? "inline" : "none";
+
+      const showFrown = Boolean(!mResult.showOpen && !mResult.showSmile && isFrown && boundMouthFrown);
+      const showNeutral = Boolean(mResult.showNeutral && !showFrown);
+
+      if (boundMouthNeutral) {
+        boundMouthNeutral.style.display = showNeutral ? "inline" : "none";
+        if (showNeutral && (puckerVal > 0.06 || Math.abs(jawXVal) > 0.04 || frownVal > 0.08)) {
+          const sxN = 1.0 - puckerVal * 0.45;
+          const syN = 1.0 + puckerVal * 0.40;
+          const jx = jawXVal * 7.0;
+          const fy = frownVal * 2.5;
+          boundMouthNeutral.setAttribute(
+            "transform",
+            `translate(${jx.toFixed(2)}, ${fy.toFixed(2)}) translate(${boundFrownCx.toFixed(2)}, ${boundFrownCy.toFixed(2)}) scale(${sxN.toFixed(3)}, ${syN.toFixed(3)}) translate(${(-boundFrownCx).toFixed(2)}, ${(-boundFrownCy).toFixed(2)})`
+          );
+        }
+      }
       if (boundMouthSmile) boundMouthSmile.style.display = mResult.showSmile ? "inline" : "none";
       if (boundMouthOpen) boundMouthOpen.style.display = mResult.showOpen ? "inline" : "none";
+      if (boundMouthFrown) {
+        boundMouthFrown.style.display = showFrown ? "inline" : "none";
+        if (showFrown && boundMouthFrownIsAuto) {
+          const frownArc = 0.65 + frownVal * 0.35;
+          const puckerScaleX = 1.0 - puckerVal * 0.42;
+          const jx = jawXVal * 7.0;
+          boundMouthFrown.setAttribute(
+            "transform",
+            `translate(${jx.toFixed(2)}, 2.5) translate(${boundFrownCx.toFixed(2)}, ${boundFrownCy.toFixed(2)}) scale(${puckerScaleX.toFixed(3)}, ${(-frownArc).toFixed(3)}) translate(${(-boundFrownCx).toFixed(2)}, ${(-boundFrownCy).toFixed(2)})`
+          );
+        }
+      }
+
+      // Procedural tongue protrusion inside boundMouthOpen
+      if (boundMouthTongue) {
+        if (mResult.showOpen && tongueVal > 0.08) {
+          const tyTongue = tongueVal * 10.0;
+          const sxTongue = 1.0 + tongueVal * 0.22;
+          const syTongue = 1.0 + tongueVal * 0.95;
+          boundMouthTongue.setAttribute(
+            "transform",
+            `translate(0, ${tyTongue.toFixed(2)}) translate(${boundTongueCx.toFixed(2)}, ${boundTongueTopY.toFixed(2)}) scale(${sxTongue.toFixed(3)}, ${syTongue.toFixed(3)}) translate(${(-boundTongueCx).toFixed(2)}, ${(-boundTongueTopY).toFixed(2)})`
+          );
+        } else if (boundMouthTongue.hasAttribute("transform")) {
+          boundMouthTongue.removeAttribute("transform");
+        }
+      }
     }
 
     if (boundEyeClosedL && boundEyeClosedL.style.display !== "none") {
@@ -1074,6 +1216,18 @@ import {
 
     if (boundEyesClosed && boundEyesClosed.style.display !== "none" && !boundEyeClosedL && !boundEyeClosedR) {
       if (boundEyesOpen) boundEyesOpen.style.display = "none";
+    }
+
+    // Apply global head depth (headZ) lean-in / lean-back zoom on the avatar container
+    if (container && !isFreezeMode) {
+      const depthAmt = p.depthZoomAmount !== undefined ? parseFloat(String(p.depthZoomAmount)) : 0.25;
+      const headZ = parseFloat(String(p.headZ || 0));
+      if (depthAmt > 0 && Math.abs(headZ) > 0.002) {
+        const zScale = Math.max(0.80, Math.min(1.25, 1.0 + headZ * depthAmt * 0.35));
+        container.style.transform = `scale(${zScale.toFixed(4)})`;
+      } else if (container.style.transform) {
+        container.style.transform = "";
+      }
     }
   }
 

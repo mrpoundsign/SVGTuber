@@ -23,17 +23,24 @@ type CalibrationProfile struct {
 	NeutralZ     float64 `json:"neutralZ"`
 	NeutralEyeX  float64 `json:"neutralEyeX"`
 	NeutralEyeY  float64 `json:"neutralEyeY"`
-	NeutralSmile float64 `json:"neutralSmile"`
-	NeutralMouth float64 `json:"neutralMouth"`
-	NeutralBrowL float64 `json:"neutralBrowL"`
-	NeutralBrowR float64 `json:"neutralBrowR"`
-	BlinkOpenL   float64 `json:"blinkOpenL"`   // Resting open-eye floor (default: 0.0)
-	BlinkOpenR   float64 `json:"blinkOpenR"`   // Resting open-eye floor (default: 0.0)
-	BlinkClosedL float64 `json:"blinkClosedL"` // Natural blink ceiling (default: 1.0)
-	BlinkClosedR float64 `json:"blinkClosedR"` // Natural blink ceiling (default: 1.0)
-	GlareAssist  bool    `json:"glareAssist"`  // Couple clearer eye when one lens has reflection glare
-	SmileWeightL float64 `json:"smileWeightL"` // Left mouth corner weight (default: 0.5)
-	SmileWeightR float64 `json:"smileWeightR"` // Right mouth corner weight (default: 0.5)
+	NeutralSmile     float64 `json:"neutralSmile"`
+	NeutralMouth     float64 `json:"neutralMouth"`
+	NeutralBrowL     float64 `json:"neutralBrowL"`
+	NeutralBrowR     float64 `json:"neutralBrowR"`
+	NeutralPucker    float64 `json:"neutralPucker"`
+	NeutralFrown     float64 `json:"neutralFrown"`
+	NeutralCheekPuff float64 `json:"neutralCheekPuff"`
+	NeutralNoseSneer float64 `json:"neutralNoseSneer"`
+	NeutralJawX      float64 `json:"neutralJawX"`
+	NeutralSquintL   float64 `json:"neutralSquintL"`
+	NeutralSquintR   float64 `json:"neutralSquintR"`
+	BlinkOpenL       float64 `json:"blinkOpenL"`   // Resting open-eye floor (default: 0.0)
+	BlinkOpenR       float64 `json:"blinkOpenR"`   // Resting open-eye floor (default: 0.0)
+	BlinkClosedL     float64 `json:"blinkClosedL"` // Natural blink ceiling (default: 1.0)
+	BlinkClosedR     float64 `json:"blinkClosedR"` // Natural blink ceiling (default: 1.0)
+	GlareAssist      bool    `json:"glareAssist"`  // Couple clearer eye when one lens has reflection glare
+	SmileWeightL     float64 `json:"smileWeightL"` // Left mouth corner weight (default: 0.5)
+	SmileWeightR     float64 `json:"smileWeightR"` // Right mouth corner weight (default: 0.5)
 }
 
 // DefaultCalibrationProfile returns an uncalibrated profile with full [0..1] eye range and balanced smile weights.
@@ -79,6 +86,7 @@ type TrackingSettings struct {
 	AutoTiltAmount       float64            `json:"autoTiltAmount"`       // Scale multiplier on head sway/tilt (default: 1.0)
 	PhysicsEnabled       bool               `json:"physicsEnabled"`       // Enable secondary spring physics and sway (default: true)
 	PhysicsAmount        float64            `json:"physicsAmount"`        // Multiplier on physics spring/sway displacement (default: 1.0)
+	DepthZoomAmount      float64            `json:"depthZoomAmount"`      // Head depth (headZ) lean-in/lean-back avatar zoom amount (default: 0.25)
 	Calibration          CalibrationProfile `json:"calibration"`          // Persisted user face/glasses/setup calibration profile
 }
 
@@ -159,6 +167,7 @@ func DefaultSettings() Settings {
 			AutoTiltAmount:       1.0,
 			PhysicsEnabled:       true,
 			PhysicsAmount:        1.0,
+			DepthZoomAmount:      0.25,
 			Calibration:          DefaultCalibrationProfile(),
 		},
 		Audio: AudioSettings{

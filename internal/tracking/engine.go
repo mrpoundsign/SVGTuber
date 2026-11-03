@@ -18,19 +18,26 @@ type Engine struct {
 	neutralX     float64
 	neutralY     float64
 	neutralZ     float64
-	neutralSmile float64
-	neutralMouth float64
-	neutralBrowL float64
-	neutralBrowR float64
-	neutralEyeX  float64
-	neutralEyeY  float64
-	blinkOpenL   float64
-	blinkOpenR   float64
-	blinkClosedL float64
-	blinkClosedR float64
-	glareAssist  bool
-	smileWeightL float64
-	smileWeightR float64
+	neutralSmile     float64
+	neutralMouth     float64
+	neutralBrowL     float64
+	neutralBrowR     float64
+	neutralEyeX      float64
+	neutralEyeY      float64
+	neutralPucker    float64
+	neutralFrown     float64
+	neutralCheekPuff float64
+	neutralNoseSneer float64
+	neutralJawX      float64
+	neutralSquintL   float64
+	neutralSquintR   float64
+	blinkOpenL       float64
+	blinkOpenR       float64
+	blinkClosedL     float64
+	blinkClosedR     float64
+	glareAssist      bool
+	smileWeightL     float64
+	smileWeightR     float64
 	filter       *PoseFilter
 	lastRaw      FaceFrame
 	configMgr    *config.Manager
@@ -124,6 +131,13 @@ func (e *Engine) Calibrate() {
 		e.neutralMouth = bs["jawOpen"]
 		e.neutralBrowL, e.neutralBrowR, _ = extractRawBrows(bs)
 		e.neutralEyeX, e.neutralEyeY = extractRawGaze(bs)
+		e.neutralPucker = extractRawPucker(bs)
+		e.neutralFrown = bs["mouthFrownLeft"]*wL + bs["mouthFrownRight"]*wR
+		e.neutralCheekPuff = bs["cheekPuff"]
+		e.neutralNoseSneer = bs["noseSneerLeft"]*wL + bs["noseSneerRight"]*wR
+		e.neutralJawX = bs["jawRight"] - bs["jawLeft"]
+		e.neutralSquintL = bs["eyeSquintLeft"]
+		e.neutralSquintR = bs["eyeSquintRight"]
 
 		earL, hasEarL := bs["earBlinkLeft"]
 		earR, hasEarR := bs["earBlinkRight"]
@@ -158,26 +172,33 @@ func (e *Engine) Calibrate() {
 			e.smileWeightR = existing.SmileWeightR
 		}
 		calProfile = config.CalibrationProfile{
-			Calibrated:   true,
-			NeutralYaw:   e.neutralYaw,
-			NeutralPitch: e.neutralPitch,
-			NeutralRoll:  e.neutralRoll,
-			NeutralX:     e.neutralX,
-			NeutralY:     e.neutralY,
-			NeutralZ:     e.neutralZ,
-			NeutralEyeX:  e.neutralEyeX,
-			NeutralEyeY:  e.neutralEyeY,
-			NeutralSmile: e.neutralSmile,
-			NeutralMouth: e.neutralMouth,
-			NeutralBrowL: e.neutralBrowL,
-			NeutralBrowR: e.neutralBrowR,
-			BlinkOpenL:   e.blinkOpenL,
-			BlinkOpenR:   e.blinkOpenR,
-			BlinkClosedL: e.blinkClosedL,
-			BlinkClosedR: e.blinkClosedR,
-			GlareAssist:  e.glareAssist,
-			SmileWeightL: e.smileWeightL,
-			SmileWeightR: e.smileWeightR,
+			Calibrated:       true,
+			NeutralYaw:       e.neutralYaw,
+			NeutralPitch:     e.neutralPitch,
+			NeutralRoll:      e.neutralRoll,
+			NeutralX:         e.neutralX,
+			NeutralY:         e.neutralY,
+			NeutralZ:         e.neutralZ,
+			NeutralEyeX:      e.neutralEyeX,
+			NeutralEyeY:      e.neutralEyeY,
+			NeutralSmile:     e.neutralSmile,
+			NeutralMouth:     e.neutralMouth,
+			NeutralBrowL:     e.neutralBrowL,
+			NeutralBrowR:     e.neutralBrowR,
+			NeutralPucker:    e.neutralPucker,
+			NeutralFrown:     e.neutralFrown,
+			NeutralCheekPuff: e.neutralCheekPuff,
+			NeutralNoseSneer: e.neutralNoseSneer,
+			NeutralJawX:      e.neutralJawX,
+			NeutralSquintL:   e.neutralSquintL,
+			NeutralSquintR:   e.neutralSquintR,
+			BlinkOpenL:       e.blinkOpenL,
+			BlinkOpenR:       e.blinkOpenR,
+			BlinkClosedL:     e.blinkClosedL,
+			BlinkClosedR:     e.blinkClosedR,
+			GlareAssist:      e.glareAssist,
+			SmileWeightL:     e.smileWeightL,
+			SmileWeightR:     e.smileWeightR,
 		}
 	}
 	e.mu.Unlock()
@@ -204,18 +225,82 @@ func extractRawGaze(bs map[string]float64) (rawX, rawY float64) {
 // FuseBlinkScore combines MediaPipe's ARKit texture blendshape score with geometric 3D landmark
 // Eye Aspect Ratio (EAR) closure so lens glare on glasses does not blind blink detection.
 func FuseBlinkScore(blendshapeBlink, earBlink float64, hasEAR bool) float64 {
+	return FuseBlinkScoreWithSquint(blendshapeBlink, earBlink, hasEAR, 0, 0)
+}
+
+// FuseBlinkScoreWithSquint extends FuseBlinkScore with smile/cheek-squint disambiguation:
+// 1) When a big smile/laugh pushes the cheeks up (eyeSquint/cheekSquint >= 0.25 && smile >= 0.35),
+//    MediaPipe's 2D eyeBlink texture blendshape often spikes even though the eyelids are open.
+//    When 3D landmark EAR confirms the eye is open (earBlink < blendshapeBlink - 0.08), we weight
+//    geometric EAR higher to prevent false smile-induced blinks behind glasses.
+// 2) Conversely, when NOT smiling (smile < 0.20), unilateral recruitment of eyeSquint/cheekSquint
+//    (orbicularis oculi) helps rescue solo winks compressed by lens glare.
+func FuseBlinkScoreWithSquint(blendshapeBlink, earBlink float64, hasEAR bool, eyeSquint, smile float64) float64 {
 	b := math.Max(0.0, math.Min(1.0, blendshapeBlink))
 	if !hasEAR {
+		if smile >= 0.40 && eyeSquint >= 0.30 && b < 0.72 {
+			// Gentle cheek-raise attenuation when 3D EAR is not present
+			b = math.Max(0.0, b-math.Min(0.14, (smile-0.35)*(eyeSquint)*0.35))
+		} else if smile < 0.18 && eyeSquint >= 0.35 && b >= 0.22 {
+			// Non-smile orbicularis oculi recruitment boosts glare-compressed winks
+			b = math.Min(1.0, b+eyeSquint*0.14)
+		}
 		return b
 	}
 	e := math.Max(0.0, math.Min(1.0, earBlink))
+	// Smile/Laugh Cheek-Raise Guard: if smiling/squinting and 3D EAR shows the eye is open,
+	// trust 3D EAR so cheek compression doesn't false-trigger a blink.
+	if smile >= 0.35 && eyeSquint >= 0.25 && e < b-0.08 {
+		return math.Max(0.0, math.Min(1.0, e*0.75+b*0.25))
+	}
 	blended := b*0.65 + e*0.35
 	// If lens glare washes out the pixel blendshape while the 3D mesh eyelid closes,
 	// allow geometric EAR closure to rescue the blink signal.
 	if e > b+0.12 {
 		blended = math.Max(blended, e*0.90)
 	}
+	// Non-smile cheek/lower-lid squint synergy: rescues solo winks behind glasses glare
+	if smile < 0.18 && eyeSquint >= 0.35 && blended >= 0.22 {
+		blended = math.Min(1.0, blended+eyeSquint*0.12)
+	}
 	return math.Max(0.0, math.Min(1.0, blended))
+}
+
+func extractRawPucker(bs map[string]float64) float64 {
+	if bs == nil {
+		return 0
+	}
+	return math.Max(bs["mouthPucker"], bs["mouthFunnel"]*0.75)
+}
+
+func extractRawFrown(bs map[string]float64, wL, wR, rawSmile, rawPucker float64) float64 {
+	if bs == nil {
+		return 0
+	}
+	bsFrown := bs["mouthFrownLeft"]*wL + bs["mouthFrownRight"]*wR
+	geoFrown := bs["geoFrownLeft"]*wL + bs["geoFrownRight"]*wR
+	// MediaPipe's mouthFrownLeft/Right has a low raw ceiling (~0.15-0.30) on RGB webcams,
+	// whereas pouting/frowning strongly activates mouthShrugLower + mouthRollLower.
+	// Gate by non-smile, non-pucker, and closed/semi-closed jaw so speaking or smiling never triggers frown.
+	nonSmileGate := math.Max(0.0, 1.0-rawSmile*2.5) * math.Max(0.0, 1.0-rawPucker*1.8) * math.Max(0.0, 1.0-bs["jawOpen"]*2.2)
+	shrugPout := (bs["mouthShrugLower"]*0.65 + bs["mouthRollLower"]*0.35) * nonSmileGate
+	combined := math.Max(bsFrown, math.Max(geoFrown*0.85, shrugPout))
+	return math.Max(0.0, math.Min(1.0, combined))
+}
+
+func calibrateUnipolar(raw, neutral float64, calibrated bool) float64 {
+	raw = math.Max(0.0, math.Min(1.0, raw))
+	if !calibrated || neutral <= 0 {
+		return raw
+	}
+	if raw <= neutral {
+		return 0.0
+	}
+	denom := 1.0 - neutral
+	if denom < 0.10 {
+		denom = 0.10
+	}
+	return math.Max(0.0, math.Min(1.0, (raw-neutral)/denom))
 }
 
 // RemapBlink normalizes a raw eyelid closure score from the user's calibrated [openFloor .. closedCeiling]
@@ -292,6 +377,13 @@ func (e *Engine) ResetCalibration() {
 	e.neutralBrowR = 0
 	e.neutralEyeX = 0
 	e.neutralEyeY = 0
+	e.neutralPucker = 0
+	e.neutralFrown = 0
+	e.neutralCheekPuff = 0
+	e.neutralNoseSneer = 0
+	e.neutralJawX = 0
+	e.neutralSquintL = 0
+	e.neutralSquintR = 0
 	e.blinkOpenL = 0
 	e.blinkOpenR = 0
 	e.blinkClosedL = 1.0
@@ -375,6 +467,13 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			e.neutralMouth = ts.Calibration.NeutralMouth
 			e.neutralBrowL = ts.Calibration.NeutralBrowL
 			e.neutralBrowR = ts.Calibration.NeutralBrowR
+			e.neutralPucker = ts.Calibration.NeutralPucker
+			e.neutralFrown = ts.Calibration.NeutralFrown
+			e.neutralCheekPuff = ts.Calibration.NeutralCheekPuff
+			e.neutralNoseSneer = ts.Calibration.NeutralNoseSneer
+			e.neutralJawX = ts.Calibration.NeutralJawX
+			e.neutralSquintL = ts.Calibration.NeutralSquintL
+			e.neutralSquintR = ts.Calibration.NeutralSquintR
 			e.blinkOpenL = ts.Calibration.BlinkOpenL
 			e.blinkOpenR = ts.Calibration.BlinkOpenR
 			e.blinkClosedL = ts.Calibration.BlinkClosedL
@@ -499,6 +598,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BounceAmount:     bounceAmount,
 			PhysicsEnabled:   physicsEnabled,
 			PhysicsAmount:    physicsAmount,
+			DepthZoomAmount:  ts.DepthZoomAmount,
 			IsSpeaking:       isSpeaking,
 			IsBlinkL:         isAutoClosed,
 			IsBlinkR:         isAutoClosed,
@@ -557,6 +657,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			BounceAmount:     bounceAmount,
 			PhysicsEnabled:   physicsEnabled,
 			PhysicsAmount:    physicsAmount,
+			DepthZoomAmount:  ts.DepthZoomAmount,
 			IsSpeaking:       isSpeaking,
 			IsBlinkL:         isAutoClosed,
 			IsBlinkR:         isAutoClosed,
@@ -574,15 +675,54 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	roll := (raw.Roll - e.neutralRoll) * ts.RollMultiplier
 	x := raw.X - e.neutralX
 	y := raw.Y - e.neutralY
+	if e.neutralZ == 0 && math.Abs(raw.Z) > 2.0 {
+		e.neutralZ = raw.Z
+	}
 	z := raw.Z - e.neutralZ
+	if math.Abs(raw.Z) > 2.0 || math.Abs(e.neutralZ) > 2.0 {
+		z = math.Max(-1.0, math.Min(1.0, z/25.0))
+	} else {
+		z = math.Max(-1.0, math.Min(1.0, z))
+	}
 
 	// Extract standard ARKit facial blendshapes + 3D Landmark EAR fusion & glasses calibration
 	var rawBlinkL, rawBlinkR, blinkL, blinkR, opticalMouth, smile, browUp, browL, browR, eyeX, eyeY float64
+	var cheekPuff, mouthPucker, tongueOut, frown, jawX, noseSneer, eyeSquintL, eyeSquintR float64
 	if bs := raw.Blendshapes; bs != nil {
+		wL, wR := e.smileWeightL, e.smileWeightR
+		if wL <= 0 && wR <= 0 {
+			wL, wR = 0.5, 0.5
+		}
+
+		// Compute smile (with Duchenne cheekSquint synergy) and eyeSquint/cheekSquint first
+		// so FuseBlinkScoreWithSquint can guard against smile-induced cheek blink spikes
+		// and boost non-smile unilateral winks.
+		rawSmile := bs["mouthSmileLeft"]*wL + bs["mouthSmileRight"]*wR
+		cheekSmile := bs["cheekSquintLeft"]*wL + bs["cheekSquintRight"]*wR
+		if rawSmile > 0.10 && cheekSmile > 0.10 {
+			rawSmile = math.Min(1.0, rawSmile+cheekSmile*0.18)
+		}
+		if ts.EnableSmile {
+			smile = calibrateUnipolar(rawSmile, e.neutralSmile, e.calibrated)
+		} else {
+			smile = 0.0
+		}
+
+		eyeSquintL = calibrateUnipolar(math.Max(bs["eyeSquintLeft"], bs["cheekSquintLeft"]*0.85), e.neutralSquintL, e.calibrated)
+		eyeSquintR = calibrateUnipolar(math.Max(bs["eyeSquintRight"], bs["cheekSquintRight"]*0.85), e.neutralSquintR, e.calibrated)
+
 		earL, hasEarL := bs["earBlinkLeft"]
 		earR, hasEarR := bs["earBlinkRight"]
-		fusedL := FuseBlinkScore(bs["eyeBlinkLeft"], earL, hasEarL)
-		fusedR := FuseBlinkScore(bs["eyeBlinkRight"], earR, hasEarR)
+		fusedL := FuseBlinkScoreWithSquint(bs["eyeBlinkLeft"], earL, hasEarL, eyeSquintL, smile)
+		fusedR := FuseBlinkScoreWithSquint(bs["eyeBlinkRight"], earR, hasEarR, eyeSquintR, smile)
+		// If the user actively widens the opposite open eye (e.g., while winking the other eye),
+		// dampen sympathetic blink bleed on the widened eye.
+		if bs["eyeWideLeft"] >= 0.20 && fusedL < 0.55 {
+			fusedL = math.Max(0.0, fusedL-bs["eyeWideLeft"]*0.22)
+		}
+		if bs["eyeWideRight"] >= 0.20 && fusedR < 0.55 {
+			fusedR = math.Max(0.0, fusedR-bs["eyeWideRight"]*0.22)
+		}
 
 		openL, closedL := e.blinkOpenL, e.blinkClosedL
 		openR, closedR := e.blinkOpenR, e.blinkClosedR
@@ -603,48 +743,34 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			}
 		}
 
-		rawJaw := bs["jawOpen"]
-		if e.calibrated && e.neutralMouth > 0 {
-			if rawJaw > e.neutralMouth {
-				denom := 1.0 - e.neutralMouth
-				if denom > 0.05 {
-					rawJaw = (rawJaw - e.neutralMouth) / denom
-				}
-			} else {
-				rawJaw = 0.0
-			}
-		}
+		rawJaw := calibrateUnipolar(bs["jawOpen"], e.neutralMouth, e.calibrated)
 		opticalMouth = math.Min(1.0, rawJaw*ts.MouthGain)
 
-		if ts.EnableSmile {
-			wL, wR := e.smileWeightL, e.smileWeightR
-			if wL <= 0 && wR <= 0 {
-				wL, wR = 0.5, 0.5
-			}
-			rawSmile := bs["mouthSmileLeft"]*wL + bs["mouthSmileRight"]*wR
-			if e.calibrated && e.neutralSmile > 0 {
-				if rawSmile > e.neutralSmile {
-					denom := 1.0 - e.neutralSmile
-					if denom > 0.05 {
-						smile = (rawSmile - e.neutralSmile) / denom
-					} else {
-						smile = rawSmile - e.neutralSmile
-					}
-				} else {
-					smile = 0.0
-				}
-			} else {
-				smile = rawSmile
-			}
-		} else {
-			smile = 0.0
+		// Phase 2 ARKit Expressive Facial Detections (calibrated against Step 1 neutral baseline & Step 4 boom-mic weights)
+		rawPucker := extractRawPucker(bs)
+		cheekPuff = math.Min(1.0, calibrateUnipolar(bs["cheekPuff"], e.neutralCheekPuff, e.calibrated)*1.8)
+		mouthPucker = calibrateUnipolar(rawPucker, e.neutralPucker, e.calibrated)
+		tongueOut = math.Max(0.0, math.Min(1.0, bs["tongueOut"]))
+		rawFrown := extractRawFrown(bs, wL, wR, rawSmile, rawPucker)
+		frown = math.Min(1.0, calibrateUnipolar(rawFrown, e.neutralFrown, e.calibrated)*2.4)
+		rawSneer := bs["noseSneerLeft"]*wL + bs["noseSneerRight"]*wR
+		noseSneer = math.Min(1.0, calibrateUnipolar(rawSneer, e.neutralNoseSneer, e.calibrated)*1.8)
+		rawJawX := bs["jawRight"] - bs["jawLeft"]
+		if e.calibrated {
+			rawJawX -= e.neutralJawX
 		}
+		jawX = math.Max(-1.0, math.Min(1.0, rawJawX*2.0))
 
 		rawBrowL, rawBrowR, rawBrowUp := extractRawBrows(bs)
 		browUp = rawBrowUp
 		if e.calibrated {
 			rawBrowL -= e.neutralBrowL
 			rawBrowR -= e.neutralBrowR
+		}
+		// Sympathetic brow furrow when frowning (unless actively raising eyebrows)
+		if frown > 0.15 && rawBrowUp < 0.25 {
+			rawBrowL -= frown * 0.28
+			rawBrowR -= frown * 0.28
 		}
 		browGain := ts.BrowGain
 		if browGain < 0 {
@@ -701,6 +827,15 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 	filtBlinkR := e.filter.blinkR.Filter(blinkR, tSec)
 	filtMouth := e.filter.mouthOpen.Filter(finalMouth, tSec)
 	filtSmile := e.filter.smile.Filter(smile, tSec)
+	filtCheekPuff := e.filter.cheekPuff.Filter(cheekPuff, tSec)
+	filtMouthPucker := e.filter.mouthPucker.Filter(mouthPucker, tSec)
+	filtTongueOut := e.filter.tongueOut.Filter(tongueOut, tSec)
+	filtFrown := e.filter.frown.Filter(frown, tSec)
+	filtJawX := e.filter.jawX.Filter(jawX, tSec)
+	filtNoseSneer := e.filter.noseSneer.Filter(noseSneer, tSec)
+	filtSquintL := e.filter.eyeSquintL.Filter(eyeSquintL, tSec)
+	filtSquintR := e.filter.eyeSquintR.Filter(eyeSquintR, tSec)
+	filtSquint := (filtSquintL + filtSquintR) / 2.0
 
 	var isBlinkL, isBlinkR bool
 	if ts.WinkIsBlink {
@@ -755,6 +890,15 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		BrowUp:           e.filter.browUp.Filter(browUp, tSec),
 		BrowL:            e.filter.browL.Filter(browL, tSec),
 		BrowR:            e.filter.browR.Filter(browR, tSec),
+		CheekPuff:        filtCheekPuff,
+		MouthPucker:      filtMouthPucker,
+		TongueOut:        filtTongueOut,
+		Frown:            filtFrown,
+		JawX:             filtJawX,
+		NoseSneer:        filtNoseSneer,
+		EyeSquintL:       filtSquintL,
+		EyeSquintR:       filtSquintR,
+		EyeSquint:        filtSquint,
 		MouthThreshold:   ts.MouthThreshold,
 		BlinkThreshold:   ts.BlinkThreshold,
 		BlinkThresholdL:  threshL,
@@ -768,12 +912,18 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		BounceAmount:     bounceAmount,
 		PhysicsEnabled:   physicsEnabled,
 		PhysicsAmount:    physicsAmount,
+		DepthZoomAmount:  ts.DepthZoomAmount,
 		IsSpeaking:       isSpeaking,
 		IsBlinkL:         isBlinkL,
 		IsBlinkR:         isBlinkR,
 		AutoBlink:        false,
 		IsMouthOpen:      filtMouth >= ts.MouthThreshold,
 		IsSmiling:        filtSmile >= ts.SmileThreshold,
+		IsCheekPuff:      filtCheekPuff >= 0.35,
+		IsMouthPucker:    filtMouthPucker >= 0.35,
+		IsTongueOut:      filtTongueOut >= 0.35,
+		IsFrowning:       filtFrown >= 0.35,
+		IsSneering:       filtNoseSneer >= 0.35,
 		Expressions:      activeExprs,
 		Raw:              raw.Blendshapes,
 	}

@@ -1,6 +1,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { extractEulerAngles, computeEyeAspectRatios, type Landmark3D } from "./pose.ts";
+import {
+  extractEulerAngles,
+  computeEyeAspectRatios,
+  computeMouthGeometry,
+  evaluateOpticalTongue,
+  type Landmark3D,
+} from "./pose.ts";
 
 describe("Pose & Euler Angle Extraction", () => {
   test("returns zero angles for null, undefined, or empty matrix", () => {
@@ -60,5 +66,35 @@ describe("Pose & Euler Angle Extraction", () => {
     assert.ok(ear);
     assert.equal(ear.earBlinkLeft, 0);
     assert.equal(ear.earBlinkRight, 1);
+  });
+
+  test("computes 3D mouth corner droop for frown detection and optical tongue evaluation", () => {
+    const landmarks: Landmark3D[] = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
+    landmarks[33] = { x: 0.35, y: 0.40, z: 0 };
+    landmarks[263] = { x: 0.65, y: 0.40, z: 0 };
+    landmarks[13] = { x: 0.50, y: 0.69, z: 0 };
+    landmarks[14] = { x: 0.50, y: 0.71, z: 0 };
+    // Frowning mouth corners pulled down relative to lip center (y = 0.708 vs 0.700, width = 0.20 -> drop = 0.04)
+    landmarks[61] = { x: 0.40, y: 0.710, z: 0 };
+    landmarks[291] = { x: 0.60, y: 0.710, z: 0 };
+
+    const geo = computeMouthGeometry(landmarks);
+    assert.ok(geo);
+    assert.ok(geo.geoFrownLeft > 0.35);
+    assert.ok(geo.geoFrownRight > 0.35);
+
+    // Dark oral cavity (normal open mouth) -> 0 tongue
+    assert.equal(
+      evaluateOpticalTongue({ r: 35, g: 25, b: 25 }, { r: 190, g: 150, b: 130 }, 0.20, 0.35),
+      0
+    );
+    // Bright pink protruding tongue -> > 0.50 tongue score
+    const tongueScore = evaluateOpticalTongue(
+      { r: 215, g: 110, b: 120 },
+      { r: 190, g: 155, b: 135 },
+      0.20,
+      0.35
+    );
+    assert.ok(tongueScore > 0.50);
   });
 });

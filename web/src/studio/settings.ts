@@ -27,6 +27,7 @@ export interface TrackingConfig {
   autoTiltAmount: number;
   physicsEnabled: boolean;
   physicsAmount: number;
+  depthZoomAmount?: number;
   eyeGazeGain: number;
   gazeDeadzone?: number;
   browGain?: number;
@@ -81,6 +82,7 @@ export function createDefaultSettings(): SettingsPayload {
       autoTiltAmount: 1.0,
       physicsEnabled: true,
       physicsAmount: 1.0,
+      depthZoomAmount: 0.25,
       eyeGazeGain: 1.0,
       browGain: 1.5,
       yawMultiplier: 1.0,
