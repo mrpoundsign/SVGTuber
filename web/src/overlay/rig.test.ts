@@ -1,6 +1,12 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { resolvePivot, computeMouthExclusivity, computeEyeExclusivity } from "./rig.ts";
+import {
+  resolvePivot,
+  computeMouthExclusivity,
+  computeEyeExclusivity,
+  compute25DPerspective,
+  formatPivotScaleSkewTransform,
+} from "./rig.ts";
 
 describe("Rig System & Directives Logic", () => {
   const bbox = { x: 100, y: 100, width: 200, height: 100 };
@@ -85,5 +91,72 @@ describe("Rig System & Directives Logic", () => {
     assert.equal(winkLeft.showOpenL, false);
     assert.equal(winkLeft.showClosedR, false);
     assert.equal(winkLeft.showOpenR, true);
+  });
+
+  test("compute25DPerspective foreshortens head and scales near/far features asymmetrically", () => {
+    // Disabled (amount = 0 and no explicit params): returns identity
+    const off = compute25DPerspective({
+      headYaw: 25,
+      headPitch: 15,
+      sideOffset: 0.6,
+      amount: 0,
+    });
+    assert.equal(off.sx, 1);
+    assert.equal(off.sy, 1);
+    assert.equal(off.skewX, 0);
+    assert.equal(off.skewY, 0);
+
+    // Head root foreshortening at +25 deg yaw and +15 deg pitch
+    const head = compute25DPerspective({
+      headYaw: 25,
+      headPitch: 15,
+      partRole: "head_root",
+      isHeadRoot: true,
+      amount: 1.0,
+    });
+    assert.ok(head.sx < 1.0 && head.sx > 0.90, `expected head.sx foreshortened, got ${head.sx}`);
+    assert.ok(head.sy < 1.0 && head.sy > 0.92, `expected head.sy foreshortened, got ${head.sy}`);
+    assert.ok(head.skewX < 0, `expected negative neck-anchored skewX for right turn, got ${head.skewX}`);
+    assert.ok(head.skewY < 0, `expected negative diagonal skewY, got ${head.skewY}`);
+    assert.ok(head.extraTx < 0, `expected negative extraTx to keep chin planted on neck, got ${head.extraTx}`);
+
+    // Attached ear/horn has zero extraTx/extraTy so its skull attachment pivot never detaches
+    const farEar = compute25DPerspective({
+      headYaw: 25,
+      headPitch: 10,
+      sideOffset: 0.9,
+      partRole: "ear_or_horn",
+      amount: 1.0,
+    });
+    assert.equal(farEar.extraTx, 0);
+    assert.equal(farEar.extraTy, 0);
+    assert.ok(farEar.sx < 0.90, `expected farEar.sx < 0.90, got ${farEar.sx}`);
+
+    // Turning right (+25 deg): right-on-screen eye (sideOffset = +0.6) compresses more than left-on-screen (sideOffset = -0.6)
+    const farEye = compute25DPerspective({
+      headYaw: 25,
+      headPitch: 0,
+      sideOffset: 0.6,
+      partRole: "face_feature",
+      amount: 1.0,
+    });
+    const nearEye = compute25DPerspective({
+      headYaw: 25,
+      headPitch: 0,
+      sideOffset: -0.6,
+      partRole: "face_feature",
+      amount: 1.0,
+    });
+    assert.ok(farEye.sx < 0.94, `expected farEye.sx < 0.94, got ${farEye.sx}`);
+    assert.ok(nearEye.sx > farEye.sx, `expected nearEye.sx (${nearEye.sx}) > farEye.sx (${farEye.sx})`);
+    assert.ok(farEye.extraTx > 0, `expected facial feature to wrap right with yaw, got ${farEye.extraTx}`);
+  });
+
+  test("formatPivotScaleSkewTransform wraps skew and scale in a single pivot block", () => {
+    assert.equal(formatPivotScaleSkewTransform(1, 1, 0, 0, 130, 110), "");
+    assert.equal(
+      formatPivotScaleSkewTransform(0.92, 1.0, 4.5, -2.0, 130, 110),
+      "translate(130.00, 110.00) skewX(4.50) skewY(-2.00) scale(0.9200, 1.0000) translate(-130.00, -110.00)"
+    );
   });
 });

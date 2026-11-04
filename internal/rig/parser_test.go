@@ -104,6 +104,23 @@ func TestParseDirectives(t *testing.T) {
 			},
 		},
 		{
+			name:  "Skew directive for 2.5D head movement",
+			label: "Left Eye [Skew {x: headYaw; y: headPitch; rangeX: 5; rangeY: 3; persp: 0.25; pivot: center}]",
+			expected: []Directive{
+				{
+					Type: "Skew",
+					Params: map[string]string{
+						"x":      "headYaw",
+						"y":      "headPitch",
+						"rangex": "5",
+						"rangey": "3",
+						"persp":  "0.25",
+						"pivot":  "center",
+					},
+				},
+			},
+		},
+		{
 			name:     "Label with no directives",
 			label:    "Plain Layer 1",
 			expected: nil,

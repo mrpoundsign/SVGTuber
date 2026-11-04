@@ -238,6 +238,228 @@ function findAnchorTarget(svg, targetName, bindings = []) {
   }
   return svg;
 }
+function classifyRigBindings25D(svg, bindings, fallbackCenter) {
+  let headCenterCx = 0;
+  let headHalfWidth = 100;
+  let headNeckCy = 0;
+  const headNode = findAnchorTarget(svg, "layer_head", bindings);
+  if (headNode && headNode !== svg) {
+    try {
+      const skullBase = headNode.querySelector("#Head_Base_Group, #Head, #head_base, #face_base, #ellipse7") || headNode;
+      const hb = skullBase.getBBox();
+      if (hb && hb.width > 0) {
+        headCenterCx = hb.x + hb.width / 2;
+        headHalfWidth = Math.max(20, hb.width / 2);
+        headNeckCy = hb.y + hb.height * 0.88;
+      }
+    } catch {
+    }
+  }
+  if (headCenterCx === 0 && fallbackCenter) {
+    headCenterCx = fallbackCenter.x;
+    headHalfWidth = Math.max(40, fallbackCenter.x * 0.35);
+    headNeckCy = fallbackCenter.y * 1.15;
+  }
+  for (const b of bindings) {
+    const lowerId = (b.id || "").toLowerCase();
+    const lowerLabel = (b.label || "").toLowerCase();
+    b._isHeadRoot = Boolean(headNode && headNode !== svg && b.el === headNode) || lowerId === "head" || lowerId === "layer_head" || lowerId === "head_group" || lowerLabel.startsWith("head ") || lowerLabel.startsWith("head[") || lowerLabel.startsWith("head_group");
+  }
+  const initialCount = bindings.length;
+  for (let idx = 0; idx < initialCount; idx++) {
+    const b = bindings[idx];
+    if (b._isHeadRoot) {
+      b._partRole = "head_root";
+      b._sideOffset = 0;
+      b._scaleCy = headNeckCy > 0 ? headNeckCy : b.cy;
+      continue;
+    }
+    b._scaleCy = b.cy;
+    let visualCx = b.cx;
+    if (b.bbox && b.bbox.width > 0) {
+      visualCx = b.bbox.x + b.bbox.width / 2;
+    } else {
+      try {
+        const eb = b.el.getBBox();
+        if (eb && eb.width > 0) {
+          b.bbox = { x: eb.x, y: eb.y, width: eb.width, height: eb.height };
+          visualCx = eb.x + eb.width / 2;
+        }
+      } catch {
+      }
+    }
+    b._sideOffset = Math.max(-1, Math.min(1, (visualCx - headCenterCx) / headHalfWidth));
+    const inHead = Boolean(headNode && headNode !== svg && headNode.contains(b.el));
+    if (!inHead) {
+      b._partRole = "other";
+      continue;
+    }
+    const intermediateAncestors = bindings.filter(
+      (pb) => pb !== b && !pb._isHeadRoot && Boolean(headNode && headNode.contains(pb.el)) && Boolean(pb.el && pb.el.contains(b.el))
+    );
+    if (intermediateAncestors.length > 0) {
+      const distParent = intermediateAncestors.find(
+        (pb) => pb.directives.some((d) => {
+          const t = (d.type || d.Type || d.name || "").toLowerCase().trim();
+          return t === "dist" || t === "distance" || t === "parallax";
+        })
+      );
+      if (distParent && intermediateAncestors.length === 1) {
+        b._partRole = "snout_sub";
+        const dpBBox = distParent.bbox;
+        if (dpBBox && dpBBox.width > 0) {
+          const dpCx = dpBBox.x + dpBBox.width / 2;
+          const dpHalfW = Math.max(20, dpBBox.width / 2);
+          b._sideOffset = Math.max(-1, Math.min(1, (visualCx - dpCx) / dpHalfW));
+        }
+      } else {
+        b._partRole = "other";
+      }
+      continue;
+    }
+    const hasDist = b.directives.some((d) => {
+      const t = (d.type || d.Type || d.name || "").toLowerCase().trim();
+      return t === "dist" || t === "distance" || t === "parallax";
+    });
+    const hasSway = b.directives.some((d) => {
+      const t = (d.type || d.Type || d.name || "").toLowerCase().trim();
+      return t === "sway";
+    });
+    const lowerCombined = `${(b.id || "").toLowerCase()} ${(b.label || "").toLowerCase()}`;
+    if (hasDist) {
+      b._partRole = "face_dist";
+      if (b.bbox && b.bbox.height > 0) {
+        b._scaleCy = b.bbox.y + b.bbox.height * 0.18;
+      }
+      const nostrils = b.el.querySelectorAll('[id*="Nostril" i], [id*="nostril" i]');
+      nostrils.forEach((nEl) => {
+        if (bindings.some((existing) => existing.el === nEl)) return;
+        try {
+          const nb = nEl.getBBox();
+          if (nb && nb.width > 0) {
+            const nCx = nb.x + nb.width / 2;
+            const nCy = nb.y + nb.height / 2;
+            const dpBBox = b.bbox;
+            const dpCx = dpBBox && dpBBox.width > 0 ? dpBBox.x + dpBBox.width / 2 : headCenterCx;
+            const dpHalfW = dpBBox && dpBBox.width > 0 ? Math.max(20, dpBBox.width / 2) : headHalfWidth;
+            bindings.push({
+              el: nEl,
+              id: nEl.id || "nostril",
+              label: nEl.id || "nostril",
+              cx: nCx,
+              cy: nCy,
+              bbox: { x: nb.x, y: nb.y, width: nb.width, height: nb.height },
+              baseTransform: nEl.getAttribute("transform") || "",
+              directives: [],
+              _isHeadRoot: false,
+              _partRole: "snout_sub",
+              _scaleCy: nCy,
+              _sideOffset: Math.max(-1, Math.min(1, (nCx - dpCx) / dpHalfW))
+            });
+          }
+        } catch {
+        }
+      });
+    } else if (hasSway || /ear|horn|antenn|braid|hair_side|ahoge|top_accessory|forelock/.test(lowerCombined)) {
+      b._partRole = "ear_or_horn";
+    } else {
+      b._partRole = "face_feature";
+    }
+  }
+}
+function compute25DPerspective(opts) {
+  const yaw = opts.headYaw || 0;
+  const pitch = opts.headPitch || 0;
+  const amt = opts.amount !== void 0 ? opts.amount : 0;
+  const yawRad = yaw * Math.PI / 180;
+  const pitchRad = pitch * Math.PI / 180;
+  const sinYaw = Math.sin(yawRad);
+  const cosYaw = Math.cos(yawRad);
+  const cosPitch = Math.cos(pitchRad);
+  let sx = 1;
+  let sy = 1;
+  let skewX = 0;
+  let skewY = 0;
+  let extraTx = 0;
+  let extraTy = 0;
+  const side = Math.max(-1, Math.min(1, opts.sideOffset || 0));
+  const role = opts.partRole || (opts.isHeadRoot ? "head_root" : opts.distFactor ? "face_dist" : "other");
+  if (amt > 0) {
+    if (role === "head_root") {
+      sx *= 1 - (1 - cosYaw) * 0.24 * amt;
+      sy *= 1 - (1 - cosPitch) * 0.16 * amt;
+      skewX += -(yaw / 25) * 3 * amt;
+      skewY += -(yaw / 25) * (pitch / 20) * 3.2 * amt;
+      extraTx += -yaw * 0.22 * amt;
+      extraTy += -pitch * 0.15 * amt;
+    } else if (role === "ear_or_horn") {
+      const asymK = side * sinYaw >= 0 ? 0.56 : 0.2;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
+      sx *= Math.max(0.52, Math.min(1.24, autoScale));
+      skewY += -side * (yaw / 25) * 4.5 * amt;
+    } else if (role === "face_feature") {
+      extraTx += yaw * 0.068 * 2.2 * amt - side * (1 - cosYaw) * 5.5 * amt;
+      extraTy += pitch * 0.068 * 1.6 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.42 : 0.18;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
+      sx *= Math.max(0.58, Math.min(1.22, autoScale));
+      skewY += yaw / 25 * 2.6 * amt;
+    } else if (role === "face_dist") {
+      const df = opts.distFactor !== void 0 ? opts.distFactor : 0.14;
+      extraTx += yaw * (df * 0.28) * amt;
+      extraTy += pitch * (df * 0.35) * amt;
+      const autoScale = 1 - side * sinYaw * 0.25 * amt - (1 - cosYaw) * 0.26 * amt;
+      sx *= Math.max(0.65, Math.min(1.2, autoScale));
+      sy *= 1 - (1 - cosPitch) * 0.18 * amt;
+      skewX += yaw / 25 * 5.2 * amt;
+      skewY += yaw / 25 * 3.8 * amt;
+    } else if (role === "snout_sub") {
+      extraTx += yaw * 0.15 * amt - side * (1 - cosYaw) * 4.5 * amt;
+      extraTy += pitch * 0.11 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.5 : 0.22;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.08 * amt;
+      sx *= Math.max(0.5, Math.min(1.24, autoScale));
+    } else {
+      const asymK = side * sinYaw >= 0 ? 0.35 : 0.18;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
+      sx *= Math.max(0.58, Math.min(1.22, autoScale));
+      skewY += -(yaw / 25) * (pitch / 20) * 2.5 * amt;
+    }
+  }
+  if (opts.foreshorten !== void 0 && !isNaN(opts.foreshorten) && opts.foreshorten !== 0) {
+    sx *= 1 - (1 - cosYaw) * opts.foreshorten;
+    sy *= 1 - (1 - cosPitch) * (opts.foreshorten * 0.75);
+  }
+  if (opts.persp !== void 0 && !isNaN(opts.persp) && opts.persp !== 0) {
+    const pScale = 1 - side * sinYaw * opts.persp;
+    sx *= Math.max(0.55, Math.min(1.3, pScale));
+  }
+  if (opts.skewXDeg !== void 0 && !isNaN(opts.skewXDeg) && !isNaN(opts.skewXDeg) && opts.skewXDeg !== 0) {
+    skewX += yaw / 25 * opts.skewXDeg;
+  }
+  if (opts.skewYDeg !== void 0 && !isNaN(opts.skewYDeg) && opts.skewYDeg !== 0) {
+    skewY += pitch / 20 * opts.skewYDeg;
+  }
+  return { sx, sy, skewX, skewY, extraTx, extraTy };
+}
+function formatPivotScaleSkewTransform(sx, sy, skewX, skewY, cx, cy) {
+  const hasScale = Math.abs(sx - 1) > 1e-4 || Math.abs(sy - 1) > 1e-4;
+  const hasSkewX = Math.abs(skewX) > 0.01;
+  const hasSkewY = Math.abs(skewY) > 0.01;
+  if (!hasScale && !hasSkewX && !hasSkewY) return "";
+  const inner = [`translate(${cx.toFixed(2)}, ${cy.toFixed(2)})`];
+  if (hasSkewX) {
+    inner.push(`skewX(${skewX.toFixed(2)})`);
+  }
+  if (hasSkewY) {
+    inner.push(`skewY(${skewY.toFixed(2)})`);
+  }
+  if (hasScale) {
+    inner.push(`scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`);
+  }
+  inner.push(`translate(${(-cx).toFixed(2)}, ${(-cy).toFixed(2)})`);
+  return inner.join(" ");
+}
 
 // web/src/overlay/accessories.ts
 function buildAccessoryTransform(acc, anchor) {
@@ -317,6 +539,100 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
     blinkSyncDelayMs: 50
   };
   let animLoopStarted = false;
+  let perspSkewOverride = {};
+  let perspPreviewUntil = 0;
+  let perspPreviewStart = 0;
+  function applySettingsOverride(settings, preview25D = false) {
+    if (!settings || !settings.tracking) return;
+    const t = settings.tracking;
+    if (typeof t.perspectiveSkewEnabled === "boolean") {
+      perspSkewOverride.enabled = t.perspectiveSkewEnabled;
+      latestParams.perspectiveSkewEnabled = t.perspectiveSkewEnabled;
+    }
+    if (typeof t.perspectiveSkewAmount === "number" && !isNaN(t.perspectiveSkewAmount)) {
+      perspSkewOverride.amount = t.perspectiveSkewAmount;
+      latestParams.perspectiveSkewAmount = t.perspectiveSkewAmount;
+    }
+    if (typeof t.physicsEnabled === "boolean") {
+      latestParams.physicsEnabled = t.physicsEnabled;
+    }
+    if (typeof t.physicsAmount === "number" && !isNaN(t.physicsAmount)) {
+      latestParams.physicsAmount = t.physicsAmount;
+    }
+    if (typeof t.depthZoomAmount === "number" && !isNaN(t.depthZoomAmount)) {
+      latestParams.depthZoomAmount = t.depthZoomAmount;
+    }
+    if (preview25D && perspSkewOverride.enabled) {
+      const now = performance.now();
+      if (now >= perspPreviewUntil) {
+        perspPreviewStart = now;
+      }
+      perspPreviewUntil = now + 2200;
+    } else if (!perspSkewOverride.enabled) {
+      perspPreviewUntil = 0;
+    }
+  }
+  try {
+    const rawSaved = localStorage.getItem("svgtuber_persp_skew");
+    if (rawSaved) {
+      const parsed = JSON.parse(rawSaved);
+      if (typeof parsed.enabled === "boolean") {
+        perspSkewOverride.enabled = parsed.enabled;
+        latestParams.perspectiveSkewEnabled = parsed.enabled;
+      }
+      if (typeof parsed.amount === "number" && !isNaN(parsed.amount)) {
+        perspSkewOverride.amount = parsed.amount;
+        latestParams.perspectiveSkewAmount = parsed.amount;
+      }
+    }
+  } catch {
+  }
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const settingsChannel = new BroadcastChannel("svgtuber_settings");
+      settingsChannel.onmessage = (ev) => {
+        const data = ev.data;
+        if (data && data.type === "settings_update" && data.settings) {
+          applySettingsOverride(data.settings, Boolean(data.preview25D));
+        }
+      };
+    } catch {
+    }
+  }
+  window.addEventListener("storage", (ev) => {
+    if (ev.key === "svgtuber_persp_skew" && ev.newValue) {
+      try {
+        const parsed = JSON.parse(ev.newValue);
+        if (typeof parsed.enabled === "boolean") {
+          perspSkewOverride.enabled = parsed.enabled;
+          latestParams.perspectiveSkewEnabled = parsed.enabled;
+        }
+        if (typeof parsed.amount === "number" && !isNaN(parsed.amount)) {
+          perspSkewOverride.amount = parsed.amount;
+          latestParams.perspectiveSkewAmount = parsed.amount;
+        }
+        if (parsed.previewAt && Date.now() - parsed.previewAt < 1500 && perspSkewOverride.enabled) {
+          const now = performance.now();
+          if (now >= perspPreviewUntil) {
+            perspPreviewStart = now;
+          }
+          perspPreviewUntil = now + 2200;
+        }
+      } catch {
+      }
+    }
+  });
+  async function fetchInitialSettings() {
+    try {
+      const res = await fetch(`/api/settings?t=${Date.now()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.settings) {
+        applySettingsOverride(data.settings, false);
+      }
+    } catch {
+    }
+  }
   function setStatus(text, visible = false) {
     if (statusIndicator) {
       statusIndicator.textContent = text;
@@ -421,6 +737,7 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
       if (lowerId === "eye_open_right" || lowerLabel.includes("right eye open")) boundEyeOpenR = el;
       if (lowerId === "eye_closed_right" || lowerLabel.includes("right eye closed")) boundEyeClosedR = el;
       let cx = 0, cy = 0;
+      let measuredBBox;
       const prevDisplay = el.style.display;
       const isHidden = getComputedStyle(el).display === "none" || prevDisplay === "none";
       if (isHidden) {
@@ -428,6 +745,7 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
       }
       try {
         const bbox = el.getBBox();
+        measuredBBox = { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height };
         const directives = elem.directives || [];
         let explicitPivot;
         for (const d of directives) {
@@ -457,6 +775,7 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
         label: elem.label || "",
         cx,
         cy,
+        bbox: measuredBBox,
         baseTransform,
         directives: elem.directives || []
       });
@@ -512,6 +831,7 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
     }
     const domAccs = svg.querySelectorAll(".svgtuber-accessory");
     domAccs.forEach((accGroup) => scanAndBindAccessoryDirectives(accGroup));
+    classifyRigBindings25D(svg, activeRigBindings, computeTargetAnchorCenter(svg, svg));
     console.log(`[SVGTuber] Bound ${activeRigBindings.length} elements to rig directives.`);
     if (!animLoopStarted) {
       animLoopStarted = true;
@@ -866,10 +1186,17 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
     }
     if (!latestParams || activeRigBindings.length === 0) return;
     const p = latestParams;
-    const headYaw = p.headYaw || 0;
-    const headPitch = p.headPitch || 0;
+    let headYaw = p.headYaw || 0;
+    let headPitch = p.headPitch || 0;
     const headRoll = p.headRoll || 0;
     const audioVol = parseFloat(String(p.audioVolume || 0));
+    const isPerspEnabled = perspSkewOverride.enabled !== void 0 ? perspSkewOverride.enabled : Boolean(p.perspectiveSkewEnabled);
+    if (!isFreezeMode && isPerspEnabled && now < perspPreviewUntil && Math.abs(headYaw) < 5) {
+      const elapsed = (now - perspPreviewStart) / 1e3;
+      const remRatio = Math.min(1, (perspPreviewUntil - now) / 350);
+      headYaw = Math.sin(elapsed * Math.PI * 1.45) * 24 * remRatio;
+      headPitch = Math.sin(elapsed * Math.PI * 0.75) * 9 * remRatio;
+    }
     const dt = lastTransformTime ? Math.min(0.05, Math.max(1e-3, (now - lastTransformTime) / 1e3)) : 1 / 60;
     lastTransformTime = now;
     const deltaYaw = headYaw - prevHeadYaw;
@@ -887,10 +1214,16 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
       const val = parseFloat(String(p.physicsAmount));
       globalPhysicsMult = isNaN(val) ? 1 : Math.max(0, val);
     }
+    let globalPerspAmount = 0;
+    if (!isFreezeMode && isPerspEnabled) {
+      const rawAmt = perspSkewOverride.amount !== void 0 ? perspSkewOverride.amount : p.perspectiveSkewAmount !== void 0 ? parseFloat(String(p.perspectiveSkewAmount)) : 1;
+      globalPerspAmount = isNaN(rawAmt) ? 1 : Math.max(0, rawAmt);
+    }
     for (let i = 0; i < activeRigBindings.length; i++) {
       const b = activeRigBindings[i];
       const el = b.el;
-      let tx = 0, ty = 0, rot = 0, sx = 1, sy = 1;
+      let tx = 0, ty = 0, rot = 0, sx = 1, sy = 1, skewX = 0, skewY = 0;
+      let bDistFactor;
       let physicsDirective = null;
       for (let j = 0; j < b.directives.length; j++) {
         const d = b.directives[j];
@@ -914,14 +1247,87 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
             rot += headRoll * (rollF / 10);
             tx += headYaw * (yawF / 15);
             ty += headPitch * (pitchF / 15);
+            const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : void 0;
+            const persp = params.persp ? parseFloat(params.persp) : void 0;
+            const kx = params.skewx ? parseFloat(params.skewx) : void 0;
+            const ky = params.skewy ? parseFloat(params.skewy) : void 0;
+            if (fore !== void 0 || persp !== void 0 || kx !== void 0 || ky !== void 0) {
+              const p25 = compute25DPerspective({
+                headYaw,
+                headPitch,
+                sideOffset: b._sideOffset || 0,
+                partRole: b._partRole,
+                isHeadRoot: Boolean(b._isHeadRoot),
+                amount: 0,
+                foreshorten: fore,
+                persp,
+                skewXDeg: kx,
+                skewYDeg: ky
+              });
+              sx *= p25.sx;
+              sy *= p25.sy;
+              skewX += p25.skewX;
+              skewY += p25.skewY;
+            }
             break;
           }
           case "dist":
           case "distance":
           case "parallax": {
             const factor = parseFloat(params.factor || "0");
+            bDistFactor = factor;
             tx += headYaw * factor * 2.2;
             ty += headPitch * factor * 1.6;
+            const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : void 0;
+            const persp = params.persp ? parseFloat(params.persp) : void 0;
+            const kx = params.skewx ? parseFloat(params.skewx) : void 0;
+            const ky = params.skewy ? parseFloat(params.skewy) : void 0;
+            if (fore !== void 0 || persp !== void 0 || kx !== void 0 || ky !== void 0) {
+              const p25 = compute25DPerspective({
+                headYaw,
+                headPitch,
+                sideOffset: b._sideOffset || 0,
+                partRole: b._partRole,
+                isHeadRoot: false,
+                distFactor: factor,
+                amount: 0,
+                foreshorten: fore,
+                persp,
+                skewXDeg: kx,
+                skewYDeg: ky
+              });
+              sx *= p25.sx;
+              sy *= p25.sy;
+              skewX += p25.skewX;
+              skewY += p25.skewY;
+            }
+            break;
+          }
+          case "skew": {
+            const hasExplicitAxis = Boolean(params.x || params.y);
+            const rawX = params.x ? getParam(params.x, 0) : hasExplicitAxis ? 0 : headYaw / 25;
+            const rawY = params.y ? getParam(params.y, 0) : hasExplicitAxis ? 0 : headPitch / 20;
+            const px = params.x && params.x.toLowerCase() === "headyaw" ? rawX / 25 : rawX;
+            const py = params.y && params.y.toLowerCase() === "headpitch" ? rawY / 20 : rawY;
+            const rangeX = parseFloat(params.rangex || params.skewx || params.range || "5");
+            const rangeY = parseFloat(params.rangey || params.skewy || params.range || "0");
+            skewX += px * rangeX;
+            skewY += py * rangeY;
+            const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : void 0;
+            const persp = params.persp ? parseFloat(params.persp) : void 0;
+            if (fore !== void 0 || persp !== void 0) {
+              const p25 = compute25DPerspective({
+                headYaw,
+                headPitch,
+                sideOffset: b._sideOffset || 0,
+                isHeadRoot: Boolean(b._isHeadRoot),
+                amount: 0,
+                foreshorten: fore,
+                persp
+              });
+              sx *= p25.sx;
+              sy *= p25.sy;
+            }
             break;
           }
           case "move": {
@@ -1171,6 +1577,23 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
           }
         }
       }
+      if (globalPerspAmount > 0 && b._partRole && b._partRole !== "other") {
+        const p25 = compute25DPerspective({
+          headYaw,
+          headPitch,
+          sideOffset: b._sideOffset || 0,
+          partRole: b._partRole,
+          isHeadRoot: Boolean(b._isHeadRoot),
+          distFactor: bDistFactor,
+          amount: globalPerspAmount
+        });
+        tx += p25.extraTx;
+        ty += p25.extraTy;
+        sx *= p25.sx;
+        sy *= p25.sy;
+        skewX += p25.skewX;
+        skewY += p25.skewY;
+      }
       if (physicsDirective && globalPhysicsMult > 0) {
         const pParams = physicsDirective.params || physicsDirective.Params || {};
         const k = parseFloat(pParams.stiffness || pParams.k || "0.16");
@@ -1235,10 +1658,10 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
       if (rot !== 0) {
         animParts.push(`rotate(${rot.toFixed(2)}, ${b.cx.toFixed(2)}, ${b.cy.toFixed(2)})`);
       }
-      if (sx !== 1 || sy !== 1) {
-        animParts.push(
-          `translate(${b.cx.toFixed(2)}, ${b.cy.toFixed(2)}) scale(${sx.toFixed(4)}, ${sy.toFixed(4)}) translate(${(-b.cx).toFixed(2)}, ${(-b.cy).toFixed(2)})`
-        );
+      const scaleCy = b._scaleCy !== void 0 ? b._scaleCy : b.cy;
+      const pivotScaleSkew = formatPivotScaleSkewTransform(sx, sy, skewX, skewY, b.cx, scaleCy);
+      if (pivotScaleSkew) {
+        animParts.push(pivotScaleSkew);
       }
       if (el.style.transform) el.style.transform = "";
       if (el.style.transformBox) el.style.transformBox = "";
@@ -1411,8 +1834,22 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
           applyRigTransforms(performance.now());
         } else if (msg.type === "accessory_update") {
           syncAccessories(msg.accessories);
+        } else if (msg.type === "settings_update") {
+          if (msg.settings) {
+            applySettingsOverride(msg.settings, false);
+          }
         } else if (msg.type === "param_frame") {
           if (isFreezeMode) return;
+          if (typeof msg.perspectiveSkewEnabled === "boolean") {
+            perspSkewOverride.enabled = msg.perspectiveSkewEnabled;
+          } else if (perspSkewOverride.enabled !== void 0) {
+            msg.perspectiveSkewEnabled = perspSkewOverride.enabled;
+          }
+          if (typeof msg.perspectiveSkewAmount === "number" && !isNaN(msg.perspectiveSkewAmount)) {
+            perspSkewOverride.amount = msg.perspectiveSkewAmount;
+          } else if (perspSkewOverride.amount !== void 0) {
+            msg.perspectiveSkewAmount = perspSkewOverride.amount;
+          }
           latestParams = msg;
           window.latestParams = msg;
           if (msg.expressions) {
@@ -1443,6 +1880,7 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
       }, 2e3);
     }
   }
+  fetchInitialSettings();
   loadAvatar();
   connectWebSocket();
 })();

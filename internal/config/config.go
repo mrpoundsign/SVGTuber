@@ -89,6 +89,8 @@ type TrackingSettings struct {
 	PhysicsEnabled       bool               `json:"physicsEnabled"`       // Enable secondary spring physics and sway (default: true)
 	PhysicsAmount        float64            `json:"physicsAmount"`        // Multiplier on physics spring/sway displacement (default: 1.0)
 	DepthZoomAmount      float64            `json:"depthZoomAmount"`      // Head depth (headZ) lean-in/lean-back avatar zoom amount (default: 0.25)
+	PerspectiveSkewEnabled bool             `json:"perspectiveSkewEnabled"` // Enable 2.5D head perspective skew and foreshortening (default: false)
+	PerspectiveSkewAmount  float64          `json:"perspectiveSkewAmount"`  // Intensity multiplier on 2.5D head perspective skew/scale (default: 1.0)
 	Calibration          CalibrationProfile `json:"calibration"`          // Persisted user face/glasses/setup calibration profile
 }
 
@@ -167,10 +169,12 @@ func DefaultSettings() Settings {
 			AutoTilt:             true,
 			AutoTiltMode:         "always",
 			AutoTiltAmount:       1.0,
-			PhysicsEnabled:       true,
-			PhysicsAmount:        1.0,
-			DepthZoomAmount:      0.25,
-			Calibration:          DefaultCalibrationProfile(),
+			PhysicsEnabled:         true,
+			PhysicsAmount:          1.0,
+			DepthZoomAmount:        0.25,
+			PerspectiveSkewEnabled: false,
+			PerspectiveSkewAmount:  1.0,
+			Calibration:            DefaultCalibrationProfile(),
 		},
 		Audio: AudioSettings{
 			Mode:         "hybrid",
@@ -782,6 +786,9 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.PhysicsAmount <= 0 && !strings.Contains(string(data), "physicsAmount") {
 		s.Tracking.PhysicsAmount = 1.0
+	}
+	if s.Tracking.PerspectiveSkewAmount <= 0 && !strings.Contains(string(data), "perspectiveSkewAmount") {
+		s.Tracking.PerspectiveSkewAmount = 1.0
 	}
 	if !strings.Contains(string(data), "stabilizeBlink") {
 		s.Tracking.StabilizeBlink = true

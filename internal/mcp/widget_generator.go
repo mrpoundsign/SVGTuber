@@ -543,7 +543,7 @@ func GenerateStudioWidget(svgPath string, title string, outputPath string) (stri
       for (let i = 0; i < bindings.length; i++) {
         const b = bindings[i];
         const el = b.el;
-        let tx = 0, ty = 0, rot = 0, sx = 1, sy = 1;
+        let tx = 0, ty = 0, rot = 0, sx = 1, sy = 1, skewX = 0, skewY = 0;
         let cx = b.cx, cy = b.cy;
         let isVisible = true;
 
@@ -577,6 +577,14 @@ func GenerateStudioWidget(svgPath string, title string, outputPath string) (stri
             const factor = parseFloat(p.factor || '0');
             tx += state.yaw * factor * 2.2;
             ty += state.pitch * factor * 1.6;
+          } else if (type === 'skew') {
+            const hasExplicitAxis = Boolean(p.x || p.y);
+            const px = p.x ? getParamValue(p.x, evalCtx) : (hasExplicitAxis ? 0 : (state.yaw / 25));
+            const py = p.y ? getParamValue(p.y, evalCtx) : (hasExplicitAxis ? 0 : (state.pitch / 20));
+            const rangeX = parseFloat(p.rangex || p.skewx || p.range || '5');
+            const rangeY = parseFloat(p.rangey || p.skewy || p.range || '0');
+            skewX += px * rangeX;
+            skewY += py * rangeY;
           } else if (type === 'move') {
             const hasExplicitAxis = Boolean(p.x || p.y);
             const px = p.x ? getParamValue(p.x, evalCtx) : (hasExplicitAxis ? 0 : (state.yaw / 25));
@@ -666,12 +674,16 @@ func GenerateStudioWidget(svgPath string, title string, outputPath string) (stri
         if (Math.abs(rot) > 0.01) {
           animParts.push('rotate(' + rot.toFixed(2) + ', ' + cx.toFixed(2) + ', ' + cy.toFixed(2) + ')');
         }
-        if (Math.abs(sx - 1) > 0.001 || Math.abs(sy - 1) > 0.001) {
-          animParts.push(
-            'translate(' + cx.toFixed(2) + ', ' + cy.toFixed(2) + ') ' +
-            'scale(' + sx.toFixed(4) + ', ' + sy.toFixed(4) + ') ' +
-            'translate(' + (-cx).toFixed(2) + ', ' + (-cy).toFixed(2) + ')'
-          );
+        const hasScale = Math.abs(sx - 1) > 0.001 || Math.abs(sy - 1) > 0.001;
+        const hasSkewX = Math.abs(skewX) > 0.01;
+        const hasSkewY = Math.abs(skewY) > 0.01;
+        if (hasScale || hasSkewX || hasSkewY) {
+          let inner = 'translate(' + cx.toFixed(2) + ', ' + cy.toFixed(2) + ')';
+          if (hasSkewX) inner += ' skewX(' + skewX.toFixed(2) + ')';
+          if (hasSkewY) inner += ' skewY(' + skewY.toFixed(2) + ')';
+          if (hasScale) inner += ' scale(' + sx.toFixed(4) + ', ' + sy.toFixed(4) + ')';
+          inner += ' translate(' + (-cx).toFixed(2) + ', ' + (-cy).toFixed(2) + ')';
+          animParts.push(inner);
         }
 
         if (animParts.length > 0) {

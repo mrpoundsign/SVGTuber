@@ -78,10 +78,12 @@ type ParamFrame struct {
 	VisemeE          float64            `json:"visemeE,omitempty"`
 	VisemeO          float64            `json:"visemeO,omitempty"`
 	BounceAmount     float64            `json:"bounceAmount"`
-	PhysicsEnabled   bool               `json:"physicsEnabled"`
-	PhysicsAmount    float64            `json:"physicsAmount"`
-	DepthZoomAmount  float64            `json:"depthZoomAmount"`
-	IsSpeaking       bool               `json:"isSpeaking,omitempty"`
+	PhysicsEnabled         bool               `json:"physicsEnabled"`
+	PhysicsAmount          float64            `json:"physicsAmount"`
+	DepthZoomAmount        float64            `json:"depthZoomAmount"`
+	PerspectiveSkewEnabled bool               `json:"perspectiveSkewEnabled"`
+	PerspectiveSkewAmount  float64            `json:"perspectiveSkewAmount"`
+	IsSpeaking             bool               `json:"isSpeaking,omitempty"`
 	IsShouting       bool               `json:"isShouting,omitempty"`
 	IsLaughing       bool               `json:"isLaughing,omitempty"`
 	IsBlinkL         bool               `json:"isBlinkL"`

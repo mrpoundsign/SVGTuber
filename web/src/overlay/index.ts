@@ -9,6 +9,9 @@ import {
   computeMouthExclusivity,
   computeEyeExclusivity,
   findAnchorTarget,
+  classifyRigBindings25D,
+  compute25DPerspective,
+  formatPivotScaleSkewTransform,
   type RigBinding,
 } from "./rig.ts";
 import {
@@ -81,6 +84,104 @@ import {
     blinkSyncDelayMs: 50,
   };
   let animLoopStarted = false;
+
+  // Live settings override & interactive 2.5D turn preview state so toggling the checkbox
+  // or dragging the slider in Studio takes effect immediately (even with camera off or stationary).
+  let perspSkewOverride: { enabled?: boolean; amount?: number } = {};
+  let perspPreviewUntil = 0;
+  let perspPreviewStart = 0;
+
+  function applySettingsOverride(settings: any, preview25D = false) {
+    if (!settings || !settings.tracking) return;
+    const t = settings.tracking;
+    if (typeof t.perspectiveSkewEnabled === "boolean") {
+      perspSkewOverride.enabled = t.perspectiveSkewEnabled;
+      latestParams.perspectiveSkewEnabled = t.perspectiveSkewEnabled;
+    }
+    if (typeof t.perspectiveSkewAmount === "number" && !isNaN(t.perspectiveSkewAmount)) {
+      perspSkewOverride.amount = t.perspectiveSkewAmount;
+      latestParams.perspectiveSkewAmount = t.perspectiveSkewAmount;
+    }
+    if (typeof t.physicsEnabled === "boolean") {
+      latestParams.physicsEnabled = t.physicsEnabled;
+    }
+    if (typeof t.physicsAmount === "number" && !isNaN(t.physicsAmount)) {
+      latestParams.physicsAmount = t.physicsAmount;
+    }
+    if (typeof t.depthZoomAmount === "number" && !isNaN(t.depthZoomAmount)) {
+      latestParams.depthZoomAmount = t.depthZoomAmount;
+    }
+    if (preview25D && perspSkewOverride.enabled) {
+      const now = performance.now();
+      if (now >= perspPreviewUntil) {
+        perspPreviewStart = now;
+      }
+      perspPreviewUntil = now + 2200;
+    } else if (!perspSkewOverride.enabled) {
+      perspPreviewUntil = 0;
+    }
+  }
+
+  try {
+    const rawSaved = localStorage.getItem("svgtuber_persp_skew");
+    if (rawSaved) {
+      const parsed = JSON.parse(rawSaved);
+      if (typeof parsed.enabled === "boolean") {
+        perspSkewOverride.enabled = parsed.enabled;
+        latestParams.perspectiveSkewEnabled = parsed.enabled;
+      }
+      if (typeof parsed.amount === "number" && !isNaN(parsed.amount)) {
+        perspSkewOverride.amount = parsed.amount;
+        latestParams.perspectiveSkewAmount = parsed.amount;
+      }
+    }
+  } catch {}
+
+  if (typeof BroadcastChannel !== "undefined") {
+    try {
+      const settingsChannel = new BroadcastChannel("svgtuber_settings");
+      settingsChannel.onmessage = (ev) => {
+        const data = ev.data;
+        if (data && data.type === "settings_update" && data.settings) {
+          applySettingsOverride(data.settings, Boolean(data.preview25D));
+        }
+      };
+    } catch {}
+  }
+
+  window.addEventListener("storage", (ev) => {
+    if (ev.key === "svgtuber_persp_skew" && ev.newValue) {
+      try {
+        const parsed = JSON.parse(ev.newValue);
+        if (typeof parsed.enabled === "boolean") {
+          perspSkewOverride.enabled = parsed.enabled;
+          latestParams.perspectiveSkewEnabled = parsed.enabled;
+        }
+        if (typeof parsed.amount === "number" && !isNaN(parsed.amount)) {
+          perspSkewOverride.amount = parsed.amount;
+          latestParams.perspectiveSkewAmount = parsed.amount;
+        }
+        if (parsed.previewAt && Date.now() - parsed.previewAt < 1500 && perspSkewOverride.enabled) {
+          const now = performance.now();
+          if (now >= perspPreviewUntil) {
+            perspPreviewStart = now;
+          }
+          perspPreviewUntil = now + 2200;
+        }
+      } catch {}
+    }
+  });
+
+  async function fetchInitialSettings() {
+    try {
+      const res = await fetch(`/api/settings?t=${Date.now()}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.settings) {
+        applySettingsOverride(data.settings, false);
+      }
+    } catch {}
+  }
 
   function setStatus(text: string, visible = false) {
     if (statusIndicator) {
@@ -217,6 +318,7 @@ import {
 
       let cx = 0,
         cy = 0;
+      let measuredBBox: { x: number; y: number; width: number; height: number } | undefined;
       const prevDisplay = el.style.display;
       const isHidden = getComputedStyle(el).display === "none" || prevDisplay === "none";
       if (isHidden) {
@@ -225,6 +327,7 @@ import {
 
       try {
         const bbox = el.getBBox();
+        measuredBBox = { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height };
         const directives = (elem.directives || []) as DirectiveItem[];
         let explicitPivot: string | undefined;
         for (const d of directives) {
@@ -256,6 +359,7 @@ import {
         label: elem.label || "",
         cx,
         cy,
+        bbox: measuredBBox,
         baseTransform,
         directives: (elem.directives || []) as DirectiveItem[],
       });
@@ -316,6 +420,10 @@ import {
 
     const domAccs = svg.querySelectorAll<SVGGraphicsElement>(".svgtuber-accessory");
     domAccs.forEach((accGroup) => scanAndBindAccessoryDirectives(accGroup));
+
+    // Precompute normalized horizontal offset (_sideOffset), anatomical 2.5D role (_partRole),
+    // and neck-anchored scale/skew pivot (_scaleCy) once at bind time for zero-overhead 60 FPS rendering.
+    classifyRigBindings25D(svg, activeRigBindings, computeTargetAnchorCenter(svg as any, svg));
 
     console.log(`[SVGTuber] Bound ${activeRigBindings.length} elements to rig directives.`);
 
@@ -730,10 +838,24 @@ import {
     if (!latestParams || activeRigBindings.length === 0) return;
 
     const p = latestParams;
-    const headYaw = p.headYaw || 0;
-    const headPitch = p.headPitch || 0;
+    let headYaw = p.headYaw || 0;
+    let headPitch = p.headPitch || 0;
     const headRoll = p.headRoll || 0;
     const audioVol = parseFloat(String(p.audioVolume || 0));
+
+    // When the user toggles the 2.5D checkbox or drags the 2.5D slider while the camera is off
+    // or while looking straight at the slider (|headYaw| < 5°), perform a smooth 2.2s preview head turn
+    // so the 2.5D perspective skew/scale effect is immediately visible!
+    const isPerspEnabled =
+      perspSkewOverride.enabled !== undefined
+        ? perspSkewOverride.enabled
+        : Boolean(p.perspectiveSkewEnabled);
+    if (!isFreezeMode && isPerspEnabled && now < perspPreviewUntil && Math.abs(headYaw) < 5) {
+      const elapsed = (now - perspPreviewStart) / 1000;
+      const remRatio = Math.min(1, (perspPreviewUntil - now) / 350);
+      headYaw = Math.sin(elapsed * Math.PI * 1.45) * 24 * remRatio;
+      headPitch = Math.sin(elapsed * Math.PI * 0.75) * 9 * remRatio;
+    }
 
     const dt = lastTransformTime ? Math.min(0.05, Math.max(0.001, (now - lastTransformTime) / 1000)) : 1 / 60;
     lastTransformTime = now;
@@ -756,6 +878,17 @@ import {
       globalPhysicsMult = isNaN(val) ? 1.0 : Math.max(0, val);
     }
 
+    let globalPerspAmount = 0;
+    if (!isFreezeMode && isPerspEnabled) {
+      const rawAmt =
+        perspSkewOverride.amount !== undefined
+          ? perspSkewOverride.amount
+          : p.perspectiveSkewAmount !== undefined
+            ? parseFloat(String(p.perspectiveSkewAmount))
+            : 1.0;
+      globalPerspAmount = isNaN(rawAmt) ? 1.0 : Math.max(0, rawAmt);
+    }
+
     for (let i = 0; i < activeRigBindings.length; i++) {
       const b = activeRigBindings[i];
       const el = b.el;
@@ -763,7 +896,10 @@ import {
         ty = 0,
         rot = 0,
         sx = 1,
-        sy = 1;
+        sy = 1,
+        skewX = 0,
+        skewY = 0;
+      let bDistFactor: number | undefined;
       let physicsDirective: DirectiveItem | null = null;
 
       for (let j = 0; j < b.directives.length; j++) {
@@ -789,14 +925,90 @@ import {
             rot += headRoll * (rollF / 10);
             tx += headYaw * (yawF / 15);
             ty += headPitch * (pitchF / 15);
+
+            const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : undefined;
+            const persp = params.persp ? parseFloat(params.persp) : undefined;
+            const kx = params.skewx ? parseFloat(params.skewx) : undefined;
+            const ky = params.skewy ? parseFloat(params.skewy) : undefined;
+            if (fore !== undefined || persp !== undefined || kx !== undefined || ky !== undefined) {
+              const p25 = compute25DPerspective({
+                headYaw,
+                headPitch,
+                sideOffset: b._sideOffset || 0,
+                partRole: b._partRole,
+                isHeadRoot: Boolean(b._isHeadRoot),
+                amount: 0,
+                foreshorten: fore,
+                persp,
+                skewXDeg: kx,
+                skewYDeg: ky,
+              });
+              sx *= p25.sx;
+              sy *= p25.sy;
+              skewX += p25.skewX;
+              skewY += p25.skewY;
+            }
             break;
           }
           case "dist":
           case "distance":
           case "parallax": {
             const factor = parseFloat(params.factor || "0");
+            bDistFactor = factor;
             tx += headYaw * factor * 2.2;
             ty += headPitch * factor * 1.6;
+
+            const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : undefined;
+            const persp = params.persp ? parseFloat(params.persp) : undefined;
+            const kx = params.skewx ? parseFloat(params.skewx) : undefined;
+            const ky = params.skewy ? parseFloat(params.skewy) : undefined;
+            if (fore !== undefined || persp !== undefined || kx !== undefined || ky !== undefined) {
+              const p25 = compute25DPerspective({
+                headYaw,
+                headPitch,
+                sideOffset: b._sideOffset || 0,
+                partRole: b._partRole,
+                isHeadRoot: false,
+                distFactor: factor,
+                amount: 0,
+                foreshorten: fore,
+                persp,
+                skewXDeg: kx,
+                skewYDeg: ky,
+              });
+              sx *= p25.sx;
+              sy *= p25.sy;
+              skewX += p25.skewX;
+              skewY += p25.skewY;
+            }
+            break;
+          }
+          case "skew": {
+            const hasExplicitAxis = Boolean(params.x || params.y);
+            const rawX = params.x ? getParam(params.x, 0) : hasExplicitAxis ? 0 : headYaw / 25;
+            const rawY = params.y ? getParam(params.y, 0) : hasExplicitAxis ? 0 : headPitch / 20;
+            const px = params.x && params.x.toLowerCase() === "headyaw" ? rawX / 25 : rawX;
+            const py = params.y && params.y.toLowerCase() === "headpitch" ? rawY / 20 : rawY;
+            const rangeX = parseFloat(params.rangex || params.skewx || params.range || "5");
+            const rangeY = parseFloat(params.rangey || params.skewy || params.range || "0");
+            skewX += px * rangeX;
+            skewY += py * rangeY;
+
+            const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : undefined;
+            const persp = params.persp ? parseFloat(params.persp) : undefined;
+            if (fore !== undefined || persp !== undefined) {
+              const p25 = compute25DPerspective({
+                headYaw,
+                headPitch,
+                sideOffset: b._sideOffset || 0,
+                isHeadRoot: Boolean(b._isHeadRoot),
+                amount: 0,
+                foreshorten: fore,
+                persp,
+              });
+              sx *= p25.sx;
+              sy *= p25.sy;
+            }
             break;
           }
           case "move": {
@@ -1095,6 +1307,24 @@ import {
         }
       }
 
+      if (globalPerspAmount > 0 && b._partRole && b._partRole !== "other") {
+        const p25 = compute25DPerspective({
+          headYaw,
+          headPitch,
+          sideOffset: b._sideOffset || 0,
+          partRole: b._partRole,
+          isHeadRoot: Boolean(b._isHeadRoot),
+          distFactor: bDistFactor,
+          amount: globalPerspAmount,
+        });
+        tx += p25.extraTx;
+        ty += p25.extraTy;
+        sx *= p25.sx;
+        sy *= p25.sy;
+        skewX += p25.skewX;
+        skewY += p25.skewY;
+      }
+
       if (physicsDirective && globalPhysicsMult > 0) {
         const pParams = physicsDirective.params || (physicsDirective as any).Params || {};
         const k = parseFloat(pParams.stiffness || pParams.k || "0.16");
@@ -1167,10 +1397,10 @@ import {
       if (rot !== 0) {
         animParts.push(`rotate(${rot.toFixed(2)}, ${b.cx.toFixed(2)}, ${b.cy.toFixed(2)})`);
       }
-      if (sx !== 1 || sy !== 1) {
-        animParts.push(
-          `translate(${b.cx.toFixed(2)}, ${b.cy.toFixed(2)}) scale(${sx.toFixed(4)}, ${sy.toFixed(4)}) translate(${(-b.cx).toFixed(2)}, ${(-b.cy).toFixed(2)})`
-        );
+      const scaleCy = b._scaleCy !== undefined ? b._scaleCy : b.cy;
+      const pivotScaleSkew = formatPivotScaleSkewTransform(sx, sy, skewX, skewY, b.cx, scaleCy);
+      if (pivotScaleSkew) {
+        animParts.push(pivotScaleSkew);
       }
 
       if (el.style.transform) el.style.transform = "";
@@ -1384,8 +1614,22 @@ import {
           applyRigTransforms(performance.now());
         } else if (msg.type === "accessory_update") {
           syncAccessories(msg.accessories);
+        } else if (msg.type === "settings_update") {
+          if (msg.settings) {
+            applySettingsOverride(msg.settings, false);
+          }
         } else if (msg.type === "param_frame") {
           if (isFreezeMode) return;
+          if (typeof msg.perspectiveSkewEnabled === "boolean") {
+            perspSkewOverride.enabled = msg.perspectiveSkewEnabled;
+          } else if (perspSkewOverride.enabled !== undefined) {
+            msg.perspectiveSkewEnabled = perspSkewOverride.enabled;
+          }
+          if (typeof msg.perspectiveSkewAmount === "number" && !isNaN(msg.perspectiveSkewAmount)) {
+            perspSkewOverride.amount = msg.perspectiveSkewAmount;
+          } else if (perspSkewOverride.amount !== undefined) {
+            msg.perspectiveSkewAmount = perspSkewOverride.amount;
+          }
           latestParams = msg;
           (window as any).latestParams = msg;
           if (msg.expressions) {
@@ -1420,6 +1664,7 @@ import {
     }
   }
 
+  fetchInitialSettings();
   loadAvatar();
   connectWebSocket();
 })();

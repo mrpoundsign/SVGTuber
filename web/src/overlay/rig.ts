@@ -5,16 +5,23 @@
 import type { RigDefinition, AccessoryConfig, ParamFrame } from "../shared/types.ts";
 import { evaluateCondition, parseDirectiveString, parseDuration, type DirectiveItem } from "./directives.ts";
 
+export type PartRole25D = "head_root" | "ear_or_horn" | "face_feature" | "face_dist" | "snout_sub" | "other";
+
 export interface RigBinding {
   el: SVGGraphicsElement;
   id: string;
   label: string;
   cx: number;
   cy: number;
+  bbox?: BoundingBox;
   baseTransform: string;
   directives: DirectiveItem[];
   isAccessoryBinding?: boolean;
   accId?: string;
+  _sideOffset?: number;
+  _isHeadRoot?: boolean;
+  _partRole?: PartRole25D;
+  _scaleCy?: number;
   _currentTx?: number;
   _currentTy?: number;
   _currentRot?: number;
@@ -180,4 +187,309 @@ export function findAnchorTarget(
   }
 
   return svg as any;
+}
+
+export interface Perspective25DOptions {
+  headYaw: number;
+  headPitch: number;
+  sideOffset?: number;
+  partRole?: PartRole25D;
+  isHeadRoot?: boolean;
+  distFactor?: number;
+  amount?: number;
+  foreshorten?: number;
+  persp?: number;
+  skewXDeg?: number;
+  skewYDeg?: number;
+}
+
+export interface Perspective25DResult {
+  sx: number;
+  sy: number;
+  skewX: number;
+  skewY: number;
+  extraTx: number;
+  extraTy: number;
+}
+
+export function classifyRigBindings25D(
+  svg: SVGSVGElement,
+  bindings: RigBinding[],
+  fallbackCenter?: { x: number; y: number }
+): void {
+  let headCenterCx = 0;
+  let headHalfWidth = 100;
+  let headNeckCy = 0;
+
+  const headNode = findAnchorTarget(svg, "layer_head", bindings);
+  if (headNode && headNode !== (svg as any)) {
+    try {
+      const skullBase =
+        headNode.querySelector<SVGGraphicsElement>("#Head_Base_Group, #Head, #head_base, #face_base, #ellipse7") ||
+        headNode;
+      const hb = skullBase.getBBox();
+      if (hb && hb.width > 0) {
+        headCenterCx = hb.x + hb.width / 2;
+        headHalfWidth = Math.max(20, hb.width / 2);
+        headNeckCy = hb.y + hb.height * 0.88;
+      }
+    } catch {}
+  }
+  if (headCenterCx === 0 && fallbackCenter) {
+    headCenterCx = fallbackCenter.x;
+    headHalfWidth = Math.max(40, fallbackCenter.x * 0.35);
+    headNeckCy = fallbackCenter.y * 1.15;
+  }
+
+  for (const b of bindings) {
+    const lowerId = (b.id || "").toLowerCase();
+    const lowerLabel = (b.label || "").toLowerCase();
+    b._isHeadRoot =
+      Boolean(headNode && headNode !== (svg as any) && b.el === headNode) ||
+      lowerId === "head" ||
+      lowerId === "layer_head" ||
+      lowerId === "head_group" ||
+      lowerLabel.startsWith("head ") ||
+      lowerLabel.startsWith("head[") ||
+      lowerLabel.startsWith("head_group");
+  }
+
+  const initialCount = bindings.length;
+  for (let idx = 0; idx < initialCount; idx++) {
+    const b = bindings[idx];
+    if (b._isHeadRoot) {
+      b._partRole = "head_root";
+      b._sideOffset = 0;
+      b._scaleCy = headNeckCy > 0 ? headNeckCy : b.cy;
+      continue;
+    }
+
+    b._scaleCy = b.cy;
+    let visualCx = b.cx;
+    if (b.bbox && b.bbox.width > 0) {
+      visualCx = b.bbox.x + b.bbox.width / 2;
+    } else {
+      try {
+        const eb = b.el.getBBox();
+        if (eb && eb.width > 0) {
+          b.bbox = { x: eb.x, y: eb.y, width: eb.width, height: eb.height };
+          visualCx = eb.x + eb.width / 2;
+        }
+      } catch {}
+    }
+    b._sideOffset = Math.max(-1, Math.min(1, (visualCx - headCenterCx) / headHalfWidth));
+
+    const inHead = Boolean(headNode && headNode !== (svg as any) && headNode.contains(b.el));
+    if (!inHead) {
+      b._partRole = "other";
+      continue;
+    }
+
+    const intermediateAncestors = bindings.filter(
+      (pb) =>
+        pb !== b &&
+        !pb._isHeadRoot &&
+        Boolean(headNode && headNode.contains(pb.el)) &&
+        Boolean(pb.el && pb.el.contains(b.el))
+    );
+    if (intermediateAncestors.length > 0) {
+      // If this element is a direct child of a [Dist] snout/muzzle group (e.g. Mouth_*_Group
+      // or Nostril_* inside Face_Center_Group), give it the "snout_sub" role so it rolls
+      // across the rounded front tip of the muzzle!
+      const distParent = intermediateAncestors.find((pb) =>
+        pb.directives.some((d) => {
+          const t = (d.type || (d as any).Type || d.name || "").toLowerCase().trim();
+          return t === "dist" || t === "distance" || t === "parallax";
+        })
+      );
+      if (distParent && intermediateAncestors.length === 1) {
+        b._partRole = "snout_sub";
+        const dpBBox = distParent.bbox;
+        if (dpBBox && dpBBox.width > 0) {
+          const dpCx = dpBBox.x + dpBBox.width / 2;
+          const dpHalfW = Math.max(20, dpBBox.width / 2);
+          b._sideOffset = Math.max(-1, Math.min(1, (visualCx - dpCx) / dpHalfW));
+        }
+      } else {
+        b._partRole = "other";
+      }
+      continue;
+    }
+
+    const hasDist = b.directives.some((d) => {
+      const t = (d.type || (d as any).Type || d.name || "").toLowerCase().trim();
+      return t === "dist" || t === "distance" || t === "parallax";
+    });
+    const hasSway = b.directives.some((d) => {
+      const t = (d.type || (d as any).Type || d.name || "").toLowerCase().trim();
+      return t === "sway";
+    });
+    const lowerCombined = `${(b.id || "").toLowerCase()} ${(b.label || "").toLowerCase()}`;
+
+    if (hasDist) {
+      b._partRole = "face_dist";
+      if (b.bbox && b.bbox.height > 0) {
+        // Anchor protruding snout/bangs 2.5D shear at the bridge of the nose / forehead root
+        // so the top stays aligned with the eyes while the lower tip swings forward in 3D.
+        b._scaleCy = b.bbox.y + b.bbox.height * 0.18;
+      }
+      // Also auto-bind any unbound Nostril sub-elements inside this snout group for 2.5D muzzle curvature
+      const nostrils = b.el.querySelectorAll<SVGGraphicsElement>('[id*="Nostril" i], [id*="nostril" i]');
+      nostrils.forEach((nEl) => {
+        if (bindings.some((existing) => existing.el === nEl)) return;
+        try {
+          const nb = nEl.getBBox();
+          if (nb && nb.width > 0) {
+            const nCx = nb.x + nb.width / 2;
+            const nCy = nb.y + nb.height / 2;
+            const dpBBox = b.bbox;
+            const dpCx = dpBBox && dpBBox.width > 0 ? dpBBox.x + dpBBox.width / 2 : headCenterCx;
+            const dpHalfW = dpBBox && dpBBox.width > 0 ? Math.max(20, dpBBox.width / 2) : headHalfWidth;
+            bindings.push({
+              el: nEl,
+              id: nEl.id || "nostril",
+              label: nEl.id || "nostril",
+              cx: nCx,
+              cy: nCy,
+              bbox: { x: nb.x, y: nb.y, width: nb.width, height: nb.height },
+              baseTransform: nEl.getAttribute("transform") || "",
+              directives: [],
+              _isHeadRoot: false,
+              _partRole: "snout_sub",
+              _scaleCy: nCy,
+              _sideOffset: Math.max(-1, Math.min(1, (nCx - dpCx) / dpHalfW)),
+            });
+          }
+        } catch {}
+      });
+    } else if (hasSway || /ear|horn|antenn|braid|hair_side|ahoge|top_accessory|forelock/.test(lowerCombined)) {
+      b._partRole = "ear_or_horn";
+    } else {
+      b._partRole = "face_feature";
+    }
+  }
+}
+
+export function compute25DPerspective(opts: Perspective25DOptions): Perspective25DResult {
+  const yaw = opts.headYaw || 0;
+  const pitch = opts.headPitch || 0;
+  const amt = opts.amount !== undefined ? opts.amount : 0;
+  const yawRad = (yaw * Math.PI) / 180;
+  const pitchRad = (pitch * Math.PI) / 180;
+  const sinYaw = Math.sin(yawRad);
+  const cosYaw = Math.cos(yawRad);
+  const cosPitch = Math.cos(pitchRad);
+
+  let sx = 1;
+  let sy = 1;
+  let skewX = 0;
+  let skewY = 0;
+  let extraTx = 0;
+  let extraTy = 0;
+
+  const side = Math.max(-1, Math.min(1, opts.sideOffset || 0));
+  const role: PartRole25D =
+    opts.partRole || (opts.isHeadRoot ? "head_root" : opts.distFactor ? "face_dist" : "other");
+
+  if (amt > 0) {
+    if (role === "head_root") {
+      // Foreshorten skull width/height and tilt around the neck base (_scaleCy)
+      // while dampening raw horizontal slide so the chin stays planted on the neck.
+      sx *= 1 - (1 - cosYaw) * 0.24 * amt;
+      sy *= 1 - (1 - cosPitch) * 0.16 * amt;
+      skewX += -(yaw / 25) * 3.0 * amt;
+      skewY += -(yaw / 25) * (pitch / 20) * 3.2 * amt;
+      extraTx += -yaw * 0.22 * amt;
+      extraTy += -pitch * 0.15 * amt;
+    } else if (role === "ear_or_horn") {
+      // Anchored at its skull attachment pivot (right/left/bottom/top):
+      // zero extraTx/extraTy so the root stays 100% welded to the head outline,
+      // with strong far-side foreshortening so the far ear/horn tucks behind the skull.
+      const asymK = side * sinYaw >= 0 ? 0.56 : 0.20;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
+      sx *= Math.max(0.52, Math.min(1.24, autoScale));
+      skewY += -side * (yaw / 25) * 4.5 * amt;
+    } else if (role === "face_feature") {
+      // Eyes, brows, cheeks, and standalone mouths sit on the mid-front facial sphere
+      // (between the skull base and the protruding snout/muzzle).
+      extraTx += yaw * 0.068 * 2.2 * amt - side * (1 - cosYaw) * 5.5 * amt;
+      extraTy += pitch * 0.068 * 1.6 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.42 : 0.18;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
+      sx *= Math.max(0.58, Math.min(1.22, autoScale));
+      skewY += (yaw / 25) * 2.6 * amt;
+    } else if (role === "face_dist") {
+      // Protruding [Dist] volume (cow snout/muzzle or bangs) projects forward in front of
+      // the eye plane, compresses into a 3/4 oval on turn, and shears from the nose bridge (_scaleCy)
+      // so the tip of the snout swings into the turn in 3D space.
+      const df = opts.distFactor !== undefined ? opts.distFactor : 0.14;
+      extraTx += yaw * (df * 0.28) * amt;
+      extraTy += pitch * (df * 0.35) * amt;
+      const autoScale = 1 - side * sinYaw * 0.25 * amt - (1 - cosYaw) * 0.26 * amt;
+      sx *= Math.max(0.65, Math.min(1.20, autoScale));
+      sy *= 1 - (1 - cosPitch) * 0.18 * amt;
+      skewX += (yaw / 25) * 5.2 * amt;
+      skewY += (yaw / 25) * 3.8 * amt;
+    } else if (role === "snout_sub") {
+      // Sub-features on the front tip of a protruding snout/muzzle (nostrils, mouth):
+      // roll across the curved snout surface and foreshorten bilateral nostrils.
+      extraTx += yaw * 0.15 * amt - side * (1 - cosYaw) * 4.5 * amt;
+      extraTy += pitch * 0.11 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.50 : 0.22;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.08 * amt;
+      sx *= Math.max(0.50, Math.min(1.24, autoScale));
+    } else {
+      const asymK = side * sinYaw >= 0 ? 0.35 : 0.18;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
+      sx *= Math.max(0.58, Math.min(1.22, autoScale));
+      skewY += -(yaw / 25) * (pitch / 20) * 2.5 * amt;
+    }
+  }
+
+  if (opts.foreshorten !== undefined && !isNaN(opts.foreshorten) && opts.foreshorten !== 0) {
+    sx *= 1 - (1 - cosYaw) * opts.foreshorten;
+    sy *= 1 - (1 - cosPitch) * (opts.foreshorten * 0.75);
+  }
+
+  if (opts.persp !== undefined && !isNaN(opts.persp) && opts.persp !== 0) {
+    const pScale = 1 - side * sinYaw * opts.persp;
+    sx *= Math.max(0.55, Math.min(1.30, pScale));
+  }
+
+  if (opts.skewXDeg !== undefined && !isNaN(opts.skewXDeg) && !isNaN(opts.skewXDeg) && opts.skewXDeg !== 0) {
+    skewX += (yaw / 25) * opts.skewXDeg;
+  }
+
+  if (opts.skewYDeg !== undefined && !isNaN(opts.skewYDeg) && opts.skewYDeg !== 0) {
+    skewY += (pitch / 20) * opts.skewYDeg;
+  }
+
+  return { sx, sy, skewX, skewY, extraTx, extraTy };
+}
+
+export function formatPivotScaleSkewTransform(
+  sx: number,
+  sy: number,
+  skewX: number,
+  skewY: number,
+  cx: number,
+  cy: number
+): string {
+  const hasScale = Math.abs(sx - 1) > 1e-4 || Math.abs(sy - 1) > 1e-4;
+  const hasSkewX = Math.abs(skewX) > 0.01;
+  const hasSkewY = Math.abs(skewY) > 0.01;
+  if (!hasScale && !hasSkewX && !hasSkewY) return "";
+
+  const inner: string[] = [`translate(${cx.toFixed(2)}, ${cy.toFixed(2)})`];
+  if (hasSkewX) {
+    inner.push(`skewX(${skewX.toFixed(2)})`);
+  }
+  if (hasSkewY) {
+    inner.push(`skewY(${skewY.toFixed(2)})`);
+  }
+  if (hasScale) {
+    inner.push(`scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`);
+  }
+  inner.push(`translate(${(-cx).toFixed(2)}, ${(-cy).toFixed(2)})`);
+  return inner.join(" ");
 }

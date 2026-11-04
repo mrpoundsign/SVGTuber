@@ -1599,6 +1599,19 @@
               <input type="range" id="slider-depth-zoom" min="0.0" max="1.0" step="0.05" value="0.25">
               <span id="val-depth-zoom" class="slider-val">0.25x</span>
             </div>
+            <div class="slider-item" style="display: flex; align-items: center; justify-content: space-between; margin-top: 2px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.05);">
+              <label for="checkbox-perspective-skew" style="margin-bottom: 0;">2.5D Head Skew &amp; Scale</label>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 0;">
+                <input type="checkbox" id="checkbox-perspective-skew" style="width: 16px; height: 16px; accent-color: var(--accent);">
+                <span style="font-size: 11px; color: var(--text-muted);">Simulate 3D Turn</span>
+              </label>
+              <span></span>
+            </div>
+            <div class="slider-item">
+              <label for="slider-perspective-amount">2.5D Skew / Scale Amount</label>
+              <input type="range" id="slider-perspective-amount" min="0.0" max="2.0" step="0.1" value="1.0">
+              <span id="val-perspective-amount" class="slider-val">1.0x</span>
+            </div>
           </div>
         </div>
 

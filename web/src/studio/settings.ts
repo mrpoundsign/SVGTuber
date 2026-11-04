@@ -28,6 +28,8 @@ export interface TrackingConfig {
   physicsEnabled: boolean;
   physicsAmount: number;
   depthZoomAmount?: number;
+  perspectiveSkewEnabled?: boolean;
+  perspectiveSkewAmount?: number;
   eyeGazeGain: number;
   gazeDeadzone?: number;
   browGain?: number;
@@ -83,6 +85,8 @@ export function createDefaultSettings(): SettingsPayload {
       physicsEnabled: true,
       physicsAmount: 1.0,
       depthZoomAmount: 0.25,
+      perspectiveSkewEnabled: false,
+      perspectiveSkewAmount: 1.0,
       eyeGazeGain: 1.0,
       browGain: 1.5,
       yawMultiplier: 1.0,

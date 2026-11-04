@@ -72,6 +72,8 @@ func normalizeDirectiveType(t string) string {
 		return "Move"
 	case "scale":
 		return "Scale"
+	case "skew":
+		return "Skew"
 	case "idle", "breathe":
 		return "Idle"
 	case "rotate":

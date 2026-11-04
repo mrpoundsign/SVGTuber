@@ -51,6 +51,8 @@ export interface ParamFrame {
   physicsEnabled?: boolean;
   physicsAmount?: number;
   depthZoomAmount?: number;
+  perspectiveSkewEnabled?: boolean;
+  perspectiveSkewAmount?: number;
   isSpeaking?: boolean;
   isShouting?: boolean;
   isLaughing?: boolean;
@@ -194,5 +196,7 @@ export interface TrackingSettings {
   autoTiltMode: string;
   autoTiltAmount: number;
   depthZoomAmount?: number;
+  perspectiveSkewEnabled?: boolean;
+  perspectiveSkewAmount?: number;
   calibration?: CalibrationProfile;
 }

@@ -192,6 +192,8 @@ const sliderBrowGain = document.getElementById("slider-brow-gain") as HTMLInputE
 const sliderYawMultiplier = document.getElementById("slider-yaw-multiplier") as HTMLInputElement | null;
 const sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier") as HTMLInputElement | null;
 const sliderDepthZoom = document.getElementById("slider-depth-zoom") as HTMLInputElement | null;
+const checkboxPerspectiveSkew = document.getElementById("checkbox-perspective-skew") as HTMLInputElement | null;
+const sliderPerspectiveAmount = document.getElementById("slider-perspective-amount") as HTMLInputElement | null;
 
 const sliderMicGain = document.getElementById("slider-mic-gain") as HTMLInputElement | null;
 const sliderNoiseGate = document.getElementById("slider-noise-gate") as HTMLInputElement | null;
@@ -213,6 +215,7 @@ const valBrowGain = document.getElementById("val-brow-gain") as HTMLElement | nu
 const valYawMultiplier = document.getElementById("val-yaw-multiplier") as HTMLElement | null;
 const valPitchMultiplier = document.getElementById("val-pitch-multiplier") as HTMLElement | null;
 const valDepthZoom = document.getElementById("val-depth-zoom") as HTMLElement | null;
+const valPerspectiveAmount = document.getElementById("val-perspective-amount") as HTMLElement | null;
 
 const btnSaveSettings = document.getElementById("btn-save-settings") as HTMLButtonElement | null;
 const btnResetSettings = document.getElementById("btn-reset-settings") as HTMLButtonElement | null;
@@ -1741,6 +1744,32 @@ if (micSelect) {
 let activeSettings: SettingsPayload | null = null;
 let rawConfigPath = "";
 let streamerModeEnabled = false;
+const settingsChannel =
+  typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("svgtuber_settings") : null;
+
+function broadcastSettingsSync(settings: SettingsPayload, preview25D = false) {
+  try {
+    if (settingsChannel) {
+      settingsChannel.postMessage({
+        type: "settings_update",
+        settings,
+        preview25D,
+        timestamp: Date.now(),
+      });
+    }
+    localStorage.setItem(
+      "svgtuber_persp_skew",
+      JSON.stringify({
+        enabled: Boolean(settings.tracking?.perspectiveSkewEnabled),
+        amount:
+          settings.tracking?.perspectiveSkewAmount !== undefined
+            ? settings.tracking.perspectiveSkewAmount
+            : 1.0,
+        previewAt: preview25D ? Date.now() : 0,
+      })
+    );
+  } catch {}
+}
 
 const debouncedSaveSettings = createDebouncedSaver(async (settings) => {
   try {
@@ -1774,6 +1803,9 @@ async function loadSettings() {
       configPathDisplay.textContent = maskSensitivePath(rawConfigPath, streamerModeEnabled);
     }
     syncSettingsToUI(activeSettings);
+    if (activeSettings) {
+      broadcastSettingsSync(activeSettings, false);
+    }
   } catch (err) {
     console.warn("[Studio Tracker] Could not load /api/settings:", err);
   }
@@ -1819,6 +1851,10 @@ function syncSettingsToUI(s: SettingsPayload | null) {
     if (sliderPitchMultiplier) sliderPitchMultiplier.value = String(t.pitchMultiplier || 1.0);
     if (sliderDepthZoom)
       sliderDepthZoom.value = String(t.depthZoomAmount !== undefined ? t.depthZoomAmount : 0.25);
+    if (checkboxPerspectiveSkew)
+      checkboxPerspectiveSkew.checked = Boolean(t.perspectiveSkewEnabled);
+    if (sliderPerspectiveAmount)
+      sliderPerspectiveAmount.value = String(t.perspectiveSkewAmount !== undefined ? t.perspectiveSkewAmount : 1.0);
   }
   if (s.audio) {
     const a = s.audio;
@@ -1867,6 +1903,8 @@ function updateSliderLabels() {
     valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
   if (valDepthZoom && sliderDepthZoom)
     valDepthZoom.textContent = `${parseFloat(sliderDepthZoom.value).toFixed(2)}x`;
+  if (valPerspectiveAmount && sliderPerspectiveAmount)
+    valPerspectiveAmount.textContent = `${parseFloat(sliderPerspectiveAmount.value).toFixed(1)}x`;
 
   if (smileThresholdMarker && sliderSmileThreshold) {
     const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
@@ -1942,6 +1980,10 @@ function collectSettingsFromUI(): SettingsPayload {
       depthZoomAmount: parseFloat(
         sliderDepthZoom?.value !== undefined ? sliderDepthZoom.value : "0.25"
       ),
+      perspectiveSkewEnabled: checkboxPerspectiveSkew ? checkboxPerspectiveSkew.checked : false,
+      perspectiveSkewAmount: parseFloat(
+        sliderPerspectiveAmount?.value !== undefined ? sliderPerspectiveAmount.value : "1.0"
+      ),
       calibration: activeSettings?.tracking?.calibration,
     },
     audio: {
@@ -1956,9 +1998,14 @@ function collectSettingsFromUI(): SettingsPayload {
   };
 }
 
-function onSliderInput() {
+function onSliderInput(e?: Event) {
   updateSliderLabels();
   const current = collectSettingsFromUI();
+  activeSettings = current;
+  const targetId = (e?.target as HTMLElement | null)?.id || "";
+  const isPerspEvent =
+    targetId === "checkbox-perspective-skew" || targetId === "slider-perspective-amount";
+  broadcastSettingsSync(current, isPerspEvent && Boolean(current.tracking.perspectiveSkewEnabled));
   debouncedSaveSettings(current);
 }
 
@@ -1978,6 +2025,7 @@ function onSliderInput() {
   sliderYawMultiplier,
   sliderPitchMultiplier,
   sliderDepthZoom,
+  sliderPerspectiveAmount,
   sliderMicGain,
   sliderNoiseGate,
   sliderDecaySmooth,
@@ -2005,6 +2053,7 @@ if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChan
   checkboxAutoGaze,
   checkboxAutoTilt,
   checkboxPhysicsEnabled,
+  checkboxPerspectiveSkew,
 ].forEach((cb) => {
   if (cb) cb.addEventListener("change", onSliderInput);
 });
@@ -2027,6 +2076,9 @@ if (btnResetSettings) {
         const data = await res.json();
         activeSettings = data.settings;
         syncSettingsToUI(activeSettings);
+        if (activeSettings) {
+          broadcastSettingsSync(activeSettings, false);
+        }
         if (saveStatus) {
           saveStatus.textContent = "✓ Defaults Reset!";
           saveStatus.style.opacity = "1";

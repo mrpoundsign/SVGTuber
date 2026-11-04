@@ -1392,6 +1392,8 @@ var sliderBrowGain = document.getElementById("slider-brow-gain");
 var sliderYawMultiplier = document.getElementById("slider-yaw-multiplier");
 var sliderPitchMultiplier = document.getElementById("slider-pitch-multiplier");
 var sliderDepthZoom = document.getElementById("slider-depth-zoom");
+var checkboxPerspectiveSkew = document.getElementById("checkbox-perspective-skew");
+var sliderPerspectiveAmount = document.getElementById("slider-perspective-amount");
 var sliderMicGain = document.getElementById("slider-mic-gain");
 var sliderNoiseGate = document.getElementById("slider-noise-gate");
 var sliderDecaySmooth = document.getElementById("slider-decay-smooth");
@@ -1411,6 +1413,7 @@ var valBrowGain = document.getElementById("val-brow-gain");
 var valYawMultiplier = document.getElementById("val-yaw-multiplier");
 var valPitchMultiplier = document.getElementById("val-pitch-multiplier");
 var valDepthZoom = document.getElementById("val-depth-zoom");
+var valPerspectiveAmount = document.getElementById("val-perspective-amount");
 var btnSaveSettings = document.getElementById("btn-save-settings");
 var btnResetSettings = document.getElementById("btn-reset-settings");
 var saveStatus = document.getElementById("save-status");
@@ -2774,6 +2777,28 @@ if (micSelect) {
 var activeSettings = null;
 var rawConfigPath = "";
 var streamerModeEnabled = false;
+var settingsChannel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("svgtuber_settings") : null;
+function broadcastSettingsSync(settings, preview25D = false) {
+  try {
+    if (settingsChannel) {
+      settingsChannel.postMessage({
+        type: "settings_update",
+        settings,
+        preview25D,
+        timestamp: Date.now()
+      });
+    }
+    localStorage.setItem(
+      "svgtuber_persp_skew",
+      JSON.stringify({
+        enabled: Boolean(settings.tracking?.perspectiveSkewEnabled),
+        amount: settings.tracking?.perspectiveSkewAmount !== void 0 ? settings.tracking.perspectiveSkewAmount : 1,
+        previewAt: preview25D ? Date.now() : 0
+      })
+    );
+  } catch {
+  }
+}
 var debouncedSaveSettings = createDebouncedSaver(async (settings) => {
   try {
     const res = await fetch("/api/settings", {
@@ -2805,6 +2830,9 @@ async function loadSettings() {
       configPathDisplay.textContent = maskSensitivePath(rawConfigPath, streamerModeEnabled);
     }
     syncSettingsToUI(activeSettings);
+    if (activeSettings) {
+      broadcastSettingsSync(activeSettings, false);
+    }
   } catch (err) {
     console.warn("[Studio Tracker] Could not load /api/settings:", err);
   }
@@ -2849,6 +2877,10 @@ function syncSettingsToUI(s) {
     if (sliderPitchMultiplier) sliderPitchMultiplier.value = String(t.pitchMultiplier || 1);
     if (sliderDepthZoom)
       sliderDepthZoom.value = String(t.depthZoomAmount !== void 0 ? t.depthZoomAmount : 0.25);
+    if (checkboxPerspectiveSkew)
+      checkboxPerspectiveSkew.checked = Boolean(t.perspectiveSkewEnabled);
+    if (sliderPerspectiveAmount)
+      sliderPerspectiveAmount.value = String(t.perspectiveSkewAmount !== void 0 ? t.perspectiveSkewAmount : 1);
   }
   if (s.audio) {
     const a = s.audio;
@@ -2895,6 +2927,8 @@ function updateSliderLabels() {
     valPitchMultiplier.textContent = `${parseFloat(sliderPitchMultiplier.value).toFixed(1)}x`;
   if (valDepthZoom && sliderDepthZoom)
     valDepthZoom.textContent = `${parseFloat(sliderDepthZoom.value).toFixed(2)}x`;
+  if (valPerspectiveAmount && sliderPerspectiveAmount)
+    valPerspectiveAmount.textContent = `${parseFloat(sliderPerspectiveAmount.value).toFixed(1)}x`;
   if (smileThresholdMarker && sliderSmileThreshold) {
     const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
     smileThresholdMarker.style.left = `${smilePercent}%`;
@@ -2963,6 +2997,10 @@ function collectSettingsFromUI() {
       depthZoomAmount: parseFloat(
         sliderDepthZoom?.value !== void 0 ? sliderDepthZoom.value : "0.25"
       ),
+      perspectiveSkewEnabled: checkboxPerspectiveSkew ? checkboxPerspectiveSkew.checked : false,
+      perspectiveSkewAmount: parseFloat(
+        sliderPerspectiveAmount?.value !== void 0 ? sliderPerspectiveAmount.value : "1.0"
+      ),
       calibration: activeSettings?.tracking?.calibration
     },
     audio: {
@@ -2976,9 +3014,13 @@ function collectSettingsFromUI() {
     }
   };
 }
-function onSliderInput() {
+function onSliderInput(e) {
   updateSliderLabels();
   const current = collectSettingsFromUI();
+  activeSettings = current;
+  const targetId = e?.target?.id || "";
+  const isPerspEvent = targetId === "checkbox-perspective-skew" || targetId === "slider-perspective-amount";
+  broadcastSettingsSync(current, isPerspEvent && Boolean(current.tracking.perspectiveSkewEnabled));
   debouncedSaveSettings(current);
 }
 [
@@ -2997,6 +3039,7 @@ function onSliderInput() {
   sliderYawMultiplier,
   sliderPitchMultiplier,
   sliderDepthZoom,
+  sliderPerspectiveAmount,
   sliderMicGain,
   sliderNoiseGate,
   sliderDecaySmooth,
@@ -3020,7 +3063,8 @@ if (settingsModeSelect) settingsModeSelect.addEventListener("change", onModeChan
   checkboxAutoBlink,
   checkboxAutoGaze,
   checkboxAutoTilt,
-  checkboxPhysicsEnabled
+  checkboxPhysicsEnabled,
+  checkboxPerspectiveSkew
 ].forEach((cb) => {
   if (cb) cb.addEventListener("change", onSliderInput);
 });
@@ -3040,6 +3084,9 @@ if (btnResetSettings) {
         const data = await res.json();
         activeSettings = data.settings;
         syncSettingsToUI(activeSettings);
+        if (activeSettings) {
+          broadcastSettingsSync(activeSettings, false);
+        }
         if (saveStatus) {
           saveStatus.textContent = "\u2713 Defaults Reset!";
           saveStatus.style.opacity = "1";

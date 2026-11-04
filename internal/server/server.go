@@ -324,6 +324,12 @@ func (s *Server) handleOverlayWS(w http.ResponseWriter, r *http.Request) {
 				_ = conn.Write(r.Context(), websocket.MessageText, data)
 			}
 		}
+		if data, err := json.Marshal(map[string]any{
+			"type":     "settings_update",
+			"settings": s.configMgr.Get(),
+		}); err == nil {
+			_ = conn.Write(r.Context(), websocket.MessageText, data)
+		}
 	}
 
 	// Keep connection open and read messages until closed
@@ -571,17 +577,22 @@ func (s *Server) handleAPISettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		updatedSettings := s.configMgr.Get()
 		s.broadcastTracker(map[string]any{
 			"type":         "mode_update",
 			"mode":         NormalizeTrackingMode(newSettings.Audio.Mode),
 			"streamerMode": newSettings.StreamerMode,
-			"settings":     s.configMgr.Get(),
+			"settings":     updatedSettings,
+		})
+		s.hub.BroadcastJSON(map[string]any{
+			"type":     "settings_update",
+			"settings": updatedSettings,
 		})
 
 		cfgPath, _ := s.configMgr.ConfigPath()
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status":     "ok",
-			"settings":   s.configMgr.Get(),
+			"settings":   updatedSettings,
 			"configPath": cfgPath,
 		})
 		return
@@ -602,6 +613,11 @@ func (s *Server) handleAPISettingsReset(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf(`{"error":"failed to reset settings: %s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
+
+	s.hub.BroadcastJSON(map[string]any{
+		"type":     "settings_update",
+		"settings": defaults,
+	})
 
 	cfgPath, _ := s.configMgr.ConfigPath()
 	_ = json.NewEncoder(w).Encode(map[string]any{
