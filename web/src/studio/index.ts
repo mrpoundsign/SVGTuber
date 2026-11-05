@@ -12,6 +12,7 @@ import {
 import type { AudioState, AccessoryConfig, CalibrationProfile, FaceFrame } from "../shared/types.ts";
 import {
   extractEulerAngles,
+  estimatePoseFromLandmarks,
   computeEyeAspectRatios,
   computeMouthGeometry,
   evaluateOpticalTongue,
@@ -158,12 +159,14 @@ const gaugePuckerPuff = document.getElementById("gauge-pucker-puff") as HTMLElem
 const valPuckerPuff = document.getElementById("val-pucker-puff") as HTMLElement | null;
 const gaugeFrownTongue = document.getElementById("gauge-frown-tongue") as HTMLElement | null;
 const valFrownTongue = document.getElementById("val-frown-tongue") as HTMLElement | null;
+const frownThresholdMarker = document.getElementById("frown-threshold-marker") as HTMLElement | null;
 
 // Settings Sliders & Inputs
 const sliderMouthGain = document.getElementById("slider-mouth-gain") as HTMLInputElement | null;
 const sliderMouthThreshold = document.getElementById("slider-mouth-threshold") as HTMLInputElement | null;
-const checkboxEnableSmile = document.getElementById("check-enable-smile") as HTMLInputElement | null;
+const checkboxEnableSmile = (document.getElementById("checkbox-enable-smile") || document.getElementById("check-enable-smile")) as HTMLInputElement | null;
 const sliderSmileThreshold = document.getElementById("slider-smile-threshold") as HTMLInputElement | null;
+const sliderFrownThreshold = document.getElementById("slider-frown-threshold") as HTMLInputElement | null;
 const checkboxWinkIsBlink = (document.getElementById("checkbox-wink-is-blink") || document.getElementById("check-wink-is-blink")) as HTMLInputElement | null;
 const checkboxStabilizeBlink = document.getElementById("checkbox-stabilize-blink") as HTMLInputElement | null;
 const sliderBlinkMaxYaw = document.getElementById("slider-blink-max-yaw") as HTMLInputElement | null;
@@ -207,6 +210,7 @@ const valBounceAmount = document.getElementById("val-bounce-amount") as HTMLElem
 const valMouthGain = document.getElementById("val-mouth-gain") as HTMLElement | null;
 const valMouthThreshold = document.getElementById("val-mouth-threshold") as HTMLElement | null;
 const valSmileThreshold = document.getElementById("val-smile-threshold") as HTMLElement | null;
+const valFrownThreshold = document.getElementById("val-frown-threshold") as HTMLElement | null;
 const valBlinkThresholdL = document.getElementById("val-blink-threshold-l") as HTMLElement | null;
 const valBlinkThresholdR = document.getElementById("val-blink-threshold-r") as HTMLElement | null;
 const valBlinkSyncDelay = document.getElementById("val-blink-sync-delay") as HTMLElement | null;
@@ -1040,6 +1044,9 @@ async function initMediaPipe() {
       },
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true,
+      minFaceDetectionConfidence: 0.3,
+      minFacePresenceConfidence: 0.3,
+      minTrackingConfidence: 0.3,
       runningMode: "VIDEO",
       numFaces: 1,
     });
@@ -1451,6 +1458,12 @@ function processFrame(renderUI = true) {
       if (results.facialTransformationMatrixes && results.facialTransformationMatrixes[0]) {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
       }
+      if (pose.yaw === 0 && pose.pitch === 0) {
+        const fallbackPose = estimatePoseFromLandmarks(landmarks);
+        if (fallbackPose) {
+          pose = fallbackPose;
+        }
+      }
 
       const audioState = sampleAudio({
         mouthOpen: blendshapes.jawOpen || 0,
@@ -1648,9 +1661,10 @@ function updateTrackingGauges(pose: any, blendshapes: Record<string, number>) {
   if (gaugePuckerPuff) gaugePuckerPuff.style.width = `${Math.min(100, Math.round(puckerPuff * 100))}%`;
 
   const frownRaw = extractRawFrownClient(blendshapes, wL, wR);
-  const frownBase = cal && cal.calibrated ? cal.neutralFrown || 0 : 0;
+  const frownBase =
+    cal && cal.calibrated ? Math.min(0.85, (cal.neutralFrown || 0) + 0.03) : 0;
   const frownDenom = Math.max(0.1, 1 - frownBase);
-  const frown = Math.max(0, Math.min(1, (Math.max(0, frownRaw - frownBase) / frownDenom) * 2.4));
+  const frown = Math.max(0, Math.min(1, (Math.max(0, frownRaw - frownBase) / frownDenom) * 2.0));
   const tongue = Math.max(0, Math.min(1, blendshapes.tongueOut || 0));
   const frownTongue = Math.max(frown, tongue);
   if (valFrownTongue) valFrownTongue.textContent = `${Math.round(frownTongue * 100)}%`;
@@ -1822,6 +1836,8 @@ function syncSettingsToUI(s: SettingsPayload | null) {
     if (sliderMouthThreshold) sliderMouthThreshold.value = String(t.mouthThreshold || 0.08);
     if (checkboxEnableSmile) checkboxEnableSmile.checked = t.enableSmile !== false;
     if (sliderSmileThreshold) sliderSmileThreshold.value = String(t.smileThreshold || 0.5);
+    if (sliderFrownThreshold)
+      sliderFrownThreshold.value = String(t.frownThreshold !== undefined && t.frownThreshold > 0 ? t.frownThreshold : 0.4);
     if (checkboxWinkIsBlink) checkboxWinkIsBlink.checked = Boolean(t.winkIsBlink);
     if (checkboxStabilizeBlink) checkboxStabilizeBlink.checked = t.stabilizeBlink !== false;
     if (sliderBlinkMaxYaw)
@@ -1877,6 +1893,8 @@ function updateSliderLabels() {
     valMouthThreshold.textContent = parseFloat(sliderMouthThreshold.value).toFixed(2);
   if (valSmileThreshold && sliderSmileThreshold)
     valSmileThreshold.textContent = parseFloat(sliderSmileThreshold.value).toFixed(2);
+  if (valFrownThreshold && sliderFrownThreshold)
+    valFrownThreshold.textContent = parseFloat(sliderFrownThreshold.value).toFixed(2);
   if (valBlinkThresholdL && sliderBlinkThresholdL)
     valBlinkThresholdL.textContent = parseFloat(sliderBlinkThresholdL.value).toFixed(2);
   if (valBlinkThresholdR && sliderBlinkThresholdR)
@@ -1909,6 +1927,10 @@ function updateSliderLabels() {
   if (smileThresholdMarker && sliderSmileThreshold) {
     const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
     smileThresholdMarker.style.left = `${smilePercent}%`;
+  }
+  if (frownThresholdMarker && sliderFrownThreshold) {
+    const frownPercent = Math.min(100, Math.round(parseFloat(sliderFrownThreshold.value) * 100));
+    frownThresholdMarker.style.left = `${frownPercent}%`;
   }
   if (blinkThresholdMarkerL && sliderBlinkThresholdL) {
     const blinkPercent = Math.min(100, Math.round(parseFloat(sliderBlinkThresholdL.value) * 100));
@@ -1948,6 +1970,7 @@ function collectSettingsFromUI(): SettingsPayload {
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || "0.08"),
       enableSmile: checkboxEnableSmile ? checkboxEnableSmile.checked : true,
       smileThreshold: parseFloat(sliderSmileThreshold?.value || "0.50"),
+      frownThreshold: parseFloat(sliderFrownThreshold?.value || "0.40"),
       blinkThreshold: parseFloat(sliderBlinkThresholdL?.value || "0.45"),
       blinkThresholdL: parseFloat(sliderBlinkThresholdL?.value || "0.45"),
       blinkThresholdR: parseFloat(sliderBlinkThresholdR?.value || "0.45"),
@@ -2013,6 +2036,7 @@ function onSliderInput(e?: Event) {
   sliderMouthGain,
   sliderMouthThreshold,
   sliderSmileThreshold,
+  sliderFrownThreshold,
   sliderBlinkThresholdL,
   sliderBlinkThresholdR,
   sliderBlinkSyncDelay,
@@ -3641,6 +3665,9 @@ function ingestCalibrationSample(sample: CalibrationSample) {
         );
         calPillFace.textContent = `📷 Face: Ready (Blink L ${(bL * 100).toFixed(0)}% · R ${(bR * 100).toFixed(0)}% | Yaw ${sample.yaw > 0 ? "+" : ""}${sample.yaw.toFixed(0)}°)`;
         calPillFace.className = "cal-pill ok";
+      } else if (wizardStep === "step3_turn") {
+        calPillFace.textContent = "📷 Face: Extreme Turn Held ✓";
+        calPillFace.className = "cal-pill ok";
       } else {
         calPillFace.textContent = "📷 Face: Waiting...";
         calPillFace.className = "cal-pill warn";
@@ -3993,7 +4020,9 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
   let lastBlinkDetectTime = 0;
   let postBlinkHoldMs = 0;
   let step3LeftYawSign = 0;
+  let step3PeakLeftAbsYaw = 0;
   let step3UpPitchSign = 0;
+  let step3PeakUpAbsPitch = 0;
 
   const applySubstepMeta = (idx: number) => {
     const sub = WIZARD_SUBSTEPS[idx];
@@ -4024,6 +4053,10 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
     const finishedSub = WIZARD_SUBSTEPS[substepIndex];
     if (finishedSub.id === "step1_neutral") {
       cachedNeutralResult = analyzeNeutralStep(step1Samples);
+    } else if (finishedSub.id === "step3a_left" && step3LeftYawSign === 0) {
+      step3LeftYawSign = -1;
+    } else if (finishedSub.id === "step3c_up" && step3UpPitchSign === 0) {
+      step3UpPitchSign = -1;
     }
     const isVowelTransition =
       finishedSub.vowelCue !== undefined &&
@@ -4088,20 +4121,23 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
     const now = performance.now();
     const subElapsed = now - substepStartTime;
 
-    // 1. Brief read/settle grace period so the user can read the new prompt & relax from the previous move
-    if (subElapsed < sub.readGraceMs && !spaceForcedCapture) {
-      if (calStepTimer) calStepTimer.textContent = "Get Ready...";
-      if (calActionProgress) calActionProgress.style.width = "0%";
-      if (calActionStatus) {
-        calActionStatus.textContent = "📖 Take a moment to read the prompt (or press Space when ready)...";
+    // Record peak yaw/pitch sign during Step 3A / 3C (after a brief 220ms transition buffer)
+    // so fast head turns that happen during readGraceMs or end in extreme-angle tracking dropout
+    // never lose their directional sign or get overwritten when returning to center.
+    if (subElapsed >= 220 && latestCalSample?.present) {
+      if (sub.id === "step3a_left") {
+        const dy = latestCalSample.yaw - (cachedNeutralResult?.neutralYaw ?? 0);
+        if (Math.abs(dy) >= 2.5 && Math.abs(dy) >= step3PeakLeftAbsYaw) {
+          step3PeakLeftAbsYaw = Math.abs(dy);
+          step3LeftYawSign = Math.sign(dy);
+        }
+      } else if (sub.id === "step3c_up") {
+        const dp = latestCalSample.pitch - (cachedNeutralResult?.neutralPitch ?? 0);
+        if (Math.abs(dp) >= 2.0 && Math.abs(dp) >= step3PeakUpAbsPitch) {
+          step3PeakUpAbsPitch = Math.abs(dp);
+          step3UpPitchSign = Math.sign(dp);
+        }
       }
-      setReticleTarget(sub.reticleLeft, sub.reticleTop, sub.reticlePrompt, false, true, sub.arrowDir);
-      return;
-    }
-
-    if (!readyCuePlayed) {
-      readyCuePlayed = true;
-      playCalibrationCue(ctx, "beep");
     }
 
     const prevTurnSign =
@@ -4115,8 +4151,29 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
       sub.id,
       latestCalSample,
       cachedNeutralResult,
-      prevTurnSign
+      prevTurnSign,
+      sub.bucket === "step3_turn" && subElapsed >= 300
     );
+
+    // 1. Brief read/settle grace period so the user can read the new prompt & relax from the previous move.
+    // For Step 3 head turns, if the user already started holding the requested turn after 350ms,
+    // begin capturing immediately so holding an extreme turn doesn't wait unnecessarily.
+    const earlyTurnReady =
+      sub.bucket === "step3_turn" && subElapsed >= 350 && activity.active;
+    if (subElapsed < sub.readGraceMs && !spaceForcedCapture && !earlyTurnReady) {
+      if (calStepTimer) calStepTimer.textContent = "Get Ready...";
+      if (calActionProgress) calActionProgress.style.width = "0%";
+      if (calActionStatus) {
+        calActionStatus.textContent = "📖 Take a moment to read the prompt (or press Space when ready)...";
+      }
+      setReticleTarget(sub.reticleLeft, sub.reticleTop, sub.reticlePrompt, false, true, sub.arrowDir);
+      return;
+    }
+
+    if (!readyCuePlayed) {
+      readyCuePlayed = true;
+      playCalibrationCue(ctx, "beep");
+    }
 
     // Special handling for Step 2A (2 distinct bilateral blinks)
     if (sub.id === "step2a_blink") {
@@ -4174,13 +4231,37 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
         step2WinkTimestamps.push(now - 100);
         recordedWinkTimestampForSubstep = true;
       }
-      if (sub.id === "step3a_left" && latestCalSample?.present) {
-        const dy = latestCalSample.yaw - (cachedNeutralResult?.neutralYaw ?? 0);
-        if (Math.abs(dy) >= 2) step3LeftYawSign = Math.sign(dy);
-      }
-      if (sub.id === "step3c_up" && latestCalSample?.present) {
-        const dp = latestCalSample.pitch - (cachedNeutralResult?.neutralPitch ?? 0);
-        if (Math.abs(dp) >= 1.5) step3UpPitchSign = Math.sign(dp);
+      // If the user turned their head left/right or tilted down far enough that the camera
+      // lost the face mesh (!latestCalSample?.present), record a synthetic sample so Step 3
+      // multiplier analysis reflects the full head turn.
+      if (sub.bucket === "step3_turn" && (!latestCalSample || !latestCalSample.present)) {
+        const nYaw = cachedNeutralResult?.neutralYaw ?? 0;
+        const nPitch = cachedNeutralResult?.neutralPitch ?? 0;
+        step3Samples.push({
+          timestamp: now,
+          present: true,
+          yaw:
+            sub.id === "step3a_left"
+              ? nYaw - 22
+              : sub.id === "step3b_right"
+                ? nYaw + 22
+                : nYaw,
+          pitch:
+            sub.id === "step3c_up"
+              ? nPitch - 14
+              : sub.id === "step3d_down"
+                ? nPitch + 14
+                : nPitch,
+          roll: cachedNeutralResult?.neutralRoll ?? 0,
+          x: cachedNeutralResult?.neutralX ?? 0,
+          y: cachedNeutralResult?.neutralY ?? 0,
+          z: cachedNeutralResult?.neutralZ ?? -50,
+          blendshapes: {
+            eyeBlinkLeft: cachedNeutralResult?.blinkOpenL ?? 0.08,
+            eyeBlinkRight: cachedNeutralResult?.blinkOpenR ?? 0.08,
+          },
+          audioVolume: 0,
+        });
       }
     }
 

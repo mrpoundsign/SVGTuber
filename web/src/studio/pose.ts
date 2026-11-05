@@ -55,6 +55,54 @@ export interface Landmark3D {
   z?: number;
 }
 
+/**
+ * Estimates fallback head Euler angles (yaw, pitch, roll in degrees) directly from MediaPipe's
+ * 478 3D face landmarks when the facial transformation matrix is unavailable or saturated at
+ * extreme left/right yaw or downward pitch angles.
+ */
+export function estimatePoseFromLandmarks(
+  landmarks: Landmark3D[] | null | undefined
+): PoseAngles | null {
+  if (!landmarks || landmarks.length < 264) {
+    return null;
+  }
+  const nose = landmarks[1];
+  const rEye = landmarks[33];
+  const lEye = landmarks[263];
+  const forehead = landmarks[10];
+  const chin = landmarks[152];
+  if (!nose || !rEye || !lEye || !forehead || !chin) {
+    return null;
+  }
+
+  const eyeMidX = (rEye.x + lEye.x) * 0.5;
+  const eyeMidY = (rEye.y + lEye.y) * 0.5;
+  const eyeSpan = Math.hypot(lEye.x - rEye.x, lEye.y - rEye.y);
+  const faceHeight = Math.hypot(chin.x - forehead.x, chin.y - forehead.y);
+  if (eyeSpan < 1e-4 || faceHeight < 1e-4) {
+    return null;
+  }
+
+  // Horizontal nose offset relative to eye midpoint (negative = screen-left / user-left, positive = screen-right)
+  const relNoseX = (nose.x - eyeMidX) / eyeSpan;
+  const yaw = Math.max(-55, Math.min(55, -relNoseX * 65));
+
+  // Vertical nose position between eye midpoint and chin (positive = head pitched down, negative = pitched up)
+  const relNoseY = (nose.y - eyeMidY) / faceHeight;
+  const pitch = Math.max(-45, Math.min(45, (relNoseY - 0.30) * 110));
+
+  const roll = (Math.atan2(lEye.y - rEye.y, lEye.x - rEye.x) * 180) / Math.PI;
+
+  return {
+    yaw,
+    pitch,
+    roll,
+    x: (0.5 - nose.x) * 30,
+    y: (0.5 - nose.y) * 30,
+    z: -50,
+  };
+}
+
 export interface EyeClosureEAR {
   earL: number;
   earR: number;
@@ -170,7 +218,7 @@ export function computeMouthGeometry(
   const dropR = ((rCorner.x - centerX) * downX + (rCorner.y - centerY) * downY) / mouthWidth;
 
   const mapDropToFrown = (drop: number) => {
-    const norm = (drop - 0.01) / 0.095;
+    const norm = (drop - 0.015) / 0.095;
     return Math.max(0, Math.min(1, norm));
   };
 

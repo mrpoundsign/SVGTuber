@@ -39,6 +39,7 @@ export interface ParamFrame {
   stabilizeBlink?: boolean;
   blinkMaxHeadYaw?: number;
   smileThreshold?: number;
+  frownThreshold?: number;
   audioVolume?: number;
   audioPitch?: number;
   viseme?: string;
@@ -179,6 +180,7 @@ export interface TrackingSettings {
   blinkMaxHeadYaw?: number;
   enableSmile: boolean;
   smileThreshold: number;
+  frownThreshold?: number;
   yawMultiplier: number;
   pitchMultiplier: number;
   rollMultiplier: number;

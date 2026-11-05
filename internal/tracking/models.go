@@ -69,6 +69,7 @@ type ParamFrame struct {
 	StabilizeBlink   bool               `json:"stabilizeBlink"`
 	BlinkMaxHeadYaw  float64            `json:"blinkMaxHeadYaw"`
 	SmileThreshold   float64            `json:"smileThreshold"`
+	FrownThreshold   float64            `json:"frownThreshold"`
 	AudioVolume      float64            `json:"audioVolume,omitempty"`
 	AudioPitch       float64            `json:"audioPitch,omitempty"`
 	Viseme           string             `json:"viseme,omitempty"`

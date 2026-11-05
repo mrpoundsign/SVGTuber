@@ -70,6 +70,7 @@ type TrackingSettings struct {
 	BlinkMaxHeadYaw      float64            `json:"blinkMaxHeadYaw"`      // Head yaw cutoff in degrees beyond which far-side eye mirrors camera-side eye (default: 25.0)
 	SmileThreshold       float64            `json:"smileThreshold"`       // Smile trigger threshold (default: 0.50)
 	EnableSmile          bool               `json:"enableSmile"`          // Enable smile expression tracking (default: true)
+	FrownThreshold       float64            `json:"frownThreshold"`       // Frown trigger threshold (default: 0.40)
 	EyeGazeGain          float64            `json:"eyeGazeGain"`          // Multiplier on pupil gaze range (default: 1.0)
 	GazeDeadzone         float64            `json:"gazeDeadzone"`         // Deadzone to suppress lens-glare iris jitter (default: 0.03)
 	BrowGain             float64            `json:"browGain"`             // Multiplier on eyebrow raise/furrow range (default: 1.5)
@@ -153,6 +154,7 @@ func DefaultSettings() Settings {
 			BlinkMaxHeadYaw:  25.0,
 			SmileThreshold:       0.50,
 			EnableSmile:          true,
+			FrownThreshold:       0.40,
 			EyeGazeGain:          1.0,
 			GazeDeadzone:         0.03,
 			BrowGain:             1.5,
@@ -732,6 +734,9 @@ func (m *Manager) Load() error {
 	}
 	if s.Tracking.SmileThreshold <= 0 {
 		s.Tracking.SmileThreshold = 0.50
+	}
+	if s.Tracking.FrownThreshold <= 0 {
+		s.Tracking.FrownThreshold = 0.40
 	}
 	if s.Tracking.EyeGazeGain <= 0 {
 		s.Tracking.EyeGazeGain = 1.0

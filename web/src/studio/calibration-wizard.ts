@@ -186,8 +186,8 @@ export function extractRawFrownClient(
     Math.max(0, 1 - rawSmile * 2.5) *
     Math.max(0, 1 - rawPucker * 1.8) *
     Math.max(0, 1 - (bs.jawOpen || 0) * 2.2);
-  const shrugPout = ((bs.mouthShrugLower || 0) * 0.65 + (bs.mouthRollLower || 0) * 0.35) * nonSmileGate;
-  return clamp(Math.max(bsFrown, Math.max(geoFrown * 0.85, shrugPout)), 0, 1);
+  const shrugPout = ((bs.mouthShrugLower || 0) * 0.55 + (bs.mouthRollLower || 0) * 0.25) * nonSmileGate;
+  return clamp(Math.max(bsFrown, Math.max(geoFrown * 0.80, shrugPout)), 0, 1);
 }
 
 /**
@@ -240,6 +240,12 @@ export function analyzeNeutralStep(samples: CalibrationSample[]): NeutralStepRes
 
   const gazes = faceSamples.map((s) => extractRawGazeSample(s.blendshapes));
   const brows = faceSamples.map((s) => extractRawBrowsSample(s.blendshapes));
+  const p90Frown = percentile(
+    faceSamples.map((s) => extractRawFrownClient(s.blendshapes)),
+    0.9
+  );
+  const neutralFrown =
+    p90Frown > 0 ? Number(clamp(p90Frown * 1.12 + 0.02, 0, 0.75).toFixed(3)) : 0;
 
   return {
     neutralYaw: Number(median(faceSamples.map((s) => s.yaw)).toFixed(2)),
@@ -272,9 +278,7 @@ export function analyzeNeutralStep(samples: CalibrationSample[]): NeutralStepRes
         )
       ).toFixed(3)
     ),
-    neutralFrown: Number(
-      median(faceSamples.map((s) => extractRawFrownClient(s.blendshapes))).toFixed(3)
-    ),
+    neutralFrown,
     neutralCheekPuff: Number(
       median(faceSamples.map((s) => s.blendshapes.cheekPuff || 0)).toFixed(3)
     ),
@@ -509,8 +513,35 @@ export function analyzeHeadTurnStep(
   const absYaws = faceSamples.map((s) => Math.abs(s.yaw - neutralYaw));
   const absPitches = faceSamples.map((s) => Math.abs(s.pitch - neutralPitch));
 
-  const p90Yaw = percentile(absYaws, 0.9);
-  const p90Pitch = percentile(absPitches, 0.9);
+  // Detect if the user turned or tilted so far that tracking dropped out (!s.present)
+  // immediately after an active yaw or pitch movement, and preserve those extreme peaks.
+  let earliestOcclusionYaw = 27;
+  let earlyOcclusionDetected = false;
+  let lastValidAbsYaw = 0;
+  let lastValidAbsPitch = 0;
+
+  for (const s of samples) {
+    if (s.present) {
+      lastValidAbsYaw = Math.abs(s.yaw - neutralYaw);
+      lastValidAbsPitch = Math.abs(s.pitch - neutralPitch);
+    } else {
+      if (lastValidAbsYaw >= 8) {
+        absYaws.push(Math.max(lastValidAbsYaw, 22));
+        if (lastValidAbsYaw >= 12 && lastValidAbsYaw < earliestOcclusionYaw) {
+          earliestOcclusionYaw = lastValidAbsYaw;
+          earlyOcclusionDetected = true;
+        }
+      }
+      if (lastValidAbsPitch >= 4) {
+        absPitches.push(Math.max(lastValidAbsPitch, 14));
+      }
+    }
+  }
+
+  const activeYaws = absYaws.filter((y) => y >= 4);
+  const activePitches = absPitches.filter((p) => p >= 2.5);
+  const p90Yaw = percentile(activeYaws.length > 0 ? activeYaws : absYaws, 0.9);
+  const p90Pitch = percentile(activePitches.length > 0 ? activePitches : absPitches, 0.9);
 
   // Scale natural directional head turns (including side-monitor / off-screen looks) to ~22 deg yaw and ~14 deg pitch
   const yawMultiplier =
@@ -519,9 +550,6 @@ export function analyzeHeadTurnStep(
     p90Pitch >= 4 ? Number(clamp(14 / p90Pitch, 0.7, 2.0).toFixed(2)) : 1.0;
 
   // Detect the lowest yaw angle (>= 12 deg) where the far-side eye is occluded by glasses rim or headphone cup
-  let earliestOcclusionYaw = 27;
-  let earlyOcclusionDetected = false;
-
   for (const s of faceSamples) {
     const calYaw = s.yaw - neutralYaw;
     const absYaw = Math.abs(calYaw);
@@ -789,7 +817,8 @@ export function evaluateCalibrationSubstepActivity(
   substepId: CalibrationSubstepId,
   sample: CalibrationSample | null | undefined,
   neutral?: Partial<NeutralStepResult> | null,
-  prevTurnSign?: number
+  prevTurnSign?: number,
+  allowExtremeTurnDropout = false
 ): SubstepActivityResult {
   if (!sample) {
     return { level: 0, active: false };
@@ -838,6 +867,19 @@ export function evaluateCalibrationSubstepActivity(
   }
 
   if (!sample.present) {
+    // When turning the head far left/right or tilting far down during Step 3,
+    // top-mounted webcams can lose face landmarks at the extreme end of the turn.
+    // Treat tracking dropout during Step 3 head-turn substeps (once neutral is calibrated
+    // or an outbound turn was initiated) as an active extreme head turn so hold capture completes.
+    if (
+      (substepId === "step3a_left" ||
+        substepId === "step3b_right" ||
+        substepId === "step3c_up" ||
+        substepId === "step3d_down") &&
+      (allowExtremeTurnDropout || neutral != null)
+    ) {
+      return { level: 1.0, active: true };
+    }
     return { level: 0, active: false };
   }
 
@@ -895,24 +937,42 @@ export function evaluateCalibrationSubstepActivity(
     if (substepId === "step3b_right" && prevTurnSign && prevTurnSign !== 0) {
       const oppYaw = Math.max(0, -calYaw * Math.sign(prevTurnSign));
       const oppGaze = Math.max(0, -calGazeX * Math.sign(prevTurnSign));
-      const level = clamp(Math.max(oppYaw / 4.5, oppGaze / 0.14), 0, 1);
+      const level = clamp(Math.max(oppYaw / 4.0, oppGaze / 0.14), 0, 1);
       return { level, active: level >= 1.0 };
     }
-    const level = clamp(Math.max(Math.abs(calYaw) / 4.5, Math.abs(calGazeX) / 0.14), 0, 1);
+    const level = clamp(Math.max(Math.abs(calYaw) / 4.0, Math.abs(calGazeX) / 0.14), 0, 1);
     return { level, active: level >= 1.0 };
   }
 
   if (substepId === "step3c_up" || substepId === "step3d_down") {
     const calPitch = sample.pitch - neutralPitch;
+    const calY = sample.y - (neutral?.neutralY ?? 0);
     const gaze = extractRawGazeSample(bs);
     const calGazeY = gaze.y - neutralEyeY;
     if (substepId === "step3d_down" && prevTurnSign && prevTurnSign !== 0) {
       const oppPitch = Math.max(0, -calPitch * Math.sign(prevTurnSign));
       const oppGaze = Math.max(0, -calGazeY * Math.sign(prevTurnSign));
-      const level = clamp(Math.max(oppPitch / 3.0, oppGaze / 0.1), 0, 1);
+      const directDownPitch = Math.max(0, calPitch);
+      const directDownGaze = Math.max(0, calGazeY);
+      const downHeadShift = Math.max(0, -calY);
+      const level = clamp(
+        Math.max(
+          oppPitch / 2.8,
+          oppGaze / 0.1,
+          directDownPitch / 3.2,
+          directDownGaze / 0.12,
+          downHeadShift / 2.2
+        ),
+        0,
+        1
+      );
       return { level, active: level >= 1.0 };
     }
-    const level = clamp(Math.max(Math.abs(calPitch) / 3.0, Math.abs(calGazeY) / 0.1), 0, 1);
+    const level = clamp(
+      Math.max(Math.abs(calPitch) / 2.8, Math.abs(calGazeY) / 0.1, Math.abs(calY) / 2.2),
+      0,
+      1
+    );
     return { level, active: level >= 1.0 };
   }
 

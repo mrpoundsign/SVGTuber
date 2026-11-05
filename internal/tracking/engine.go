@@ -133,7 +133,14 @@ func (e *Engine) Calibrate() {
 		e.neutralBrowL, e.neutralBrowR, _ = extractRawBrows(bs)
 		e.neutralEyeX, e.neutralEyeY = extractRawGaze(bs)
 		e.neutralPucker = extractRawPucker(bs)
-		e.neutralFrown = bs["mouthFrownLeft"]*wL + bs["mouthFrownRight"]*wR
+		// Capture full composite raw frown (including 3D landmark geoFrown and lower-lip shrug/roll)
+		// with a safety margin so natural resting lip posture never triggers a frown.
+		rawNeutralFrown := extractRawFrown(bs, wL, wR, e.neutralSmile, e.neutralPucker)
+		if rawNeutralFrown > 0 {
+			e.neutralFrown = math.Min(0.75, rawNeutralFrown*1.12+0.02)
+		} else {
+			e.neutralFrown = 0
+		}
 		e.neutralCheekPuff = bs["cheekPuff"]
 		e.neutralNoseSneer = bs["noseSneerLeft"]*wL + bs["noseSneerRight"]*wR
 		e.neutralJawX = bs["jawRight"] - bs["jawLeft"]
@@ -289,8 +296,8 @@ func extractRawFrown(bs map[string]float64, wL, wR, rawSmile, rawPucker float64)
 	// whereas pouting/frowning strongly activates mouthShrugLower + mouthRollLower.
 	// Gate by non-smile, non-pucker, and closed/semi-closed jaw so speaking or smiling never triggers frown.
 	nonSmileGate := math.Max(0.0, 1.0-rawSmile*2.5) * math.Max(0.0, 1.0-rawPucker*1.8) * math.Max(0.0, 1.0-bs["jawOpen"]*2.2)
-	shrugPout := (bs["mouthShrugLower"]*0.65 + bs["mouthRollLower"]*0.35) * nonSmileGate
-	combined := math.Max(bsFrown, math.Max(geoFrown*0.85, shrugPout))
+	shrugPout := (bs["mouthShrugLower"]*0.55 + bs["mouthRollLower"]*0.25) * nonSmileGate
+	combined := math.Max(bsFrown, math.Max(geoFrown*0.80, shrugPout))
 	return math.Max(0.0, math.Min(1.0, combined))
 }
 
@@ -545,6 +552,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		maxYawDeg = 25.0
 	}
 
+	frownThresh := ts.FrownThreshold
+	if frownThresh <= 0 {
+		frownThresh = 0.40
+	}
+
 	// Compute audio volume, vowel visemes, voice pitch, and speech/shout/laugh state
 	var audioMouth float64
 	var isSpeaking, isShouting, isLaughing bool
@@ -632,6 +644,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			StabilizeBlink:   stabilizeBlink,
 			BlinkMaxHeadYaw:  maxYawDeg,
 			SmileThreshold:   ts.SmileThreshold,
+			FrownThreshold:   frownThresh,
 			AudioVolume:      audioVolume,
 			AudioPitch:       filtAudioPitch,
 			Viseme:           rawViseme,
@@ -702,6 +715,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			StabilizeBlink:   stabilizeBlink,
 			BlinkMaxHeadYaw:  maxYawDeg,
 			SmileThreshold:   ts.SmileThreshold,
+			FrownThreshold:   frownThresh,
 			AudioVolume:      audioVolume,
 			BounceAmount:           bounceAmount,
 			PhysicsEnabled:         physicsEnabled,
@@ -803,7 +817,11 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		mouthPucker = calibrateUnipolar(rawPucker, e.neutralPucker, e.calibrated)
 		tongueOut = math.Max(0.0, math.Min(1.0, bs["tongueOut"]))
 		rawFrown := extractRawFrown(bs, wL, wR, rawSmile, rawPucker)
-		frown = math.Min(1.0, calibrateUnipolar(rawFrown, e.neutralFrown, e.calibrated)*2.4)
+		frownFloor := e.neutralFrown
+		if e.calibrated {
+			frownFloor = math.Min(0.85, e.neutralFrown+0.03)
+		}
+		frown = math.Min(1.0, calibrateUnipolar(rawFrown, frownFloor, e.calibrated)*2.0)
 		rawSneer := bs["noseSneerLeft"]*wL + bs["noseSneerRight"]*wR
 		noseSneer = math.Min(1.0, calibrateUnipolar(rawSneer, e.neutralNoseSneer, e.calibrated)*1.8)
 		rawJawX := bs["jawRight"] - bs["jawLeft"]
@@ -819,9 +837,9 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 			rawBrowR -= e.neutralBrowR
 		}
 		// Sympathetic brow furrow when frowning (unless actively raising eyebrows)
-		if frown > 0.15 && rawBrowUp < 0.25 {
-			rawBrowL -= frown * 0.28
-			rawBrowR -= frown * 0.28
+		if frown > 0.25 && rawBrowUp < 0.25 {
+			rawBrowL -= frown * 0.24
+			rawBrowR -= frown * 0.24
 		}
 		browGain := ts.BrowGain
 		if browGain < 0 {
@@ -963,6 +981,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		StabilizeBlink:   stabilizeBlink,
 		BlinkMaxHeadYaw:  maxYawDeg,
 		SmileThreshold:   ts.SmileThreshold,
+		FrownThreshold:   frownThresh,
 		AudioVolume:      audioVolume,
 		AudioPitch:       filtAudioPitch,
 		Viseme:           rawViseme,
@@ -988,7 +1007,7 @@ func (e *Engine) Process(raw FaceFrame) ParamFrame {
 		IsCheekPuff:      filtCheekPuff >= 0.35,
 		IsMouthPucker:    filtMouthPucker >= 0.35,
 		IsTongueOut:      filtTongueOut >= 0.35,
-		IsFrowning:       filtFrown >= 0.35,
+		IsFrowning:       filtFrown >= frownThresh,
 		IsSneering:       filtNoseSneer >= 0.35,
 		Expressions:      activeExprs,
 		Raw:              raw.Blendshapes,

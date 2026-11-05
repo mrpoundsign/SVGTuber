@@ -1056,3 +1056,73 @@ func TestEngine_AudioVisemesPitchShoutAndLaugh(t *testing.T) {
 	}
 }
 
+func TestEngine_RestingFrownCalibrationAndCustomThreshold(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "settings.json")
+	cfgMgr, err := config.NewManager(cfgPath)
+	if err != nil {
+		t.Fatalf("Failed to init config manager: %v", err)
+	}
+
+	eng := NewEngine(cfgMgr)
+
+	// Simulate a user whose natural resting face has moderate lower-lip shrug/roll and 3D geoFrown
+	restingFrame := FaceFrame{
+		Timestamp: 1000,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"mouthFrownLeft":  0.04,
+			"mouthFrownRight": 0.04,
+			"geoFrownLeft":    0.26,
+			"geoFrownRight":   0.26,
+			"mouthShrugLower": 0.28,
+			"mouthRollLower":  0.18,
+		},
+	}
+	_ = eng.Process(restingFrame)
+	eng.Calibrate()
+
+	// Slight resting breathing/posture fluctuation (+0.04 above resting baseline) must NOT trigger frown
+	slightFluctuation := FaceFrame{
+		Timestamp: 1033,
+		Present:   true,
+		Blendshapes: map[string]float64{
+			"mouthFrownLeft":  0.05,
+			"mouthFrownRight": 0.05,
+			"geoFrownLeft":    0.30,
+			"geoFrownRight":   0.30,
+			"mouthShrugLower": 0.31,
+			"mouthRollLower":  0.20,
+		},
+	}
+	outRest := eng.Process(slightFluctuation)
+	if outRest.IsFrowning || outRest.Frown > 0.05 {
+		t.Errorf("Expected calibrated resting face with minor fluctuation not to frown, got Frown=%v IsFrowning=%v", outRest.Frown, outRest.IsFrowning)
+	}
+
+	// Custom FrownThreshold (e.g. 0.65) should suppress moderate frown (~0.50) and expose FrownThreshold on ParamFrame
+	s := cfgMgr.Get()
+	s.Tracking.FrownThreshold = 0.65
+	_ = cfgMgr.Update(s)
+
+	var outMod ParamFrame
+	for i := 1; i <= 10; i++ {
+		outMod = eng.Process(FaceFrame{
+			Timestamp: float64(1100 + i*33),
+			Present:   true,
+			Blendshapes: map[string]float64{
+				"geoFrownLeft":    0.58,
+				"geoFrownRight":   0.58,
+				"mouthShrugLower": 0.60,
+			},
+		})
+	}
+	if outMod.FrownThreshold != 0.65 {
+		t.Errorf("Expected ParamFrame.FrownThreshold=0.65, got %v", outMod.FrownThreshold)
+	}
+	if outMod.IsFrowning {
+		t.Errorf("Expected moderate frown (%v) below custom threshold 0.65 not to trigger IsFrowning", outMod.Frown)
+	}
+}
+
+

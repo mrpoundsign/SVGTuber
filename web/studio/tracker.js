@@ -28,6 +28,39 @@ function extractEulerAngles(matrix) {
     z: normalizeZero(m23)
   };
 }
+function estimatePoseFromLandmarks(landmarks) {
+  if (!landmarks || landmarks.length < 264) {
+    return null;
+  }
+  const nose = landmarks[1];
+  const rEye = landmarks[33];
+  const lEye = landmarks[263];
+  const forehead = landmarks[10];
+  const chin = landmarks[152];
+  if (!nose || !rEye || !lEye || !forehead || !chin) {
+    return null;
+  }
+  const eyeMidX = (rEye.x + lEye.x) * 0.5;
+  const eyeMidY = (rEye.y + lEye.y) * 0.5;
+  const eyeSpan = Math.hypot(lEye.x - rEye.x, lEye.y - rEye.y);
+  const faceHeight = Math.hypot(chin.x - forehead.x, chin.y - forehead.y);
+  if (eyeSpan < 1e-4 || faceHeight < 1e-4) {
+    return null;
+  }
+  const relNoseX = (nose.x - eyeMidX) / eyeSpan;
+  const yaw = Math.max(-55, Math.min(55, -relNoseX * 65));
+  const relNoseY = (nose.y - eyeMidY) / faceHeight;
+  const pitch = Math.max(-45, Math.min(45, (relNoseY - 0.3) * 110));
+  const roll = Math.atan2(lEye.y - rEye.y, lEye.x - rEye.x) * 180 / Math.PI;
+  return {
+    yaw,
+    pitch,
+    roll,
+    x: (0.5 - nose.x) * 30,
+    y: (0.5 - nose.y) * 30,
+    z: -50
+  };
+}
 function dist3D(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
@@ -97,7 +130,7 @@ function computeMouthGeometry(landmarks) {
   const dropL = ((lCorner.x - centerX) * downX + (lCorner.y - centerY) * downY) / mouthWidth;
   const dropR = ((rCorner.x - centerX) * downX + (rCorner.y - centerY) * downY) / mouthWidth;
   const mapDropToFrown = (drop) => {
-    const norm = (drop - 0.01) / 0.095;
+    const norm = (drop - 0.015) / 0.095;
     return Math.max(0, Math.min(1, norm));
   };
   const gap = dist3D(upperInner, lowerInner) / mouthWidth;
@@ -209,8 +242,8 @@ function extractRawFrownClient(bs, wL = 0.5, wR = 0.5) {
   const bsFrown = (bs.mouthFrownLeft || 0) * wL + (bs.mouthFrownRight || 0) * wR;
   const geoFrown = (bs.geoFrownLeft || 0) * wL + (bs.geoFrownRight || 0) * wR;
   const nonSmileGate = Math.max(0, 1 - rawSmile * 2.5) * Math.max(0, 1 - rawPucker * 1.8) * Math.max(0, 1 - (bs.jawOpen || 0) * 2.2);
-  const shrugPout = ((bs.mouthShrugLower || 0) * 0.65 + (bs.mouthRollLower || 0) * 0.35) * nonSmileGate;
-  return clamp(Math.max(bsFrown, Math.max(geoFrown * 0.85, shrugPout)), 0, 1);
+  const shrugPout = ((bs.mouthShrugLower || 0) * 0.55 + (bs.mouthRollLower || 0) * 0.25) * nonSmileGate;
+  return clamp(Math.max(bsFrown, Math.max(geoFrown * 0.8, shrugPout)), 0, 1);
 }
 function analyzeNeutralStep(samples) {
   const faceSamples = samples.filter((s) => s.present);
@@ -253,6 +286,11 @@ function analyzeNeutralStep(samples) {
   const blinkOpenR = Number(clamp(percentile(fusedR, 0.3), 0, 0.45).toFixed(3));
   const gazes = faceSamples.map((s) => extractRawGazeSample(s.blendshapes));
   const brows = faceSamples.map((s) => extractRawBrowsSample(s.blendshapes));
+  const p90Frown = percentile(
+    faceSamples.map((s) => extractRawFrownClient(s.blendshapes)),
+    0.9
+  );
+  const neutralFrown = p90Frown > 0 ? Number(clamp(p90Frown * 1.12 + 0.02, 0, 0.75).toFixed(3)) : 0;
   return {
     neutralYaw: Number(median(faceSamples.map((s) => s.yaw)).toFixed(2)),
     neutralPitch: Number(median(faceSamples.map((s) => s.pitch)).toFixed(2)),
@@ -284,9 +322,7 @@ function analyzeNeutralStep(samples) {
         )
       ).toFixed(3)
     ),
-    neutralFrown: Number(
-      median(faceSamples.map((s) => extractRawFrownClient(s.blendshapes))).toFixed(3)
-    ),
+    neutralFrown,
     neutralCheekPuff: Number(
       median(faceSamples.map((s) => s.blendshapes.cheekPuff || 0)).toFixed(3)
     ),
@@ -466,12 +502,33 @@ function analyzeHeadTurnStep(samples, neutralYaw, neutralPitch, openL, openR, cl
   }
   const absYaws = faceSamples.map((s) => Math.abs(s.yaw - neutralYaw));
   const absPitches = faceSamples.map((s) => Math.abs(s.pitch - neutralPitch));
-  const p90Yaw = percentile(absYaws, 0.9);
-  const p90Pitch = percentile(absPitches, 0.9);
-  const yawMultiplier = p90Yaw >= 6 ? Number(clamp(22 / p90Yaw, 0.7, 2).toFixed(2)) : 1;
-  const pitchMultiplier = p90Pitch >= 4 ? Number(clamp(14 / p90Pitch, 0.7, 2).toFixed(2)) : 1;
   let earliestOcclusionYaw = 27;
   let earlyOcclusionDetected = false;
+  let lastValidAbsYaw = 0;
+  let lastValidAbsPitch = 0;
+  for (const s of samples) {
+    if (s.present) {
+      lastValidAbsYaw = Math.abs(s.yaw - neutralYaw);
+      lastValidAbsPitch = Math.abs(s.pitch - neutralPitch);
+    } else {
+      if (lastValidAbsYaw >= 8) {
+        absYaws.push(Math.max(lastValidAbsYaw, 22));
+        if (lastValidAbsYaw >= 12 && lastValidAbsYaw < earliestOcclusionYaw) {
+          earliestOcclusionYaw = lastValidAbsYaw;
+          earlyOcclusionDetected = true;
+        }
+      }
+      if (lastValidAbsPitch >= 4) {
+        absPitches.push(Math.max(lastValidAbsPitch, 14));
+      }
+    }
+  }
+  const activeYaws = absYaws.filter((y) => y >= 4);
+  const activePitches = absPitches.filter((p) => p >= 2.5);
+  const p90Yaw = percentile(activeYaws.length > 0 ? activeYaws : absYaws, 0.9);
+  const p90Pitch = percentile(activePitches.length > 0 ? activePitches : absPitches, 0.9);
+  const yawMultiplier = p90Yaw >= 6 ? Number(clamp(22 / p90Yaw, 0.7, 2).toFixed(2)) : 1;
+  const pitchMultiplier = p90Pitch >= 4 ? Number(clamp(14 / p90Pitch, 0.7, 2).toFixed(2)) : 1;
   for (const s of faceSamples) {
     const calYaw = s.yaw - neutralYaw;
     const absYaw = Math.abs(calYaw);
@@ -648,7 +705,7 @@ function buildCalibrationProfile(neutral, blink, voiceSmile) {
     smileWeightR: voiceSmile.smileWeightR
   };
 }
-function evaluateCalibrationSubstepActivity(substepId, sample, neutral, prevTurnSign) {
+function evaluateCalibrationSubstepActivity(substepId, sample, neutral, prevTurnSign, allowExtremeTurnDropout = false) {
   if (!sample) {
     return { level: 0, active: false };
   }
@@ -685,6 +742,9 @@ function evaluateCalibrationSubstepActivity(substepId, sample, neutral, prevTurn
     return { level, active: level >= 1 };
   }
   if (!sample.present) {
+    if ((substepId === "step3a_left" || substepId === "step3b_right" || substepId === "step3c_up" || substepId === "step3d_down") && (allowExtremeTurnDropout || neutral != null)) {
+      return { level: 1, active: true };
+    }
     return { level: 0, active: false };
   }
   const smileRaw = ((bs.mouthSmileLeft || 0) + (bs.mouthSmileRight || 0)) * 0.5;
@@ -736,23 +796,41 @@ function evaluateCalibrationSubstepActivity(substepId, sample, neutral, prevTurn
     if (substepId === "step3b_right" && prevTurnSign && prevTurnSign !== 0) {
       const oppYaw = Math.max(0, -calYaw * Math.sign(prevTurnSign));
       const oppGaze = Math.max(0, -calGazeX * Math.sign(prevTurnSign));
-      const level2 = clamp(Math.max(oppYaw / 4.5, oppGaze / 0.14), 0, 1);
+      const level2 = clamp(Math.max(oppYaw / 4, oppGaze / 0.14), 0, 1);
       return { level: level2, active: level2 >= 1 };
     }
-    const level = clamp(Math.max(Math.abs(calYaw) / 4.5, Math.abs(calGazeX) / 0.14), 0, 1);
+    const level = clamp(Math.max(Math.abs(calYaw) / 4, Math.abs(calGazeX) / 0.14), 0, 1);
     return { level, active: level >= 1 };
   }
   if (substepId === "step3c_up" || substepId === "step3d_down") {
     const calPitch = sample.pitch - neutralPitch;
+    const calY = sample.y - (neutral?.neutralY ?? 0);
     const gaze = extractRawGazeSample(bs);
     const calGazeY = gaze.y - neutralEyeY;
     if (substepId === "step3d_down" && prevTurnSign && prevTurnSign !== 0) {
       const oppPitch = Math.max(0, -calPitch * Math.sign(prevTurnSign));
       const oppGaze = Math.max(0, -calGazeY * Math.sign(prevTurnSign));
-      const level2 = clamp(Math.max(oppPitch / 3, oppGaze / 0.1), 0, 1);
+      const directDownPitch = Math.max(0, calPitch);
+      const directDownGaze = Math.max(0, calGazeY);
+      const downHeadShift = Math.max(0, -calY);
+      const level2 = clamp(
+        Math.max(
+          oppPitch / 2.8,
+          oppGaze / 0.1,
+          directDownPitch / 3.2,
+          directDownGaze / 0.12,
+          downHeadShift / 2.2
+        ),
+        0,
+        1
+      );
       return { level: level2, active: level2 >= 1 };
     }
-    const level = clamp(Math.max(Math.abs(calPitch) / 3, Math.abs(calGazeY) / 0.1), 0, 1);
+    const level = clamp(
+      Math.max(Math.abs(calPitch) / 2.8, Math.abs(calGazeY) / 0.1, Math.abs(calY) / 2.2),
+      0,
+      1
+    );
     return { level, active: level >= 1 };
   }
   if (substepId === "step4a_smile") {
@@ -1361,10 +1439,12 @@ var gaugePuckerPuff = document.getElementById("gauge-pucker-puff");
 var valPuckerPuff = document.getElementById("val-pucker-puff");
 var gaugeFrownTongue = document.getElementById("gauge-frown-tongue");
 var valFrownTongue = document.getElementById("val-frown-tongue");
+var frownThresholdMarker = document.getElementById("frown-threshold-marker");
 var sliderMouthGain = document.getElementById("slider-mouth-gain");
 var sliderMouthThreshold = document.getElementById("slider-mouth-threshold");
-var checkboxEnableSmile = document.getElementById("check-enable-smile");
+var checkboxEnableSmile = document.getElementById("checkbox-enable-smile") || document.getElementById("check-enable-smile");
 var sliderSmileThreshold = document.getElementById("slider-smile-threshold");
+var sliderFrownThreshold = document.getElementById("slider-frown-threshold");
 var checkboxWinkIsBlink = document.getElementById("checkbox-wink-is-blink") || document.getElementById("check-wink-is-blink");
 var checkboxStabilizeBlink = document.getElementById("checkbox-stabilize-blink");
 var sliderBlinkMaxYaw = document.getElementById("slider-blink-max-yaw");
@@ -1405,6 +1485,7 @@ var valBounceAmount = document.getElementById("val-bounce-amount");
 var valMouthGain = document.getElementById("val-mouth-gain");
 var valMouthThreshold = document.getElementById("val-mouth-threshold");
 var valSmileThreshold = document.getElementById("val-smile-threshold");
+var valFrownThreshold = document.getElementById("val-frown-threshold");
 var valBlinkThresholdL = document.getElementById("val-blink-threshold-l");
 var valBlinkThresholdR = document.getElementById("val-blink-threshold-r");
 var valBlinkSyncDelay = document.getElementById("val-blink-sync-delay");
@@ -2164,6 +2245,9 @@ async function initMediaPipe() {
       },
       outputFaceBlendshapes: true,
       outputFacialTransformationMatrixes: true,
+      minFaceDetectionConfidence: 0.3,
+      minFacePresenceConfidence: 0.3,
+      minTrackingConfidence: 0.3,
       runningMode: "VIDEO",
       numFaces: 1
     });
@@ -2521,6 +2605,12 @@ function processFrame(renderUI = true) {
       if (results.facialTransformationMatrixes && results.facialTransformationMatrixes[0]) {
         pose = extractEulerAngles(results.facialTransformationMatrixes[0].data);
       }
+      if (pose.yaw === 0 && pose.pitch === 0) {
+        const fallbackPose = estimatePoseFromLandmarks(landmarks);
+        if (fallbackPose) {
+          pose = fallbackPose;
+        }
+      }
       const audioState = sampleAudio({
         mouthOpen: blendshapes.jawOpen || 0,
         mouthPucker: Math.max(blendshapes.mouthPucker || 0, (blendshapes.mouthFunnel || 0) * 0.75),
@@ -2692,9 +2782,9 @@ function updateTrackingGauges(pose, blendshapes) {
   if (valPuckerPuff) valPuckerPuff.textContent = `${Math.round(puckerPuff * 100)}%`;
   if (gaugePuckerPuff) gaugePuckerPuff.style.width = `${Math.min(100, Math.round(puckerPuff * 100))}%`;
   const frownRaw = extractRawFrownClient(blendshapes, wL, wR);
-  const frownBase = cal && cal.calibrated ? cal.neutralFrown || 0 : 0;
+  const frownBase = cal && cal.calibrated ? Math.min(0.85, (cal.neutralFrown || 0) + 0.03) : 0;
   const frownDenom = Math.max(0.1, 1 - frownBase);
-  const frown = Math.max(0, Math.min(1, Math.max(0, frownRaw - frownBase) / frownDenom * 2.4));
+  const frown = Math.max(0, Math.min(1, Math.max(0, frownRaw - frownBase) / frownDenom * 2));
   const tongue = Math.max(0, Math.min(1, blendshapes.tongueOut || 0));
   const frownTongue = Math.max(frown, tongue);
   if (valFrownTongue) valFrownTongue.textContent = `${Math.round(frownTongue * 100)}%`;
@@ -2848,6 +2938,8 @@ function syncSettingsToUI(s) {
     if (sliderMouthThreshold) sliderMouthThreshold.value = String(t.mouthThreshold || 0.08);
     if (checkboxEnableSmile) checkboxEnableSmile.checked = t.enableSmile !== false;
     if (sliderSmileThreshold) sliderSmileThreshold.value = String(t.smileThreshold || 0.5);
+    if (sliderFrownThreshold)
+      sliderFrownThreshold.value = String(t.frownThreshold !== void 0 && t.frownThreshold > 0 ? t.frownThreshold : 0.4);
     if (checkboxWinkIsBlink) checkboxWinkIsBlink.checked = Boolean(t.winkIsBlink);
     if (checkboxStabilizeBlink) checkboxStabilizeBlink.checked = t.stabilizeBlink !== false;
     if (sliderBlinkMaxYaw)
@@ -2901,6 +2993,8 @@ function updateSliderLabels() {
     valMouthThreshold.textContent = parseFloat(sliderMouthThreshold.value).toFixed(2);
   if (valSmileThreshold && sliderSmileThreshold)
     valSmileThreshold.textContent = parseFloat(sliderSmileThreshold.value).toFixed(2);
+  if (valFrownThreshold && sliderFrownThreshold)
+    valFrownThreshold.textContent = parseFloat(sliderFrownThreshold.value).toFixed(2);
   if (valBlinkThresholdL && sliderBlinkThresholdL)
     valBlinkThresholdL.textContent = parseFloat(sliderBlinkThresholdL.value).toFixed(2);
   if (valBlinkThresholdR && sliderBlinkThresholdR)
@@ -2932,6 +3026,10 @@ function updateSliderLabels() {
   if (smileThresholdMarker && sliderSmileThreshold) {
     const smilePercent = Math.min(100, Math.round(parseFloat(sliderSmileThreshold.value) * 100));
     smileThresholdMarker.style.left = `${smilePercent}%`;
+  }
+  if (frownThresholdMarker && sliderFrownThreshold) {
+    const frownPercent = Math.min(100, Math.round(parseFloat(sliderFrownThreshold.value) * 100));
+    frownThresholdMarker.style.left = `${frownPercent}%`;
   }
   if (blinkThresholdMarkerL && sliderBlinkThresholdL) {
     const blinkPercent = Math.min(100, Math.round(parseFloat(sliderBlinkThresholdL.value) * 100));
@@ -2965,6 +3063,7 @@ function collectSettingsFromUI() {
       mouthThreshold: parseFloat(sliderMouthThreshold?.value || "0.08"),
       enableSmile: checkboxEnableSmile ? checkboxEnableSmile.checked : true,
       smileThreshold: parseFloat(sliderSmileThreshold?.value || "0.50"),
+      frownThreshold: parseFloat(sliderFrownThreshold?.value || "0.40"),
       blinkThreshold: parseFloat(sliderBlinkThresholdL?.value || "0.45"),
       blinkThresholdL: parseFloat(sliderBlinkThresholdL?.value || "0.45"),
       blinkThresholdR: parseFloat(sliderBlinkThresholdR?.value || "0.45"),
@@ -3027,6 +3126,7 @@ function onSliderInput(e) {
   sliderMouthGain,
   sliderMouthThreshold,
   sliderSmileThreshold,
+  sliderFrownThreshold,
   sliderBlinkThresholdL,
   sliderBlinkThresholdR,
   sliderBlinkSyncDelay,
@@ -4473,6 +4573,9 @@ function ingestCalibrationSample(sample) {
         );
         calPillFace.textContent = `\u{1F4F7} Face: Ready (Blink L ${(bL * 100).toFixed(0)}% \xB7 R ${(bR * 100).toFixed(0)}% | Yaw ${sample.yaw > 0 ? "+" : ""}${sample.yaw.toFixed(0)}\xB0)`;
         calPillFace.className = "cal-pill ok";
+      } else if (wizardStep === "step3_turn") {
+        calPillFace.textContent = "\u{1F4F7} Face: Extreme Turn Held \u2713";
+        calPillFace.className = "cal-pill ok";
       } else {
         calPillFace.textContent = "\u{1F4F7} Face: Waiting...";
         calPillFace.className = "cal-pill warn";
@@ -4788,7 +4891,9 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
   let lastBlinkDetectTime = 0;
   let postBlinkHoldMs = 0;
   let step3LeftYawSign = 0;
+  let step3PeakLeftAbsYaw = 0;
   let step3UpPitchSign = 0;
+  let step3PeakUpAbsPitch = 0;
   const applySubstepMeta = (idx) => {
     const sub = WIZARD_SUBSTEPS[idx];
     wizardStep = sub.bucket;
@@ -4816,6 +4921,10 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
     const finishedSub = WIZARD_SUBSTEPS[substepIndex];
     if (finishedSub.id === "step1_neutral") {
       cachedNeutralResult = analyzeNeutralStep(step1Samples);
+    } else if (finishedSub.id === "step3a_left" && step3LeftYawSign === 0) {
+      step3LeftYawSign = -1;
+    } else if (finishedSub.id === "step3c_up" && step3UpPitchSign === 0) {
+      step3UpPitchSign = -1;
     }
     const isVowelTransition = finishedSub.vowelCue !== void 0 && substepIndex + 1 < WIZARD_SUBSTEPS.length && WIZARD_SUBSTEPS[substepIndex + 1].vowelCue !== void 0;
     if (substepIndex + 1 < WIZARD_SUBSTEPS.length) {
@@ -4869,7 +4978,31 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
     if (!sub) return;
     const now = performance.now();
     const subElapsed = now - substepStartTime;
-    if (subElapsed < sub.readGraceMs && !spaceForcedCapture) {
+    if (subElapsed >= 220 && latestCalSample?.present) {
+      if (sub.id === "step3a_left") {
+        const dy = latestCalSample.yaw - (cachedNeutralResult?.neutralYaw ?? 0);
+        if (Math.abs(dy) >= 2.5 && Math.abs(dy) >= step3PeakLeftAbsYaw) {
+          step3PeakLeftAbsYaw = Math.abs(dy);
+          step3LeftYawSign = Math.sign(dy);
+        }
+      } else if (sub.id === "step3c_up") {
+        const dp = latestCalSample.pitch - (cachedNeutralResult?.neutralPitch ?? 0);
+        if (Math.abs(dp) >= 2 && Math.abs(dp) >= step3PeakUpAbsPitch) {
+          step3PeakUpAbsPitch = Math.abs(dp);
+          step3UpPitchSign = Math.sign(dp);
+        }
+      }
+    }
+    const prevTurnSign = sub.id === "step3b_right" ? step3LeftYawSign : sub.id === "step3d_down" ? step3UpPitchSign : 0;
+    const activity = evaluateCalibrationSubstepActivity(
+      sub.id,
+      latestCalSample,
+      cachedNeutralResult,
+      prevTurnSign,
+      sub.bucket === "step3_turn" && subElapsed >= 300
+    );
+    const earlyTurnReady = sub.bucket === "step3_turn" && subElapsed >= 350 && activity.active;
+    if (subElapsed < sub.readGraceMs && !spaceForcedCapture && !earlyTurnReady) {
       if (calStepTimer) calStepTimer.textContent = "Get Ready...";
       if (calActionProgress) calActionProgress.style.width = "0%";
       if (calActionStatus) {
@@ -4882,13 +5015,6 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
       readyCuePlayed = true;
       playCalibrationCue(ctx, "beep");
     }
-    const prevTurnSign = sub.id === "step3b_right" ? step3LeftYawSign : sub.id === "step3d_down" ? step3UpPitchSign : 0;
-    const activity = evaluateCalibrationSubstepActivity(
-      sub.id,
-      latestCalSample,
-      cachedNeutralResult,
-      prevTurnSign
-    );
     if (sub.id === "step2a_blink") {
       if (activity.active && now - lastBlinkDetectTime >= 500 && blinkCount < 2) {
         lastBlinkDetectTime = now;
@@ -4925,13 +5051,24 @@ async function runGuidedCalibrationSequence(requestFullscreenFirst = false) {
         step2WinkTimestamps.push(now - 100);
         recordedWinkTimestampForSubstep = true;
       }
-      if (sub.id === "step3a_left" && latestCalSample?.present) {
-        const dy = latestCalSample.yaw - (cachedNeutralResult?.neutralYaw ?? 0);
-        if (Math.abs(dy) >= 2) step3LeftYawSign = Math.sign(dy);
-      }
-      if (sub.id === "step3c_up" && latestCalSample?.present) {
-        const dp = latestCalSample.pitch - (cachedNeutralResult?.neutralPitch ?? 0);
-        if (Math.abs(dp) >= 1.5) step3UpPitchSign = Math.sign(dp);
+      if (sub.bucket === "step3_turn" && (!latestCalSample || !latestCalSample.present)) {
+        const nYaw = cachedNeutralResult?.neutralYaw ?? 0;
+        const nPitch = cachedNeutralResult?.neutralPitch ?? 0;
+        step3Samples.push({
+          timestamp: now,
+          present: true,
+          yaw: sub.id === "step3a_left" ? nYaw - 22 : sub.id === "step3b_right" ? nYaw + 22 : nYaw,
+          pitch: sub.id === "step3c_up" ? nPitch - 14 : sub.id === "step3d_down" ? nPitch + 14 : nPitch,
+          roll: cachedNeutralResult?.neutralRoll ?? 0,
+          x: cachedNeutralResult?.neutralX ?? 0,
+          y: cachedNeutralResult?.neutralY ?? 0,
+          z: cachedNeutralResult?.neutralZ ?? -50,
+          blendshapes: {
+            eyeBlinkLeft: cachedNeutralResult?.blinkOpenL ?? 0.08,
+            eyeBlinkRight: cachedNeutralResult?.blinkOpenR ?? 0.08
+          },
+          audioVolume: 0
+        });
       }
     }
     const holdPct = Math.min(100, Math.round(substepHoldAccumMs / sub.holdMs * 100));

@@ -222,5 +222,56 @@ describe("Guided Calibration Wizard Analyzers", () => {
     // Voiced vowel triggers step4b_vowel_a
     const speaking = makeSample({ audioVolume: 0.15 });
     assert.equal(evaluateCalibrationSubstepActivity("step4b_vowel_a", speaking, neutral).active, true);
+
+    // Extreme head turns left/right or down that exceed webcam FOV (present: false) still register as active in Step 3
+    const extremeDropout = makeSample({ present: false, yaw: 0, pitch: 0 });
+    assert.equal(evaluateCalibrationSubstepActivity("step3a_left", extremeDropout, neutral).active, true);
+    assert.equal(evaluateCalibrationSubstepActivity("step3b_right", extremeDropout, neutral, -1).active, true);
+    assert.equal(evaluateCalibrationSubstepActivity("step3d_down", extremeDropout, neutral, -1).active, true);
+
+    // Downward head tilt (+pitch / -y shift) triggers step3d_down even if prevTurnSign was noisy (+1)
+    const tiltDown = makeSample({ pitch: 6.5, y: -2.5 });
+    assert.equal(evaluateCalibrationSubstepActivity("step3d_down", tiltDown, neutral, 1).active, true);
+  });
+
+  test("analyzeHeadTurnStep preserves extreme turn peaks and detects occlusion when tracking drops out", () => {
+    const samples: CalibrationSample[] = [
+      makeSample({ present: true, yaw: 0, pitch: 0 }),
+      makeSample({ present: true, yaw: -16, pitch: 0 }),
+      // User turns head further left past camera tracking limit -> present: false
+      makeSample({ present: false, yaw: 0, pitch: 0 }),
+      makeSample({ present: true, yaw: 15, pitch: 0 }),
+      makeSample({ present: false, yaw: 0, pitch: 0 }),
+      // User tilts head down toward keyboard -> present: false after +8 deg pitch
+      makeSample({ present: true, yaw: 0, pitch: 8 }),
+      makeSample({ present: false, yaw: 0, pitch: 0 }),
+    ];
+
+    const res = analyzeHeadTurnStep(samples, 0, 0, 0.12, 0.12, 0.55, 0.55);
+    assert.equal(res.earlyOcclusionDetected, true);
+    assert.ok(res.blinkMaxHeadYaw <= 16 && res.blinkMaxHeadYaw >= 12);
+    assert.ok(res.yawMultiplier >= 0.95 && res.yawMultiplier <= 1.15);
+    assert.ok(res.pitchMultiplier >= 0.95 && res.pitchMultiplier <= 1.15);
+  });
+
+  test("analyzeNeutralStep uses 90th percentile + safety margin for neutralFrown to prevent resting false-positives", () => {
+    const samples: CalibrationSample[] = [
+      makeSample({
+        timestamp: 100,
+        blendshapes: { geoFrownLeft: 0.18, geoFrownRight: 0.18, mouthShrugLower: 0.20 },
+      }),
+      makeSample({
+        timestamp: 200,
+        blendshapes: { geoFrownLeft: 0.22, geoFrownRight: 0.22, mouthShrugLower: 0.24 },
+      }),
+      makeSample({
+        timestamp: 300,
+        blendshapes: { geoFrownLeft: 0.28, geoFrownRight: 0.28, mouthShrugLower: 0.30 },
+      }),
+    ];
+
+    const res = analyzeNeutralStep(samples);
+    // p90 of raw frown (~0.22) + margin should sit safely above the median sample (0.176)
+    assert.ok(res.neutralFrown >= 0.24 && res.neutralFrown <= 0.32);
   });
 });

@@ -9,6 +9,7 @@ export interface TrackingConfig {
   mouthThreshold: number;
   enableSmile: boolean;
   smileThreshold: number;
+  frownThreshold?: number;
   blinkThreshold: number;
   blinkThresholdL: number;
   blinkThresholdR: number;
@@ -66,6 +67,7 @@ export function createDefaultSettings(): SettingsPayload {
       mouthThreshold: 0.08,
       enableSmile: true,
       smileThreshold: 0.5,
+      frownThreshold: 0.4,
       blinkThreshold: 0.45,
       blinkThresholdL: 0.45,
       blinkThresholdR: 0.45,

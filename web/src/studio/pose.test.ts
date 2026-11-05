@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import {
   extractEulerAngles,
+  estimatePoseFromLandmarks,
   computeEyeAspectRatios,
   computeMouthGeometry,
   evaluateOpticalTongue,
@@ -96,5 +97,21 @@ describe("Pose & Euler Angle Extraction", () => {
       0.35
     );
     assert.ok(tongueScore > 0.50);
+  });
+
+  test("estimates fallback head yaw and pitch from 3D landmarks when matrix is unavailable", () => {
+    assert.equal(estimatePoseFromLandmarks(null), null);
+    const landmarks: Landmark3D[] = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5, z: 0 }));
+    landmarks[33] = { x: 0.40, y: 0.40, z: 0 };
+    landmarks[263] = { x: 0.60, y: 0.40, z: 0 };
+    landmarks[10] = { x: 0.50, y: 0.25, z: 0 };
+    landmarks[152] = { x: 0.50, y: 0.75, z: 0 };
+    // Nose shifted toward left eye (user's left) and downward toward chin
+    landmarks[1] = { x: 0.56, y: 0.62, z: 0 };
+
+    const est = estimatePoseFromLandmarks(landmarks);
+    assert.ok(est);
+    assert.ok(est.yaw < -10);
+    assert.ok(est.pitch > 10);
   });
 });

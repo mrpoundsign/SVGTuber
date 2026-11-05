@@ -1428,8 +1428,9 @@
           </div>
           <div class="gauge-item">
             <label>Frown / Tongue</label>
-            <div class="gauge-bar-track">
+            <div class="gauge-bar-track" style="position: relative;">
               <div id="gauge-frown-tongue" class="gauge-bar-fill" style="background: #f59e0b;"></div>
+              <div id="frown-threshold-marker" title="Frown Threshold" style="position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; left: 40%; z-index: 2;"></div>
             </div>
             <span id="val-frown-tongue" class="gauge-value">0%</span>
           </div>
@@ -1493,6 +1494,11 @@
               <label for="slider-smile-threshold">Smile Threshold</label>
               <input type="range" id="slider-smile-threshold" min="0.2" max="0.9" step="0.05" value="0.50">
               <span id="val-smile-threshold" class="slider-val">0.50</span>
+            </div>
+            <div class="slider-item">
+              <label for="slider-frown-threshold">Frown Threshold</label>
+              <input type="range" id="slider-frown-threshold" min="0.15" max="0.95" step="0.05" value="0.40">
+              <span id="val-frown-threshold" class="slider-val">0.40</span>
             </div>
           </div>
 

@@ -1427,7 +1427,10 @@ import {
       const jawXVal = Math.max(-1, Math.min(1, parseFloat(String(p.jawX || 0))));
 
       const isTongue = Boolean(p.isTongueOut || tongueVal >= 0.35);
-      const isFrown = Boolean(p.isFrowning || frownVal >= 0.35);
+      const frownThresh = parseFloat(String(p.frownThreshold || 0.4));
+      const isFrown = Boolean(
+        p.isFrowning !== undefined ? p.isFrowning : frownVal >= frownThresh
+      );
       const isSmile = Boolean(boundMouthSmile && boundMouthSmile.style.display !== "none");
       const isOpen = Boolean((boundMouthOpen && boundMouthOpen.style.display !== "none") || isTongue);
 
@@ -1444,7 +1447,7 @@ import {
 
       if (boundMouthNeutral) {
         boundMouthNeutral.style.display = showNeutral ? "inline" : "none";
-        if (showNeutral && (puckerVal > 0.06 || Math.abs(jawXVal) > 0.04 || frownVal > 0.08)) {
+        if (showNeutral && (puckerVal > 0.06 || Math.abs(jawXVal) > 0.04 || frownVal > 0.15)) {
           const sxN = 1.0 - puckerVal * 0.45;
           const syN = 1.0 + puckerVal * 0.40;
           const jx = jawXVal * 7.0;
