@@ -111,13 +111,15 @@ import {
     if (typeof t.depthZoomAmount === "number" && !isNaN(t.depthZoomAmount)) {
       latestParams.depthZoomAmount = t.depthZoomAmount;
     }
-    if (preview25D && perspSkewOverride.enabled) {
+    const hasPositivePerspAmt =
+      perspSkewOverride.amount === undefined || perspSkewOverride.amount > 0;
+    if (preview25D && perspSkewOverride.enabled && hasPositivePerspAmt) {
       const now = performance.now();
       if (now >= perspPreviewUntil) {
         perspPreviewStart = now;
       }
       perspPreviewUntil = now + 2200;
-    } else if (!perspSkewOverride.enabled) {
+    } else if (!perspSkewOverride.enabled || !hasPositivePerspAmt) {
       perspPreviewUntil = 0;
     }
   }
@@ -850,11 +852,21 @@ import {
       perspSkewOverride.enabled !== undefined
         ? perspSkewOverride.enabled
         : Boolean(p.perspectiveSkewEnabled);
-    if (!isFreezeMode && isPerspEnabled && now < perspPreviewUntil && Math.abs(headYaw) < 5) {
+    let globalPerspAmount = 0;
+    if (!isFreezeMode && isPerspEnabled) {
+      const rawAmt =
+        perspSkewOverride.amount !== undefined
+          ? perspSkewOverride.amount
+          : p.perspectiveSkewAmount !== undefined
+            ? parseFloat(String(p.perspectiveSkewAmount))
+            : 1.0;
+      globalPerspAmount = isNaN(rawAmt) ? 1.0 : Math.max(0, rawAmt);
+    }
+    if (!isFreezeMode && globalPerspAmount > 0 && now < perspPreviewUntil && Math.abs(headYaw) < 5) {
       const elapsed = (now - perspPreviewStart) / 1000;
       const remRatio = Math.min(1, (perspPreviewUntil - now) / 350);
       headYaw = Math.sin(elapsed * Math.PI * 1.45) * 24 * remRatio;
-      headPitch = Math.sin(elapsed * Math.PI * 0.75) * 9 * remRatio;
+      headPitch = -Math.sin(elapsed * Math.PI * 1.15) * 10 * remRatio;
     }
 
     const dt = lastTransformTime ? Math.min(0.05, Math.max(0.001, (now - lastTransformTime) / 1000)) : 1 / 60;
@@ -876,17 +888,6 @@ import {
     } else if (p.physicsAmount !== undefined) {
       const val = parseFloat(String(p.physicsAmount));
       globalPhysicsMult = isNaN(val) ? 1.0 : Math.max(0, val);
-    }
-
-    let globalPerspAmount = 0;
-    if (!isFreezeMode && isPerspEnabled) {
-      const rawAmt =
-        perspSkewOverride.amount !== undefined
-          ? perspSkewOverride.amount
-          : p.perspectiveSkewAmount !== undefined
-            ? parseFloat(String(p.perspectiveSkewAmount))
-            : 1.0;
-      globalPerspAmount = isNaN(rawAmt) ? 1.0 : Math.max(0, rawAmt);
     }
 
     for (let i = 0; i < activeRigBindings.length; i++) {
@@ -955,8 +956,8 @@ import {
           case "parallax": {
             const factor = parseFloat(params.factor || "0");
             bDistFactor = factor;
-            tx += headYaw * factor * 2.2;
-            ty += headPitch * factor * 1.6;
+            tx += headYaw * factor * 2.2 * globalPerspAmount;
+            ty += headPitch * factor * 1.6 * globalPerspAmount;
 
             const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : undefined;
             const persp = params.persp ? parseFloat(params.persp) : undefined;

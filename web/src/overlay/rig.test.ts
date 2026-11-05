@@ -106,7 +106,7 @@ describe("Rig System & Directives Logic", () => {
     assert.equal(off.skewX, 0);
     assert.equal(off.skewY, 0);
 
-    // Head root foreshortening at +25 deg yaw and +15 deg pitch
+    // Head root foreshortening at +25 deg yaw and +15 deg pitch (level center pivot, no forehead-overhang skewX)
     const head = compute25DPerspective({
       headYaw: 25,
       headPitch: 15,
@@ -116,21 +116,47 @@ describe("Rig System & Directives Logic", () => {
     });
     assert.ok(head.sx < 1.0 && head.sx > 0.90, `expected head.sx foreshortened, got ${head.sx}`);
     assert.ok(head.sy < 1.0 && head.sy > 0.92, `expected head.sy foreshortened, got ${head.sy}`);
-    assert.ok(head.skewX < 0, `expected negative neck-anchored skewX for right turn, got ${head.skewX}`);
+    assert.equal(head.skewX, 0, `expected zero skewX on head_root to avoid downward forehead overhang, got ${head.skewX}`);
     assert.ok(head.skewY < 0, `expected negative diagonal skewY, got ${head.skewY}`);
-    assert.ok(head.extraTx < 0, `expected negative extraTx to keep chin planted on neck, got ${head.extraTx}`);
+    assert.ok(head.extraTx < 0, `expected negative extraTx to keep head centered over neck, got ${head.extraTx}`);
+    assert.equal(head.extraTy, 0, `expected zero extraTy so head_root does not oppose upward pitch, got ${head.extraTy}`);
 
-    // Attached ear/horn has zero extraTx/extraTy so its skull attachment pivot never detaches
-    const farEar = compute25DPerspective({
+    // Attached ear/horn has zero extraTx/extraTy so its skull attachment pivot never detaches,
+    // stays level on pure yaw (pitch = 0), and counter-tilts via skewY on pitch
+    const farEarLevel = compute25DPerspective({
       headYaw: 25,
-      headPitch: 10,
+      headPitch: 0,
       sideOffset: 0.9,
       partRole: "ear_or_horn",
       amount: 1.0,
     });
-    assert.equal(farEar.extraTx, 0);
-    assert.equal(farEar.extraTy, 0);
-    assert.ok(farEar.sx < 0.90, `expected farEar.sx < 0.90, got ${farEar.sx}`);
+    assert.equal(farEarLevel.extraTx, 0);
+    assert.equal(farEarLevel.extraTy, 0);
+    assert.equal(farEarLevel.skewY, 0);
+    assert.ok(farEarLevel.sx < 0.92, `expected farEarLevel.sx < 0.92, got ${farEarLevel.sx}`);
+
+    const farEarPitchUp = compute25DPerspective({
+      headYaw: 25,
+      headPitch: -15,
+      sideOffset: 0.9,
+      partRole: "ear_or_horn",
+      amount: 1.0,
+    });
+    assert.ok(farEarPitchUp.skewY > 0, `expected positive skewY on right ear when pitching up (-15 deg), got ${farEarPitchUp.skewY}`);
+
+    // Snout / mouth panel (face_dist) foreshortens without flapping (skewX = 0) or seesaw tilting (skewY = 0)
+    // and lifts subtly along the jaw curve on pure yaw
+    const snoutTurn = compute25DPerspective({
+      headYaw: 25,
+      headPitch: 0,
+      partRole: "face_dist",
+      distFactor: 0.14,
+      amount: 1.0,
+    });
+    assert.equal(snoutTurn.skewX, 0);
+    assert.equal(snoutTurn.skewY, 0);
+    assert.ok(snoutTurn.sx < 1.0 && snoutTurn.sx > 0.90, `expected snoutTurn.sx foreshortened, got ${snoutTurn.sx}`);
+    assert.ok(snoutTurn.extraTy < 0, `expected slight upward jaw-curve lift on pure yaw, got ${snoutTurn.extraTy}`);
 
     // Turning right (+25 deg): right-on-screen eye (sideOffset = +0.6) compresses more than left-on-screen (sideOffset = -0.6)
     const farEye = compute25DPerspective({
@@ -150,6 +176,7 @@ describe("Rig System & Directives Logic", () => {
     assert.ok(farEye.sx < 0.94, `expected farEye.sx < 0.94, got ${farEye.sx}`);
     assert.ok(nearEye.sx > farEye.sx, `expected nearEye.sx (${nearEye.sx}) > farEye.sx (${farEye.sx})`);
     assert.ok(farEye.extraTx > 0, `expected facial feature to wrap right with yaw, got ${farEye.extraTx}`);
+    assert.equal(farEye.skewY, 0, `expected zero vertical seesaw skewY on pure horizontal yaw, got ${farEye.skewY}`);
   });
 
   test("formatPivotScaleSkewTransform wraps skew and scale in a single pivot block", () => {

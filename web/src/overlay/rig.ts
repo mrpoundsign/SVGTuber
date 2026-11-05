@@ -260,7 +260,7 @@ export function classifyRigBindings25D(
     if (b._isHeadRoot) {
       b._partRole = "head_root";
       b._sideOffset = 0;
-      b._scaleCy = headNeckCy > 0 ? headNeckCy : b.cy;
+      b._scaleCy = b.cy;
       continue;
     }
 
@@ -293,16 +293,17 @@ export function classifyRigBindings25D(
         Boolean(pb.el && pb.el.contains(b.el))
     );
     if (intermediateAncestors.length > 0) {
-      // If this element is a direct child of a [Dist] snout/muzzle group (e.g. Mouth_*_Group
-      // or Nostril_* inside Face_Center_Group), give it the "snout_sub" role so it rolls
-      // across the rounded front tip of the muzzle!
+      // Direct children of a [Dist] snout/muzzle group: keep Mouth_* groups planted inside
+      // their parent snout ("other" role) so they don't double-shift or tilt, while bilateral
+      // snout sub-elements (such as Nostrils) get "snout_sub" foreshortening.
       const distParent = intermediateAncestors.find((pb) =>
         pb.directives.some((d) => {
           const t = (d.type || (d as any).Type || d.name || "").toLowerCase().trim();
           return t === "dist" || t === "distance" || t === "parallax";
         })
       );
-      if (distParent && intermediateAncestors.length === 1) {
+      const isMouthChild = /mouth/i.test(b.id || "") || /mouth/i.test(b.label || "");
+      if (distParent && intermediateAncestors.length === 1 && !isMouthChild) {
         b._partRole = "snout_sub";
         const dpBBox = distParent.bbox;
         if (dpBBox && dpBBox.width > 0) {
@@ -328,11 +329,7 @@ export function classifyRigBindings25D(
 
     if (hasDist) {
       b._partRole = "face_dist";
-      if (b.bbox && b.bbox.height > 0) {
-        // Anchor protruding snout/bangs 2.5D shear at the bridge of the nose / forehead root
-        // so the top stays aligned with the eyes while the lower tip swings forward in 3D.
-        b._scaleCy = b.bbox.y + b.bbox.height * 0.18;
-      }
+      b._scaleCy = b.cy;
       // Also auto-bind any unbound Nostril sub-elements inside this snout group for 2.5D muzzle curvature
       const nostrils = b.el.querySelectorAll<SVGGraphicsElement>('[id*="Nostril" i], [id*="nostril" i]');
       nostrils.forEach((nEl) => {
@@ -393,51 +390,47 @@ export function compute25DPerspective(opts: Perspective25DOptions): Perspective2
 
   if (amt > 0) {
     if (role === "head_root") {
-      // Foreshorten skull width/height and tilt around the neck base (_scaleCy)
-      // while dampening raw horizontal slide so the chin stays planted on the neck.
-      sx *= 1 - (1 - cosYaw) * 0.24 * amt;
-      sy *= 1 - (1 - cosPitch) * 0.16 * amt;
-      skewX += -(yaw / 25) * 3.0 * amt;
-      skewY += -(yaw / 25) * (pitch / 20) * 3.2 * amt;
-      extraTx += -yaw * 0.22 * amt;
-      extraTy += -pitch * 0.15 * amt;
+      // Foreshorten skull width/height around its center pivot without neck-hinged forehead overhang
+      // so horizontal turns stay level and upward/downward pitch is symmetric.
+      sx *= 1 - (1 - cosYaw) * 0.18 * amt;
+      sy *= 1 - (1 - cosPitch) * 0.12 * amt;
+      skewY += -(yaw / 25) * (pitch / 20) * 1.8 * amt;
+      extraTx += -yaw * 0.12 * amt;
     } else if (role === "ear_or_horn") {
       // Anchored at its skull attachment pivot (right/left/bottom/top):
       // zero extraTx/extraTy so the root stays 100% welded to the head outline,
-      // with strong far-side foreshortening so the far ear/horn tucks behind the skull.
-      const asymK = side * sinYaw >= 0 ? 0.56 : 0.20;
-      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
-      sx *= Math.max(0.52, Math.min(1.24, autoScale));
-      skewY += -side * (yaw / 25) * 4.5 * amt;
+      // with far-side horizontal foreshortening on yaw and vertical counter-tilt on pitch.
+      const asymK = side * sinYaw >= 0 ? 0.50 : 0.18;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.10 * amt;
+      sx *= Math.max(0.55, Math.min(1.20, autoScale));
+      skewY += -side * (pitch / 20) * 3.5 * amt;
     } else if (role === "face_feature") {
       // Eyes, brows, cheeks, and standalone mouths sit on the mid-front facial sphere
       // (between the skull base and the protruding snout/muzzle).
-      extraTx += yaw * 0.068 * 2.2 * amt - side * (1 - cosYaw) * 5.5 * amt;
-      extraTy += pitch * 0.068 * 1.6 * amt;
-      const asymK = side * sinYaw >= 0 ? 0.42 : 0.18;
-      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
-      sx *= Math.max(0.58, Math.min(1.22, autoScale));
-      skewY += (yaw / 25) * 2.6 * amt;
+      extraTx += yaw * 0.068 * 2.2 * amt - side * (1 - cosYaw) * 5.0 * amt;
+      extraTy += pitch * 0.18 * amt - (1 - cosYaw) * 12.0 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.38 : 0.16;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.10 * amt;
+      sx *= Math.max(0.62, Math.min(1.18, autoScale));
+      sy *= 1 - (1 - cosPitch) * 0.10 * amt;
+      skewY += -(yaw / 25) * (pitch / 20) * 1.5 * amt;
     } else if (role === "face_dist") {
-      // Protruding [Dist] volume (cow snout/muzzle or bangs) projects forward in front of
-      // the eye plane, compresses into a 3/4 oval on turn, and shears from the nose bridge (_scaleCy)
-      // so the tip of the snout swings into the turn in 3D space.
+      // Protruding [Dist] volume (cow snout/muzzle or robot mouth panel) projects forward in front of
+      // the eye plane, foreshortens around its center pivot without flapping or seesaw-tilting,
+      // and lifts subtly along the curved cheek/jaw contour on high yaw turns.
       const df = opts.distFactor !== undefined ? opts.distFactor : 0.14;
-      extraTx += yaw * (df * 0.28) * amt;
-      extraTy += pitch * (df * 0.35) * amt;
-      const autoScale = 1 - side * sinYaw * 0.25 * amt - (1 - cosYaw) * 0.26 * amt;
-      sx *= Math.max(0.65, Math.min(1.20, autoScale));
-      sy *= 1 - (1 - cosPitch) * 0.18 * amt;
-      skewX += (yaw / 25) * 5.2 * amt;
-      skewY += (yaw / 25) * 3.8 * amt;
+      extraTx += yaw * (df * 0.20) * amt;
+      extraTy += pitch * (df * 0.55) * amt - (1 - cosYaw) * 22.0 * amt;
+      const autoScale = 1 - (1 - cosYaw) * 0.20 * amt;
+      sx *= Math.max(0.74, Math.min(1.10, autoScale));
+      sy *= 1 - (1 - cosPitch) * 0.14 * amt;
     } else if (role === "snout_sub") {
-      // Sub-features on the front tip of a protruding snout/muzzle (nostrils, mouth):
-      // roll across the curved snout surface and foreshorten bilateral nostrils.
-      extraTx += yaw * 0.15 * amt - side * (1 - cosYaw) * 4.5 * amt;
-      extraTy += pitch * 0.11 * amt;
-      const asymK = side * sinYaw >= 0 ? 0.50 : 0.22;
-      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.08 * amt;
-      sx *= Math.max(0.50, Math.min(1.24, autoScale));
+      // Sub-features on the front tip of a protruding snout/muzzle (e.g. bilateral nostrils):
+      // foreshorten across the curved snout surface without tilting or detaching.
+      extraTx += -side * (1 - cosYaw) * 3.0 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.40 : 0.16;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.06 * amt;
+      sx *= Math.max(0.60, Math.min(1.16, autoScale));
     } else {
       const asymK = side * sinYaw >= 0 ? 0.35 : 0.18;
       const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;

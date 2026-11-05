@@ -271,7 +271,7 @@ function classifyRigBindings25D(svg, bindings, fallbackCenter) {
     if (b._isHeadRoot) {
       b._partRole = "head_root";
       b._sideOffset = 0;
-      b._scaleCy = headNeckCy > 0 ? headNeckCy : b.cy;
+      b._scaleCy = b.cy;
       continue;
     }
     b._scaleCy = b.cy;
@@ -304,7 +304,8 @@ function classifyRigBindings25D(svg, bindings, fallbackCenter) {
           return t === "dist" || t === "distance" || t === "parallax";
         })
       );
-      if (distParent && intermediateAncestors.length === 1) {
+      const isMouthChild = /mouth/i.test(b.id || "") || /mouth/i.test(b.label || "");
+      if (distParent && intermediateAncestors.length === 1 && !isMouthChild) {
         b._partRole = "snout_sub";
         const dpBBox = distParent.bbox;
         if (dpBBox && dpBBox.width > 0) {
@@ -328,9 +329,7 @@ function classifyRigBindings25D(svg, bindings, fallbackCenter) {
     const lowerCombined = `${(b.id || "").toLowerCase()} ${(b.label || "").toLowerCase()}`;
     if (hasDist) {
       b._partRole = "face_dist";
-      if (b.bbox && b.bbox.height > 0) {
-        b._scaleCy = b.bbox.y + b.bbox.height * 0.18;
-      }
+      b._scaleCy = b.cy;
       const nostrils = b.el.querySelectorAll('[id*="Nostril" i], [id*="nostril" i]');
       nostrils.forEach((nEl) => {
         if (bindings.some((existing) => existing.el === nEl)) return;
@@ -386,39 +385,35 @@ function compute25DPerspective(opts) {
   const role = opts.partRole || (opts.isHeadRoot ? "head_root" : opts.distFactor ? "face_dist" : "other");
   if (amt > 0) {
     if (role === "head_root") {
-      sx *= 1 - (1 - cosYaw) * 0.24 * amt;
-      sy *= 1 - (1 - cosPitch) * 0.16 * amt;
-      skewX += -(yaw / 25) * 3 * amt;
-      skewY += -(yaw / 25) * (pitch / 20) * 3.2 * amt;
-      extraTx += -yaw * 0.22 * amt;
-      extraTy += -pitch * 0.15 * amt;
+      sx *= 1 - (1 - cosYaw) * 0.18 * amt;
+      sy *= 1 - (1 - cosPitch) * 0.12 * amt;
+      skewY += -(yaw / 25) * (pitch / 20) * 1.8 * amt;
+      extraTx += -yaw * 0.12 * amt;
     } else if (role === "ear_or_horn") {
-      const asymK = side * sinYaw >= 0 ? 0.56 : 0.2;
-      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
-      sx *= Math.max(0.52, Math.min(1.24, autoScale));
-      skewY += -side * (yaw / 25) * 4.5 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.5 : 0.18;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.1 * amt;
+      sx *= Math.max(0.55, Math.min(1.2, autoScale));
+      skewY += -side * (pitch / 20) * 3.5 * amt;
     } else if (role === "face_feature") {
-      extraTx += yaw * 0.068 * 2.2 * amt - side * (1 - cosYaw) * 5.5 * amt;
-      extraTy += pitch * 0.068 * 1.6 * amt;
-      const asymK = side * sinYaw >= 0 ? 0.42 : 0.18;
-      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
-      sx *= Math.max(0.58, Math.min(1.22, autoScale));
-      skewY += yaw / 25 * 2.6 * amt;
+      extraTx += yaw * 0.068 * 2.2 * amt - side * (1 - cosYaw) * 5 * amt;
+      extraTy += pitch * 0.18 * amt - (1 - cosYaw) * 12 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.38 : 0.16;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.1 * amt;
+      sx *= Math.max(0.62, Math.min(1.18, autoScale));
+      sy *= 1 - (1 - cosPitch) * 0.1 * amt;
+      skewY += -(yaw / 25) * (pitch / 20) * 1.5 * amt;
     } else if (role === "face_dist") {
       const df = opts.distFactor !== void 0 ? opts.distFactor : 0.14;
-      extraTx += yaw * (df * 0.28) * amt;
-      extraTy += pitch * (df * 0.35) * amt;
-      const autoScale = 1 - side * sinYaw * 0.25 * amt - (1 - cosYaw) * 0.26 * amt;
-      sx *= Math.max(0.65, Math.min(1.2, autoScale));
-      sy *= 1 - (1 - cosPitch) * 0.18 * amt;
-      skewX += yaw / 25 * 5.2 * amt;
-      skewY += yaw / 25 * 3.8 * amt;
+      extraTx += yaw * (df * 0.2) * amt;
+      extraTy += pitch * (df * 0.55) * amt - (1 - cosYaw) * 22 * amt;
+      const autoScale = 1 - (1 - cosYaw) * 0.2 * amt;
+      sx *= Math.max(0.74, Math.min(1.1, autoScale));
+      sy *= 1 - (1 - cosPitch) * 0.14 * amt;
     } else if (role === "snout_sub") {
-      extraTx += yaw * 0.15 * amt - side * (1 - cosYaw) * 4.5 * amt;
-      extraTy += pitch * 0.11 * amt;
-      const asymK = side * sinYaw >= 0 ? 0.5 : 0.22;
-      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.08 * amt;
-      sx *= Math.max(0.5, Math.min(1.24, autoScale));
+      extraTx += -side * (1 - cosYaw) * 3 * amt;
+      const asymK = side * sinYaw >= 0 ? 0.4 : 0.16;
+      const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.06 * amt;
+      sx *= Math.max(0.6, Math.min(1.16, autoScale));
     } else {
       const asymK = side * sinYaw >= 0 ? 0.35 : 0.18;
       const autoScale = 1 - side * sinYaw * asymK * amt - (1 - cosYaw) * 0.12 * amt;
@@ -562,13 +557,14 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
     if (typeof t.depthZoomAmount === "number" && !isNaN(t.depthZoomAmount)) {
       latestParams.depthZoomAmount = t.depthZoomAmount;
     }
-    if (preview25D && perspSkewOverride.enabled) {
+    const hasPositivePerspAmt = perspSkewOverride.amount === void 0 || perspSkewOverride.amount > 0;
+    if (preview25D && perspSkewOverride.enabled && hasPositivePerspAmt) {
       const now = performance.now();
       if (now >= perspPreviewUntil) {
         perspPreviewStart = now;
       }
       perspPreviewUntil = now + 2200;
-    } else if (!perspSkewOverride.enabled) {
+    } else if (!perspSkewOverride.enabled || !hasPositivePerspAmt) {
       perspPreviewUntil = 0;
     }
   }
@@ -1191,11 +1187,16 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
     const headRoll = p.headRoll || 0;
     const audioVol = parseFloat(String(p.audioVolume || 0));
     const isPerspEnabled = perspSkewOverride.enabled !== void 0 ? perspSkewOverride.enabled : Boolean(p.perspectiveSkewEnabled);
-    if (!isFreezeMode && isPerspEnabled && now < perspPreviewUntil && Math.abs(headYaw) < 5) {
+    let globalPerspAmount = 0;
+    if (!isFreezeMode && isPerspEnabled) {
+      const rawAmt = perspSkewOverride.amount !== void 0 ? perspSkewOverride.amount : p.perspectiveSkewAmount !== void 0 ? parseFloat(String(p.perspectiveSkewAmount)) : 1;
+      globalPerspAmount = isNaN(rawAmt) ? 1 : Math.max(0, rawAmt);
+    }
+    if (!isFreezeMode && globalPerspAmount > 0 && now < perspPreviewUntil && Math.abs(headYaw) < 5) {
       const elapsed = (now - perspPreviewStart) / 1e3;
       const remRatio = Math.min(1, (perspPreviewUntil - now) / 350);
       headYaw = Math.sin(elapsed * Math.PI * 1.45) * 24 * remRatio;
-      headPitch = Math.sin(elapsed * Math.PI * 0.75) * 9 * remRatio;
+      headPitch = -Math.sin(elapsed * Math.PI * 1.15) * 10 * remRatio;
     }
     const dt = lastTransformTime ? Math.min(0.05, Math.max(1e-3, (now - lastTransformTime) / 1e3)) : 1 / 60;
     lastTransformTime = now;
@@ -1213,11 +1214,6 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
     } else if (p.physicsAmount !== void 0) {
       const val = parseFloat(String(p.physicsAmount));
       globalPhysicsMult = isNaN(val) ? 1 : Math.max(0, val);
-    }
-    let globalPerspAmount = 0;
-    if (!isFreezeMode && isPerspEnabled) {
-      const rawAmt = perspSkewOverride.amount !== void 0 ? perspSkewOverride.amount : p.perspectiveSkewAmount !== void 0 ? parseFloat(String(p.perspectiveSkewAmount)) : 1;
-      globalPerspAmount = isNaN(rawAmt) ? 1 : Math.max(0, rawAmt);
     }
     for (let i = 0; i < activeRigBindings.length; i++) {
       const b = activeRigBindings[i];
@@ -1276,8 +1272,8 @@ function isAccessoryVisible(acc, activeExpressions = {}) {
           case "parallax": {
             const factor = parseFloat(params.factor || "0");
             bDistFactor = factor;
-            tx += headYaw * factor * 2.2;
-            ty += headPitch * factor * 1.6;
+            tx += headYaw * factor * 2.2 * globalPerspAmount;
+            ty += headPitch * factor * 1.6 * globalPerspAmount;
             const fore = params.foreshorten || params.turnscale ? parseFloat(params.foreshorten || params.turnscale) : void 0;
             const persp = params.persp ? parseFloat(params.persp) : void 0;
             const kx = params.skewx ? parseFloat(params.skewx) : void 0;
