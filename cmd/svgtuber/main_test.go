@@ -46,13 +46,13 @@ func TestDefaultAvatarCandidatesAndVersion(t *testing.T) {
 	t.Cleanup(func() { version = origVer })
 
 	version = "dev"
-	if got := currentNormalizedVersion(); got != "0.0.8" {
-		t.Errorf("currentNormalizedVersion() for dev = %q, want 0.0.8", got)
+	if got := currentNormalizedVersion(); got != "0.0.9" {
+		t.Errorf("currentNormalizedVersion() for dev = %q, want 0.0.9", got)
 	}
 
-	version = "v0.0.9"
-	if got := currentNormalizedVersion(); got != "0.0.9" {
-		t.Errorf("currentNormalizedVersion() for v0.0.9 = %q, want 0.0.9", got)
+	version = "v0.0.10"
+	if got := currentNormalizedVersion(); got != "0.0.10" {
+		t.Errorf("currentNormalizedVersion() for v0.0.10 = %q, want 0.0.10", got)
 	}
 }
 

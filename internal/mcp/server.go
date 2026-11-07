@@ -120,7 +120,7 @@ func (s *Server) handlePayload(payload []byte) {
 			},
 			ServerInfo: ServerInfo{
 				Name:    "svgtuber-mcp",
-				Version: "0.0.8",
+				Version: "0.0.9",
 			},
 			Instructions: ServerInstructions,
 		}

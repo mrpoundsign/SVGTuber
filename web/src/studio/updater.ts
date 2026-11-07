@@ -27,7 +27,7 @@ export interface UpdateProgressMessage {
 
 export function normalizeVersionTag(ver: string): string {
   const clean = (ver || "").trim();
-  if (!clean) return "v0.0.8";
+  if (!clean) return "v0.0.9";
   return clean.startsWith("v") || clean.startsWith("V") ? `v${clean.slice(1)}` : `v${clean}`;
 }
 

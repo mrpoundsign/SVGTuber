@@ -4,6 +4,30 @@ All notable user-facing changes to **SVGTuber** are documented in this file.
 
 ---
 
+## [v0.0.9] — 2026-11-06
+
+### 🪄 Guided Fullscreen Setup & Glasses/Headset Calibration Wizard
+- **Self-Paced Audio-Cued Calibration (`🪄 Guided Setup`)**: Pop-out or maximize a fullscreen calibration wizard on your main monitor with Web Audio synthesizer chimes and automatic move detection (or press `Spacebar` anytime to capture/advance):
+  - **Step 1 — Neutral & Silence**: Captures your resting open-eye floor behind glasses, lens-prism gaze offset, ambient microphone noise floor, and composite resting facial baselines.
+  - **Step 2 — Blinks & Left/Right Winks**: Combines MediaPipe blendshapes with 3D landmark Eye Aspect Ratio (EAR) closure (`FuseBlinkScoreWithSquint`) to rescue glare-washed blinks, configure **Glare Assist**, and tune independent left/right wink thresholds without cheek-squint false triggers when smiling.
+  - **Step 3 — Directional Head Turns**: Automatically detects headphone or thick glasses-frame occlusion angles (`Head-Turn Wink Cutoff`) and tunes your personal **Head Yaw** and **Head Pitch** multipliers.
+  - **Step 4 — Boom-Mic Smile & Vowel Calibration**: Automatically re-weights left/right mouth corners when a headset boom mic shadows one side of your face, tunes **Mic Gain** and **Mouth Sensitivity**, and calibrates your speaking voice pitch (`Hz`) and vowel formants (`"AH"`, `"EE"`, `"OO"`, `"EH"`, `"OH"`).
+
+### 🎭 Expressive Facial Tracking, 5-Vowel Lip-Sync & Frown Fine-Tuning
+- **New Facial Expression Channels**: Track **Frown** (`frown` / `isFrowning`), **Cheek Puff** (`cheekPuff` / `isCheekPuff`), **Mouth Pucker** (`mouthPucker` / `isMouthPucker`), **Optical Tongue Out** (`tongueOut` / `isTongueOut`), **Jaw Shift** (`jawX`), **Nose Sneer** (`noseSneer` / `isSneering`), and **Eye Squint** (`eyeSquintL`/`R`) with live Studio telemetry meters (**Pucker / Puff** and **Frown / Tongue**).
+- **Frown Threshold Slider & Live Gauge Marker**: Added a tunable **Frown Threshold** slider (`0.15`–`0.95`, default `0.40`) under **👄 Mouth & Audio** and a live threshold marker on the **Frown / Tongue** gauge bar, plus 90th-percentile resting baseline calibration so relaxed resting faces never trigger false frowns.
+- **5-Vowel Visemes (`A`, `I`, `U`, `E`, `O`) & Voice Dynamics**: Real-time F1/F2 formant vowel classification shapes `#mouth_open` (or switches explicit `#mouth_a/i/u/e/o` layers), alongside fundamental voice pitch (`audioPitch`), high-energy **Shouting** (`isShouting`), and staccato **Laughing** (`isLaughing`) detection.
+- **Head Depth Zoom (`Depth (Lean Z)`)**: Smoothly zooms your avatar in and out as you lean toward or away from your webcam, controlled by the **Depth Zoom (Lean Z)** slider (`0.0x`–`1.0x`, default `0.25x`) under **👀 Eyes & Head**.
+
+### 📐 2.5D Head Perspective Skew & Foreshortening
+- **Simulate 3D Head Turns (`2.5D Head Skew & Scale`)**: New toggle and **2.5D Skew / Scale Amount** slider (`0.0x`–`2.0x`) under **👀 Eyes & Head** that adds level horizontal head foreshortening, asymmetric near/far eye and eyebrow perspective scaling, vertical pitch foreshortening, and snout/muzzle depth parallax—giving 2D SVG characters natural 2.5D depth without diagonal mouth tilting.
+- **Explicit `[Skew]` Rig Directive**: Character artists can also add `Skew {track: yaw, pitch; amount: ...}` directives directly to SVG layers in Inkscape.
+
+### 🎨 Vector-Node Tri-Bot App Icon
+- **Unified Application Branding**: Added the custom **Vector-Node Tri-Bot** icon across the Desktop Control Window, Windows Setup Wizard (`SVGTuber-Setup.exe`), Windows executable PE resources, and Web Studio.
+
+---
+
 ## [v0.0.8] — 2026-11-01
 
 ### 📦 Windows Setup Installer (`SVGTuber-Setup.exe`) & Verified Self-Updater

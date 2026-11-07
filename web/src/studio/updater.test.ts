@@ -10,10 +10,10 @@ import {
 
 describe("Studio Self-Updater Helpers", () => {
   test("normalizeVersionTag and formatUpdateBadgeText format version strings consistently", () => {
-    assert.equal(normalizeVersionTag("0.0.8"), "v0.0.8");
-    assert.equal(normalizeVersionTag("v0.0.8"), "v0.0.8");
-    assert.equal(normalizeVersionTag(""), "v0.0.8");
-    assert.equal(formatUpdateBadgeText("0.0.8"), "⬆ Update v0.0.8");
+    assert.equal(normalizeVersionTag("0.0.9"), "v0.0.9");
+    assert.equal(normalizeVersionTag("v0.0.9"), "v0.0.9");
+    assert.equal(normalizeVersionTag(""), "v0.0.9");
+    assert.equal(formatUpdateBadgeText("0.0.9"), "⬆ Update v0.0.9");
   });
 
   test("formatAssetSize formats bytes into human-readable units", () => {
